@@ -1,0 +1,288 @@
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+import models
+import os
+from dotenv import load_dotenv
+import schemas
+from database import get_db
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from auth.security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user  # Ensure this is imported for dependency injection
+)
+
+# 1. Initialize the router FIRST before assigning routes to it
+router = APIRouter(
+    prefix="/auth",
+    tags=["Authentication"]
+)
+
+
+# ==================================================
+# GOOGLE LOGIN & PROFILE COMPLETION
+# ==================================================
+load_dotenv()
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+@router.post("/google-login")
+def google_login(payload: dict, db: Session = Depends(get_db)):
+    token = payload.get("google_token")
+    try:
+        # Verify the real Google token
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
+        
+        email = idinfo['email']
+        name = idinfo.get('name', 'User')
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Google Token: {str(e)}")
+
+    # Check if user already exists in database by email
+    user = db.query(models.User).filter(models.User.email == email).first()
+    
+    is_complete = False
+    user_type = None
+    full_name = None
+    aadhaar_doc = None
+    license_doc = None
+    
+    if not user:
+        # Generate a unique username to prevent UNIQUE constraint failures
+        base_username = name.replace(" ", "").lower()
+        unique_username = f"{base_username}_{uuid.uuid4().hex[:6]}"
+        
+        user = models.User(
+            username=unique_username,
+            email=email,
+            password="OAUTH_GOOGLE_USER",
+            role=models.UserRole.USER
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        is_complete = False
+    else:
+        profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == user.id).first()
+        if profile:
+            user_type = profile.user_type
+            full_name = profile.full_name
+            aadhaar_doc = profile.aadhaar_doc
+            license_doc = profile.license_doc
+            if profile.phone_number:
+                is_complete = True
+
+    access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "is_profile_complete": is_complete,
+        "user_type": user_type,
+        "full_name": full_name,
+        "aadhaar_doc": aadhaar_doc,
+        "license_doc": license_doc
+    }
+
+
+@router.post("/complete-profile")
+def complete_user_profile(
+    profile_data: schemas.ProfileCreateSchema, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    Saves user profile details (phone number, user type, full_name, gender,
+    and verification documents) when they fill out the intermediate 
+    profile-making page.
+    """
+    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
+    
+    if not profile:
+        profile = models.UserProfile(user_id=current_user.id)
+        db.add(profile)
+        
+    profile.phone_number = profile_data.phone_number
+    profile.user_type = profile_data.user_type 
+    profile.full_name = profile_data.full_name or current_user.username
+    profile.gender = profile_data.gender
+    
+    # Store verification document filenames
+    if profile_data.aadhaar_doc:
+        profile.aadhaar_doc = profile_data.aadhaar_doc
+    if profile_data.license_doc:
+        profile.license_doc = profile_data.license_doc
+    
+    # Mark as verified if driver has both documents uploaded
+    if profile.user_type == 'driver' and profile.aadhaar_doc and profile.license_doc:
+        profile.is_verified = True
+        
+    db.commit()
+    
+    return {
+        "message": "Profile completed successfully", 
+        "is_profile_complete": True,
+        "full_name": profile.full_name,
+        "gender": profile.gender,
+        "phone_number": profile.phone_number,
+        "user_type": profile.user_type,
+        "aadhaar_doc": profile.aadhaar_doc,
+        "license_doc": profile.license_doc,
+        "is_verified": profile.is_verified
+    }
+
+
+@router.post("/update-profile")
+def update_user_profile(
+    profile_data: schemas.ProfileUpdateSchema,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Partially/Fully updates user profile details from the dashboards.
+    """
+    profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
+    
+    if not profile:
+        profile = models.UserProfile(user_id=current_user.id)
+        db.add(profile)
+        
+    if profile_data.full_name is not None:
+        profile.full_name = profile_data.full_name
+    if profile_data.phone_number is not None:
+        profile.phone_number = profile_data.phone_number
+    if profile_data.gender is not None:
+        profile.gender = profile_data.gender
+    if profile_data.aadhaar_doc is not None:
+        profile.aadhaar_doc = profile_data.aadhaar_doc
+    if profile_data.license_doc is not None:
+        profile.license_doc = profile_data.license_doc
+        
+    # Mark as verified if driver has both documents uploaded
+    if profile.user_type == 'driver' and profile.aadhaar_doc and profile.license_doc:
+        profile.is_verified = True
+    else:
+        # If it was driver but some doc was removed, we might adjust verification
+        if profile.user_type == 'driver' and (not profile.aadhaar_doc or not profile.license_doc):
+            profile.is_verified = False
+            
+    db.commit()
+    db.refresh(profile)
+    
+    return {
+        "message": "Profile updated successfully",
+        "is_profile_complete": True,
+        "full_name": profile.full_name,
+        "gender": profile.gender,
+        "phone_number": profile.phone_number,
+        "user_type": profile.user_type,
+        "aadhaar_doc": profile.aadhaar_doc,
+        "license_doc": profile.license_doc,
+        "is_verified": profile.is_verified
+    }
+
+
+# ==================================================
+# SIGN UP
+# ==================================================
+
+@router.post("/signup")
+def signup(
+    user_data: schemas.UserCreate,
+    db: Session = Depends(get_db)
+):
+    # Check username
+    existing_user = (
+        db.query(models.User)
+        .filter(models.User.username == user_data.username)
+        .first()
+    )
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists"
+        )
+
+    # Check email
+    existing_email = (
+        db.query(models.User)
+        .filter(models.User.email == user_data.email)
+        .first()
+    )
+    if existing_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+
+    # Create user
+    new_user = models.User(
+        username=user_data.username,
+        email=user_data.email,
+        password=hash_password(user_data.password),
+        role=models.UserRole.USER
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {
+        "message": "Account created successfully",
+        "username": new_user.username,
+        "role": new_user.role.value
+    }
+
+
+# ==================================================
+# SIGN IN
+# ==================================================
+
+@router.post(
+    "/login",
+    response_model=schemas.TokenResponse
+)
+def login(
+    login_data: schemas.LoginRequest,
+    db: Session = Depends(get_db)
+):
+    user = (
+        db.query(models.User)
+        .filter(models.User.username == login_data.username)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+
+    if not verify_password(
+        login_data.password,
+        user.password
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+
+    # Verify selected role
+    if user.role != login_data.role:
+        raise HTTPException(
+            status_code=403,
+            detail="Selected role does not match your account"
+        )
+
+    token = create_access_token({
+        "sub": str(user.id),
+        "role": user.role.value
+    })
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": user.role.value
+    }

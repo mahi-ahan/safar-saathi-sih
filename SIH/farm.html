@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Krishi-Anna | कृषि अन्न — Ministry of Agriculture &amp; Farmers Welfare</title>
+<meta name="description" content="Krishi-Anna connects farmers who need to move their harvest with vehicle owners who have spare capacity. A digital service by the Ministry of Agriculture &amp; Farmers Welfare, Government of India.">
+ 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+Devanagari:wght@500;600;700&display=swap" rel="stylesheet">
+ 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          cream:   '#FBF6EC',
+          paper:   '#F3ECDC',
+          green:   { deep:'#1F3D2B', DEFAULT:'#2F5233', soft:'#3E6B47', darkFooter: '#122B1E' },
+          gold:    { DEFAULT:'#C89B3C', light:'#E4C878', dim:'#9C7A2E' },
+          indigo:  { DEFAULT:'#1B3A6B', light:'#2E5490' },
+          soil:    '#6B4226',
+          brick:   '#B23A2E',
+          night:   { bg:'#0F1A12', card:'#17241A', line:'#25352A' },
+        },
+        fontFamily: {
+          display: ['"Baloo 2"', '"Noto Sans Devanagari"', 'sans-serif'],
+          body: ['"Inter"', '"Noto Sans Devanagari"', 'sans-serif'],
+          mono: ['"IBM Plex Mono"', 'monospace'],
+        },
+        borderRadius: { '2xl':'1.25rem', '3xl':'1.75rem' },
+      }
+    }
+  }
+</script>
+ 
+<style>
+  :root{ color-scheme: light; }
+  html.dark{ color-scheme: dark; }
+  *{ scroll-behavior: smooth; }
+  body{ background: #FBF6EC; }
+  html.dark body{ background:#0F1A12; }
+ 
+  /* ---------- Reveal on scroll ---------- */
+  .reveal{ opacity:0; transform: translateY(18px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.in{ opacity:1; transform:none; }
+ 
+  /* ---------- Screens ---------- */
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+ 
+  /* ---------- Grain-sack gauge (signature element) ---------- */
+  .sack{
+    position:relative; width:100%; aspect-ratio: 1/1.15; max-width:64px;
+    border-radius: 30% 30% 42% 42% / 22% 22% 55% 55%;
+    background: linear-gradient(180deg, #EFE3C4, #E4D3A6);
+    border: 2px solid #9C7A2E;
+    overflow:hidden; flex-shrink:0;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  html.dark .sack{ background: linear-gradient(180deg,#3a3120,#2c2617); border-color:#8a6a28;}
+  .sack::before{ /* tie string */
+    content:''; position:absolute; top:6%; left:20%; right:20%; height:8%;
+    border: 2px dashed #9C7A2E; border-bottom:none; border-radius: 50% 50% 0 0;
+    z-index: 2;
+  }
+  .sack-fill{
+    position:absolute; left:0; right:0; bottom:0; height: var(--fill, 40%);
+    background: linear-gradient(180deg,#C89B3C,#9C7A2E);
+    transition: height 1s cubic-bezier(.2,.8,.2,1);
+    z-index: 1;
+  }
+  .sack-fill::after{
+    content:''; position:absolute; inset:0;
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.12) 0 6px, transparent 6px 12px);
+  }
+  .sack-icon {
+    position: relative;
+    z-index: 3;
+    width: 55%;
+    height: 55%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0px 1px 2px rgba(0,0,0,0.4));
+  }
+ 
+  /* ---------- Hero animated scene ---------- */
+  .hero-scene{ position:relative; height:340px; overflow:hidden; border-radius:1.75rem; }
+  @media(min-width:768px){ .hero-scene{ height:440px; } }
+  .hero-sky{ position:absolute; inset:0; background: linear-gradient(180deg,#FDF2D9 0%, #F6DFA0 45%, #DDBE6C 100%);}
+  html.dark .hero-sky{ background: linear-gradient(180deg,#16211A 0%, #1E3020 55%, #2A3F26 100%); }
+  .hero-sun{ position:absolute; top:12%; right:12%; width:70px; height:70px; border-radius:50%;
+    background: radial-gradient(circle at 35% 35%, #FFF3C4, #E9B94A 70%); filter: blur(.3px); }
+  html.dark .hero-sun{ background: radial-gradient(circle at 35% 35%, #F3E7B8, #C9A24D 70%); opacity:.75;}
+ 
+  .field-row{ position:absolute; left:0; right:0; height:14%;
+    background-repeat: repeat-x; background-size: 90px 100%;
+    animation: driftField 18s linear infinite;
+  }
+  .field-row.r1{ bottom:44%; background-image: linear-gradient(100deg, #C9A24A 0 45px, #B98F3C 45px 90px); opacity:.55; animation-duration: 26s;}
+  .field-row.r2{ bottom:30%; background-image: linear-gradient(100deg, #BB9640 0 45px, #A9812F 45px 90px); opacity:.7; animation-duration: 20s;}
+  .field-row.r3{ bottom:16%; background-image: linear-gradient(100deg, #AD8636 0 45px, #94701F 45px 90px); opacity:.9; animation-duration: 14s;}
+  html.dark .field-row.r1{ background-image: linear-gradient(100deg,#2E4426 0 45px,#28381F 45px 90px);}
+  html.dark .field-row.r2{ background-image: linear-gradient(100deg,#31491F 0 45px,#243318 45px 90px);}
+  html.dark .field-row.r3{ background-image: linear-gradient(100deg,#2D461B 0 45px,#1F2E13 45px 90px);}
+  @keyframes driftField{ from{background-position-x:0;} to{background-position-x:-90px;} }
+ 
+  .lane{ position:absolute; left:0; right:0; bottom:0; height:16%; background:#3B3B3B; }
+  html.dark .lane{ background:#0B0F0B; }
+  .lane::after{ content:''; position:absolute; top:44%; left:0; right:0; height:6px;
+    background-image: repeating-linear-gradient(90deg, #F6DFA0 0 34px, transparent 34px 64px);
+    animation: laneMove 1.1s linear infinite; }
+  @keyframes laneMove{ from{ background-position-x:0;} to{ background-position-x:-64px; } }
+ 
+  .truck-wrap{ position:absolute; bottom:15%; left:-22%; animation: driveBy 9s linear infinite; }
+  @keyframes driveBy{ from{ left:-22%; } to{ left:112%; } }
+  .truck-bounce{ animation: bounce 0.5s ease-in-out infinite alternate; }
+  @keyframes bounce{ from{ transform: translateY(0);} to{ transform: translateY(-3px);} }
+ 
+  .farmer-wrap{ position:absolute; bottom:16%; }
+  .farmer-wrap.f1{ left:14%; animation: liftSack 2.4s ease-in-out infinite; }
+  .farmer-wrap.f2{ left:24%; animation: liftSack 2.4s ease-in-out infinite .5s; }
+  .farmer-wrap.f3{ left:70%; animation: liftSack 2.6s ease-in-out infinite .2s; }
+  @keyframes liftSack{ 0%,100%{ transform: translateY(0) rotate(0deg);} 50%{ transform: translateY(-7px) rotate(-3deg);} }
+ 
+  .bird{ position:absolute; animation: fly 16s linear infinite; opacity:.6; }
+  @keyframes fly{ from{ transform: translate(-10%,0);} to{ transform: translate(130%,-14px);} }
+ 
+  @media (prefers-reduced-motion: reduce){
+    .field-row, .lane::after, .truck-wrap, .truck-bounce, .farmer-wrap, .bird{ animation: none !important; }
+  }
+ 
+  /* ---------- misc ---------- */
+  .chip{ font-family:'IBM Plex Mono',monospace; }
+  .focus-ring:focus-visible{ outline:3px solid #1B3A6B; outline-offset:2px; }
+  html.dark .focus-ring:focus-visible{ outline-color:#E4C878; }
+  ::selection{ background:#C89B3C; color:#1F3D2B; }
+ 
+  .ashoka-rule{ height:3px; background: linear-gradient(90deg,#1B3A6B 0 33%, #FFFFFF 33% 66%, #C89B3C 66% 100%); }
+ 
+  .leaflet-container{ font-family:'Inter',sans-serif; border-radius:1rem; }
+  
+  /* Modal Animation */
+  @keyframes modalPop {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .modal-anim { animation: modalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+</style>
+</head>
+ 
+<body class="font-body text-green-deep dark:text-cream antialiased">
+ 
+<!-- GOVERNMENT RIBBON -->
+<div class="bg-indigo dark:bg-[#0d1f3a] text-cream text-xs">
+  <div class="ashoka-rule"></div>
+  <div class="max-w-7xl mx-auto px-4 py-1.5 flex items-center justify-between">
+    <span class="font-mono tracking-wide">भारत सरकार · Government of India · Ministry of Agriculture &amp; Farmers Welfare</span>
+    <div class="hidden sm:flex items-center gap-4">
+      <button id="langBtn" class="focus-ring hover:text-gold-light">EN / हिं</button>
+      <button id="themeBtn" class="focus-ring hover:text-gold-light" aria-label="Toggle dark mode">☀ / ☾</button>
+    </div>
+  </div>
+</div>
+ 
+<!-- NAV -->
+<header class="sticky top-0 z-40 backdrop-blur bg-cream/90 dark:bg-night-bg/90 border-b border-gold/30 dark:border-night-line">
+  <nav class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+    <button class="flex items-center gap-2 focus-ring" onclick="showScreen('home')">
+      <div class="sack" style="width:34px;--fill:60%">
+        <div class="sack-fill"></div>
+        <div class="sack-icon text-white text-xs font-bold">🌾</div>
+      </div>
+      <div class="text-left leading-tight">
+        <div class="font-display font-bold text-lg sm:text-xl">Krishi-Anna <span class="text-gold-dim dark:text-gold-light">कृषि अन्न</span></div>
+        <div class="text-[10px] font-mono uppercase tracking-wider text-green-soft dark:text-gold-light/70">Shared harvest transport</div>
+      </div>
+    </button>
+    <div class="hidden md:flex items-center gap-1 chip text-xs">
+      <button data-nav="home" class="nav-btn focus-ring px-3 py-2 rounded-full font-medium">Home / होम</button>
+      <button data-nav="find" class="nav-btn focus-ring px-3 py-2 rounded-full font-medium">Find Vehicles / वाहन खोजें</button>
+      <button data-nav="offer" class="nav-btn focus-ring px-3 py-2 rounded-full font-medium">Offer a Trip / यात्रा दें</button>
+      <button data-nav="requests" class="nav-btn focus-ring px-3 py-2 rounded-full font-medium">Requests / अनुरोध</button>
+    </div>
+    <button id="mobileNavBtn" class="md:hidden focus-ring border border-gold/50 rounded-lg px-3 py-1.5 text-sm">Menu ☰</button>
+  </nav>
+  <div id="mobileNav" class="hidden md:hidden px-4 pb-3 flex flex-col gap-1 chip text-sm">
+    <button data-nav="home" class="nav-btn focus-ring px-3 py-2 rounded-lg text-left">Home / होम</button>
+    <button data-nav="find" class="nav-btn focus-ring px-3 py-2 rounded-lg text-left">Find Vehicles / वाहन खोजें</button>
+    <button data-nav="offer" class="nav-btn focus-ring px-3 py-2 rounded-lg text-left">Offer a Trip / यात्रा दें</button>
+    <button data-nav="requests" class="nav-btn focus-ring px-3 py-2 rounded-lg text-left">Requests / अनुरोध</button>
+  </div>
+</header>
+ 
+<!-- ============================================================ -->
+<!-- SCREEN 1 — HOME / HERO -->
+<!-- ============================================================ -->
+<section id="screen-home" class="screen active">
+ 
+  <div class="max-w-7xl mx-auto px-4 pt-8 sm:pt-12">
+    <div class="hero-scene shadow-xl">
+      <div class="hero-sky"></div>
+      <div class="hero-sun"></div>
+      <svg class="bird" style="top:18%;" width="30" height="14" viewBox="0 0 30 14"><path d="M0 8 Q7 0 15 8 Q23 0 30 8" stroke="#1F3D2B" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <svg class="bird" style="top:26%; animation-delay:-6s;" width="22" height="10" viewBox="0 0 30 14"><path d="M0 8 Q7 0 15 8 Q23 0 30 8" stroke="#1F3D2B" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+ 
+      <div class="field-row r1"></div>
+      <div class="field-row r2"></div>
+      <div class="field-row r3"></div>
+ 
+      <!-- farmers lifting sacks -->
+      <div class="farmer-wrap f1">
+        <svg width="34" height="46" viewBox="0 0 34 46"><circle cx="12" cy="8" r="5" fill="#3E2B1B"/><rect x="7" y="14" width="10" height="16" rx="3" fill="#B23A2E"/><rect x="16" y="12" width="14" height="14" rx="3" fill="#C89B3C" stroke="#6B4226" stroke-width="1.5"/><rect x="4" y="30" width="6" height="14" fill="#1F3D2B"/><rect x="14" y="30" width="6" height="14" fill="#1F3D2B"/></svg>
+      </div>
+      <div class="farmer-wrap f2">
+        <svg width="34" height="46" viewBox="0 0 34 46"><circle cx="12" cy="8" r="5" fill="#3E2B1B"/><rect x="7" y="14" width="10" height="16" rx="3" fill="#2F5233"/><rect x="16" y="12" width="14" height="14" rx="3" fill="#C89B3C" stroke="#6B4226" stroke-width="1.5"/><rect x="4" y="30" width="6" height="14" fill="#3E2B1B"/><rect x="14" y="30" width="6" height="14" fill="#3E2B1B"/></svg>
+      </div>
+      <div class="farmer-wrap f3">
+        <svg width="34" height="46" viewBox="0 0 34 46"><circle cx="12" cy="8" r="5" fill="#3E2B1B"/><rect x="7" y="14" width="10" height="16" rx="3" fill="#1B3A6B"/><rect x="16" y="12" width="14" height="14" rx="3" fill="#C89B3C" stroke="#6B4226" stroke-width="1.5"/><rect x="4" y="30" width="6" height="14" fill="#1F3D2B"/><rect x="14" y="30" width="6" height="14" fill="#1F3D2B"/></svg>
+      </div>
+ 
+      <div class="lane"></div>
+ 
+      <!-- pickup truck rolling by -->
+      <div class="truck-wrap">
+        <svg class="truck-bounce" width="120" height="60" viewBox="0 0 120 60">
+          <rect x="4" y="24" width="66" height="24" rx="3" fill="#1F3D2B"/>
+          <rect x="10" y="16" width="30" height="18" rx="2" fill="#E4C878" stroke="#6B4226" stroke-width="1"/>
+          <path d="M70 24 L92 24 L104 38 L104 48 L70 48 Z" fill="#B23A2E"/>
+          <rect x="76" y="28" width="18" height="12" rx="2" fill="#FBF6EC" opacity=".85"/>
+          <circle cx="26" cy="50" r="8" fill="#1F1F1F"/><circle cx="26" cy="50" r="3" fill="#C89B3C"/>
+          <circle cx="90" cy="50" r="8" fill="#1F1F1F"/><circle cx="90" cy="50" r="3" fill="#C89B3C"/>
+        </svg>
+      </div>
+ 
+      <!-- headline overlay -->
+      <div class="absolute inset-0 flex items-end sm:items-center">
+        <div class="p-5 sm:p-10 max-w-xl">
+          <span class="inline-block chip text-[11px] px-2.5 py-1 rounded-full bg-cream/80 text-green-deep border border-green-deep/20 mb-3">कृषि मंत्रालय की पहल · A Ministry of Agriculture initiative</span>
+          <h1 class="font-display font-extrabold text-3xl sm:text-5xl text-green-deep drop-shadow-sm leading-tight">Krishi-Anna<br><span class="text-2xl sm:text-3xl">कृषि अन्न</span></h1>
+          <p class="mt-3 text-sm sm:text-base text-green-deep/90 font-medium max-w-md">Share the empty space in a passing vehicle. Move your harvest without booking a truck of your own.<br><span class="text-xs opacity-80">खाली जगह साझा करें — अपनी उपज बिना अलग ट्रक बुक किए भेजें।</span></p>
+        </div>
+      </div>
+    </div>
+ 
+    <!-- CTA row -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5 reveal">
+      <button onclick="showScreen('find')" class="focus-ring group rounded-2xl bg-green-deep text-cream px-4 py-4 text-left hover:bg-green transition-colors shadow-sm">
+        <span class="block text-xl">🚚</span>
+        <span class="block font-display font-semibold mt-1">Find a vehicle</span>
+        <span class="block text-xs chip opacity-75">वाहन खोजें</span>
+      </button>
+      <button onclick="showScreen('offer')" class="focus-ring group rounded-2xl bg-gold text-green-deep px-4 py-4 text-left hover:bg-gold-light transition-colors shadow-sm">
+        <span class="block text-xl">📦</span>
+        <span class="block font-display font-semibold mt-1">I am travelling this month</span>
+        <span class="block text-xs chip opacity-75">मैं इस महीने यात्रा कर रहा हूँ</span>
+      </button>
+      <button onclick="openSahayak()" class="focus-ring group rounded-2xl bg-indigo text-cream px-4 py-4 text-left hover:bg-indigo-light transition-colors shadow-sm">
+        <span class="block text-xl">💬</span>
+        <span class="block font-display font-semibold mt-1">Ask AI Sahayak</span>
+        <span class="block text-xs chip opacity-75">एआई सहायक से पूछें</span>
+      </button>
+      <button onclick="openDemo()" class="focus-ring group rounded-2xl border-2 border-green-deep/30 dark:border-gold/40 px-4 py-4 text-left hover:border-green-deep transition-colors">
+        <span class="block text-xl">▶</span>
+        <span class="block font-display font-semibold mt-1">Watch demo</span>
+        <span class="block text-xs chip opacity-75">डेमो देखें</span>
+      </button>
+    </div>
+  </div>
+ 
+  <!-- HOW IT WORKS — sticky step strip -->
+  <div class="max-w-7xl mx-auto px-4 mt-16 reveal">
+    <h2 class="font-display font-bold text-2xl sm:text-3xl">How the sack fills up <span class="text-base font-body font-normal text-green-soft">/ यह कैसे काम करता है</span></h2>
+    <div class="grid sm:grid-cols-4 gap-4 mt-6">
+      <!-- Step 1 Sack -->
+      <div class="rounded-2xl bg-paper dark:bg-night-card p-5 border border-gold/20">
+        <div class="sack mb-3" style="--fill:15%">
+          <div class="sack-fill"></div>
+          <div class="sack-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1F3D2B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
+          </div>
+        </div>
+        <p class="font-display font-semibold">1. Owner declares a route</p>
+        <p class="text-sm text-green-soft dark:text-cream/70 mt-1">A vehicle already travelling shares its date, route and free capacity.</p>
+      </div>
+      <!-- Step 2 Sack -->
+      <div class="rounded-2xl bg-paper dark:bg-night-card p-5 border border-gold/20">
+        <div class="sack mb-3" style="--fill:45%">
+          <div class="sack-fill"></div>
+          <div class="sack-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1F3D2B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+        </div>
+        <p class="font-display font-semibold">2. Farmers request space</p>
+        <p class="text-sm text-green-soft dark:text-cream/70 mt-1">Farmers along the way see the free kilograms and pickup point, and ask to join.</p>
+      </div>
+      <!-- Step 3 Sack -->
+      <div class="rounded-2xl bg-paper dark:bg-night-card p-5 border border-gold/20">
+        <div class="sack mb-3" style="--fill:78%">
+          <div class="sack-fill"></div>
+          <div class="sack-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1F3D2B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1zM2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h18"/></svg>
+          </div>
+        </div>
+        <p class="font-display font-semibold">3. Sack fills, fare is fixed</p>
+        <p class="text-sm text-green-soft dark:text-cream/70 mt-1">The fare rule the owner chose decides what every farmer pays — no bargaining.</p>
+      </div>
+      <!-- Step 4 Sack -->
+      <div class="rounded-2xl bg-paper dark:bg-night-card p-5 border border-gold/20">
+        <div class="sack mb-3" style="--fill:100%">
+          <div class="sack-fill"></div>
+          <div class="sack-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1F3D2B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/><path d="M14 2s2 2 4 4"/><path d="M18 2s2 2 4 4"/></svg>
+          </div>
+        </div>
+        <p class="font-display font-semibold">4. SMS confirms the trip</p>
+        <p class="text-sm text-green-soft dark:text-cream/70 mt-1">Both sides get an SMS with pickup time and delivery date — no app data needed.</p>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- FAQ accordion -->
+  <div class="max-w-3xl mx-auto px-4 mt-16 mb-16 reveal">
+    <h2 class="font-display font-bold text-2xl sm:text-3xl mb-5">Common questions <span class="text-base font-body font-normal text-green-soft">/ सामान्य प्रश्न</span></h2>
+    <div id="faq" class="divide-y divide-gold/25 border-t border-b border-gold/25"></div>
+  </div>
+ 
+  <!-- DARK GREEN FOOTER -->
+  <footer class="bg-green-darkFooter text-cream border-t border-gold/40 shadow-2xl">
+    <div class="ashoka-rule"></div>
+    <div class="max-w-7xl mx-auto px-4 py-10 grid sm:grid-cols-3 gap-8 text-sm">
+      <div>
+        <div class="font-display font-bold text-xl text-gold-light flex items-center gap-2">
+          <span>🌾</span> Krishi-Anna <span class="text-xs font-normal opacity-80">कृषि अन्न</span>
+        </div>
+        <p class="text-cream/70 mt-2 leading-relaxed">A digital service of the Ministry of Agriculture &amp; Farmers Welfare, Government of India.</p>
+        <p class="text-xs text-gold/80 mt-3 chip">© Government of India · All Rights Reserved</p>
+      </div>
+      <div class="border-t sm:border-t-0 sm:border-l border-gold/20 pt-4 sm:pt-0 sm:pl-6">
+        <div class="font-display font-semibold text-gold-light text-base mb-2">Helpline / सहायता</div>
+        <p class="chip text-cream/90 font-medium text-base">📞 1800-XXX-XXXX</p>
+        <p class="text-xs text-cream/60 mt-1">Toll-free (टोल-फ्री), Available 7:00 AM – 9:00 PM</p>
+      </div>
+      <div class="border-t sm:border-t-0 sm:border-l border-gold/20 pt-4 sm:pt-0 sm:pl-6">
+        <label class="font-display font-semibold text-gold-light block mb-2" for="footerEmail">Get harvest-season alerts</label>
+        <div class="flex gap-2">
+          <input id="footerEmail" type="email" placeholder="you@example.com" class="focus-ring flex-1 rounded-lg border border-gold/40 bg-night-bg/60 text-cream px-3 py-2 text-sm placeholder:text-cream/40">
+          <button onclick="footerSubscribe()" class="focus-ring rounded-lg bg-gold hover:bg-gold-light text-green-deep px-4 py-2 text-sm font-semibold transition-colors">Notify me</button>
+        </div>
+        <p id="footerMsg" class="text-xs text-gold-light/90 mt-2 font-mono"></p>
+      </div>
+    </div>
+  </footer>
+</section>
+ 
+<!-- ============================================================ -->
+<!-- SCREEN 2 — FIND VEHICLES -->
+<!-- ============================================================ -->
+<section id="screen-find" class="screen">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+    <h1 class="font-display font-bold text-2xl sm:text-3xl">Find a vehicle <span class="text-base font-body font-normal text-green-soft">/ वाहन खोजें</span></h1>
+    <p class="text-sm text-green-soft dark:text-cream/70 mt-1">Vehicles already travelling near you, with real free capacity.</p>
+ 
+    <!-- filters -->
+    <div class="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <select id="fState" class="focus-ring rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+        <option value="">All states / सभी राज्य</option>
+        <option>Maharashtra</option><option>Punjab</option><option>Uttar Pradesh</option><option>Gujarat</option>
+      </select>
+      <select id="fVehicle" class="focus-ring rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+        <option value="">All vehicles / सभी वाहन</option>
+        <option>Pickup</option><option>Mini truck</option><option>Truck</option><option>Tractor-trolley</option>
+      </select>
+      <select id="fSort" class="focus-ring rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+        <option value="free">Sort: most free kg</option>
+        <option value="date">Sort: soonest date</option>
+      </select>
+      <label class="focus-ring flex items-center gap-2 rounded-xl border border-gold/40 px-3 py-2 text-sm cursor-pointer">
+        <input id="fVerified" type="checkbox" class="accent-green-deep w-4 h-4"> Verified owners only / केवल सत्यापित
+      </label>
+    </div>
+ 
+    <div class="mt-6 grid lg:grid-cols-5 gap-6">
+      <div id="cardList" class="lg:col-span-3 flex flex-col gap-4"></div>
+      <div class="lg:col-span-2">
+        <div class="sticky top-24">
+          <div id="map" class="w-full h-[420px] rounded-2xl border border-gold/30 shadow-sm"></div>
+          <p class="text-xs text-green-soft dark:text-cream/60 mt-2 chip">Tap “Pickup location” on any card to fly here / किसी भी कार्ड पर “पिकअप स्थान” दबाएँ</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+ 
+<!-- ============================================================ -->
+<!-- SCREEN 3 — OFFER A TRIP -->
+<!-- ============================================================ -->
+<section id="screen-offer" class="screen">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+    <h1 class="font-display font-bold text-2xl sm:text-3xl">Offer a trip <span class="text-base font-body font-normal text-green-soft">/ यात्रा दें</span></h1>
+    <p class="text-sm text-green-soft dark:text-cream/70 mt-1">Declare your route and how much space you can share — farmers see exactly this.</p>
+ 
+    <div class="mt-6 grid lg:grid-cols-2 gap-8">
+      <!-- form -->
+      <form id="offerForm" class="flex flex-col gap-4" onsubmit="return false;">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="text-sm font-medium block mb-1">From / कहाँ से</label>
+            <input id="oFrom" value="Nashik, Maharashtra" class="focus-ring w-full rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="text-sm font-medium block mb-1">To / कहाँ तक</label>
+            <input id="oTo" value="Pune, Maharashtra" class="focus-ring w-full rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+          </div>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="text-sm font-medium block mb-1">Date of travel / यात्रा की तारीख</label>
+            <input id="oDate" type="date" class="focus-ring w-full rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="text-sm font-medium block mb-1">Vehicle type / वाहन का प्रकार</label>
+            <select id="oVehicle" class="focus-ring w-full rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+              <option>Pickup</option><option>Mini truck</option><option>Truck</option><option>Tractor-trolley</option>
+            </select>
+          </div>
+        </div>
+ 
+        <div>
+          <label class="text-sm font-medium block mb-1">Shareable capacity — <span id="oCapVal" class="chip">600</span> kg of <span id="oTotalVal" class="chip">1000</span> kg total</label>
+          <input id="oTotal" type="range" min="300" max="3000" step="50" value="1000" class="w-full accent-soil">
+          <input id="oCap" type="range" min="0" max="1000" step="10" value="600" class="w-full accent-gold mt-2">
+          <div class="flex justify-between text-[11px] chip text-green-soft dark:text-cream/60"><span>total load →</span><span>space you'll share →</span></div>
+        </div>
+ 
+        <div>
+          <span class="text-sm font-medium block mb-2">Fare rule / किराया नियम</span>
+          <div class="flex flex-col gap-2">
+            <label class="focus-ring flex items-start gap-2 rounded-xl border border-gold/40 p-3 cursor-pointer has-[:checked]:border-green-deep has-[:checked]:bg-paper dark:has-[:checked]:bg-night-card">
+              <input type="radio" name="fare" value="flat" checked class="mt-1 accent-green-deep">
+              <span><span class="font-medium block">Flat ₹20 per farmer</span><span class="text-xs text-green-soft dark:text-cream/60">हर किसान से ₹20 — भले ही 1 जुड़े या 10</span></span>
+            </label>
+            <label class="focus-ring flex items-start gap-2 rounded-xl border border-gold/40 p-3 cursor-pointer has-[:checked]:border-green-deep has-[:checked]:bg-paper dark:has-[:checked]:bg-night-card">
+              <input type="radio" name="fare" value="third" class="mt-1 accent-green-deep">
+              <span><span class="font-medium block">⅓ of journey cost, split once more than 10 join</span><span class="text-xs text-green-soft dark:text-cream/60">10 से ज्यादा किसान जुड़ने पर यात्रा खर्च का 1/3 हिस्सा बाँटा जाता है</span></span>
+            </label>
+            <label class="focus-ring flex items-start gap-2 rounded-xl border border-gold/40 p-3 cursor-pointer has-[:checked]:border-green-deep has-[:checked]:bg-paper dark:has-[:checked]:bg-night-card">
+              <input type="radio" name="fare" value="free" class="mt-1 accent-green-deep">
+              <span><span class="font-medium block">Voluntary / free</span><span class="text-xs text-green-soft dark:text-cream/60">जितना किसान खुशी से दें — कोई तय शुल्क नहीं</span></span>
+            </label>
+          </div>
+        </div>
+ 
+        <div id="journeyCostWrap" class="hidden">
+          <label class="text-sm font-medium block mb-1">Estimated journey cost (fuel + toll) / अनुमानित यात्रा खर्च</label>
+          <div class="flex items-center gap-2">
+            <span class="chip">₹</span>
+            <input id="oJourneyCost" type="number" value="1800" class="focus-ring w-40 rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+          </div>
+        </div>
+ 
+        <div>
+          <label class="text-sm font-medium block mb-1">Pickup instructions / पिकअप निर्देश</label>
+          <input id="oPickup" value="Sinnar bypass toll, 6:00 AM" class="focus-ring w-full rounded-xl border border-gold/40 bg-paper dark:bg-night-card px-3 py-2 text-sm">
+        </div>
+ 
+        <button type="button" onclick="publishTrip()" class="focus-ring mt-2 rounded-xl bg-green-deep text-cream font-display font-semibold px-5 py-3 hover:bg-green transition-colors">Publish trip / यात्रा प्रकाशित करें</button>
+        <p id="publishMsg" class="text-sm text-gold-dim dark:text-gold-light"></p>
+      </form>
+ 
+      <!-- live preview -->
+      <div class="lg:sticky lg:top-24 h-fit">
+        <p class="text-xs chip uppercase tracking-wide text-green-soft dark:text-cream/60 mb-2">Live preview — what farmers see / किसान क्या देखेंगे</p>
+        <div class="rounded-2xl border border-gold/30 bg-paper dark:bg-night-card p-5 shadow-sm">
+          <div class="flex items-start gap-3">
+            <div class="sack" style="width:48px" id="prevSack">
+              <div class="sack-fill" id="prevSackFill"></div>
+              <div class="sack-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#1F3D2B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+              </div>
+            </div>
+            <div class="flex-1">
+              <div class="flex items-center justify-between">
+                <p class="font-display font-semibold" id="prevRoute">Nashik → Pune</p>
+                <span class="chip text-xs bg-indigo/10 text-indigo dark:text-indigo-light px-2 py-0.5 rounded-full">✔ Verified owner</span>
+              </div>
+              <p class="text-xs text-green-soft dark:text-cream/60" id="prevDate">Date: —</p>
+              <p class="text-xs chip mt-1" id="prevVehicle">Pickup</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 mt-4">
+            <div class="rounded-xl bg-cream dark:bg-night-bg p-3">
+              <p class="text-[11px] chip text-green-soft dark:text-cream/60">Load already taken</p>
+              <p class="font-display font-bold text-lg" id="prevPct">0%</p>
+            </div>
+            <div class="rounded-xl bg-cream dark:bg-night-bg p-3">
+              <p class="text-[11px] chip text-green-soft dark:text-cream/60">Kilograms still free</p>
+              <p class="font-display font-bold text-lg" id="prevKg">600 kg</p>
+            </div>
+          </div>
+          <p class="text-xs text-green-soft dark:text-cream/60 mt-3" id="prevPickup">Pickup: —</p>
+          <div class="mt-4 border-t border-gold/25 pt-3">
+            <p class="text-sm font-medium">Fare a farmer will see / किसान को दिखेगा किराया</p>
+            <p class="font-display font-bold text-xl text-gold-dim dark:text-gold-light" id="prevFareFarmer">₹20 per farmer</p>
+          </div>
+        </div>
+ 
+        <div class="mt-4 rounded-2xl border border-indigo/30 bg-indigo/5 dark:bg-indigo/10 p-5">
+          <p class="text-sm font-medium mb-2">What you (the owner) collect / आप कितना पाएँगे</p>
+          <label class="text-xs chip text-green-soft dark:text-cream/60">Try with different numbers of farmers joining: <span id="simCountVal">4</span></label>
+          <input id="simCount" type="range" min="1" max="20" value="4" class="w-full accent-indigo">
+          <p class="font-display font-bold text-2xl mt-2" id="prevOwnerTotal">₹80</p>
+          <p class="text-xs text-green-soft dark:text-cream/60" id="prevOwnerNote"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+ 
+<!-- ============================================================ -->
+<!-- SCREEN 4 — REQUESTS -->
+<!-- ============================================================ -->
+<section id="screen-requests" class="screen">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+    <h1 class="font-display font-bold text-2xl sm:text-3xl">Requests <span class="text-base font-body font-normal text-green-soft">/ अनुरोध</span></h1>
+ 
+    <!-- toggle between farmer / owner view -->
+    <div class="mt-4 inline-flex rounded-full border border-gold/40 p-1 chip text-sm">
+      <button id="viewFarmerBtn" class="reqview-btn focus-ring px-4 py-1.5 rounded-full">Farmer view / किसान</button>
+      <button id="viewOwnerBtn" class="reqview-btn focus-ring px-4 py-1.5 rounded-full">Owner inbox / मालिक इनबॉक्स</button>
+    </div>
+ 
+    <!-- FARMER VIEW -->
+    <div id="farmerView" class="mt-6 grid md:grid-cols-3 gap-4"></div>
+ 
+    <!-- OWNER VIEW -->
+    <div id="ownerView" class="mt-6 hidden flex flex-col gap-4"></div>
+  </div>
+</section>
+ 
+<!-- DEMO VIDEO & VOICE ASSIST MODAL -->
+<div id="demoModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+  <div class="modal-anim relative w-full max-w-2xl rounded-3xl bg-cream dark:bg-night-card border border-gold/50 shadow-2xl overflow-hidden">
+    <div class="bg-indigo text-cream px-6 py-4 flex items-center justify-between border-b border-gold/30">
+      <div class="flex items-center gap-2">
+        <span class="text-xl">🎬</span>
+        <div>
+          <h3 class="font-display font-bold text-lg leading-tight">Krishi-Anna Interactive Demo</h3>
+          <p class="text-[11px] chip opacity-80 text-gold-light">Voice Assist Enabled · एआई आवाज़ सहायक</p>
+        </div>
+      </div>
+      <button onclick="closeDemoModal()" class="focus-ring text-cream/80 hover:text-cream font-bold text-xl px-2 py-0.5 rounded-lg bg-white/10">✕</button>
+    </div>
+    
+    <div class="p-6">
+      <!-- Animated Mock Video Frame -->
+      <div class="relative w-full aspect-video rounded-2xl bg-night-bg border-2 border-gold/30 overflow-hidden flex flex-col items-center justify-center text-center p-4">
+        <div class="absolute inset-0 opacity-20 bg-[radial-gradient(#C89B3C_1px,transparent_1px)] [background-size:16px_16px]"></div>
+        
+        <div id="demoStepGraphic" class="relative z-10 mb-3 text-5xl transform transition-transform duration-500 scale-110">
+          🚚 🌾
+        </div>
+        
+        <div class="relative z-10 max-w-md">
+          <span id="demoStepTag" class="chip text-xs px-2.5 py-1 rounded-full bg-gold/20 text-gold-light font-semibold">Step 1 of 4</span>
+          <p id="demoStepTitle" class="font-display font-bold text-xl text-cream mt-2">Owner posts route and capacity</p>
+          <p id="demoStepDesc" class="text-sm text-cream/80 mt-1">A pickup owner driving from Nashik to Pune shares 600kg spare capacity.</p>
+        </div>
+
+        <!-- Video progress bar animation -->
+        <div class="absolute bottom-0 left-0 right-0 h-1.5 bg-white/10">
+          <div id="demoProgressBar" class="h-full bg-gold transition-all duration-300 w-1/4"></div>
+        </div>
+      </div>
+
+      <!-- Controls & Voice status -->
+      <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <button id="voiceToggleBtn" onclick="toggleDemoVoice()" class="focus-ring px-3 py-1.5 rounded-xl bg-green-deep text-cream text-xs font-semibold flex items-center gap-1.5">
+            <span id="voiceIcon">🔊</span> <span id="voiceBtnText">Voice On</span>
+          </button>
+          <span id="speakingIndicator" class="hidden text-xs chip text-gold-dim dark:text-gold-light animate-pulse">● Speaking...</span>
+        </div>
+        
+        <div class="flex gap-2">
+          <button onclick="prevDemoStep()" class="focus-ring text-xs font-medium px-3 py-2 rounded-xl border border-gold/40 hover:bg-paper dark:hover:bg-night-bg">Prev</button>
+          <button onclick="nextDemoStep()" class="focus-ring text-xs font-semibold px-4 py-2 rounded-xl bg-gold text-green-deep hover:bg-gold-light">Next Step ▶</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- toast -->
+<div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 hidden max-w-sm w-[92%] sm:w-auto"></div>
+ 
+<!-- ================= SCRIPT ================= -->
+<script>
+/* ---------------- THEME + LANG ---------------- */
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', ()=> document.documentElement.classList.toggle('dark'));
+ 
+/* ---------------- NAV ---------------- */
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b=>{
+    const active = b.dataset.nav === name;
+    b.classList.toggle('bg-green-deep', active);
+    b.classList.toggle('text-cream', active);
+  });
+  document.getElementById('mobileNav').classList.add('hidden');
+  window.scrollTo({top:0, behavior:'smooth'});
+  if(name==='find'){ setTimeout(()=>{ map && map.invalidateSize(); }, 60); }
+}
+document.querySelectorAll('.nav-btn').forEach(b=> b.addEventListener('click', ()=> showScreen(b.dataset.nav)));
+document.getElementById('mobileNavBtn').addEventListener('click', ()=>{
+  document.getElementById('mobileNav').classList.toggle('hidden');
+});
+showScreen('home');
+ 
+/* ---------------- TOAST ---------------- */
+function toast(msg, tone='green'){
+  const t = document.getElementById('toast');
+  const colors = {green:'bg-green-deep', gold:'bg-gold-dim text-white', brick:'bg-brick'};
+  t.innerHTML = `<div class="${colors[tone]||colors.green} text-cream rounded-2xl shadow-lg px-4 py-3 text-sm">${msg}</div>`;
+  t.classList.remove('hidden');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=> t.classList.add('hidden'), 3800);
+}
+function openSahayak(){ toast('💬 AI Sahayak: "नमस्ते! मुझे बताइए — आपको वाहन चाहिए या आप यात्रा दे रहे हैं?" (demo assistant)', 'gold'); }
+
+/* ---------------- DEMO MODAL & VOICE ASSIST ---------------- */
+let currentDemoStep = 0;
+let voiceEnabled = true;
+const demoSteps = [
+  {
+    graphic: "🚚 🌾",
+    tag: "Step 1 of 4",
+    title: "1. Owner posts route and capacity",
+    desc: "A vehicle owner driving from Nashik to Pune shares 600kg spare capacity on Krishi-Anna.",
+    voice: "Step 1. A vehicle owner driving from Nashik to Pune posts 600 kilograms of free space on Krishi-Anna."
+  },
+  {
+    graphic: "👨‍🌾 📱",
+    tag: "Step 2 of 4",
+    title: "2. Farmers find space & send requests",
+    desc: "Farmers along the highway view available space, pickup point, and request space for their crop.",
+    voice: "Step 2. Nearby farmers see the available capacity on their phone, check the pickup location, and send a space request."
+  },
+  {
+    graphic: "⚖️ 🪙",
+    tag: "Step 3 of 4",
+    title: "3. Transparent fair fare calculation",
+    desc: "The chosen fare rule automatically determines costs without any haggling or price inflation.",
+    voice: "Step 3. The platform calculates a fixed fair fare automatically. No bargaining or hidden charges."
+  },
+  {
+    graphic: "📩 ✅",
+    tag: "Step 4 of 4",
+    title: "4. SMS confirmation & delivery",
+    desc: "Both farmer and vehicle owner receive immediate SMS with time, location and delivery confirmation.",
+    voice: "Step 4. Both parties receive an offline SMS confirmation with pickup timing and delivery dates. Simple and reliable!"
+  }
+];
+
+function openDemo(){
+  currentDemoStep = 0;
+  document.getElementById('demoModal').classList.remove('hidden');
+  renderDemoStep();
+}
+
+function closeDemoModal(){
+  document.getElementById('demoModal').classList.add('hidden');
+  if('speechSynthesis' in window){
+    window.speechSynthesis.cancel();
+  }
+}
+
+function renderDemoStep(){
+  const s = demoSteps[currentDemoStep];
+  document.getElementById('demoStepGraphic').textContent = s.graphic;
+  document.getElementById('demoStepTag').textContent = s.tag;
+  document.getElementById('demoStepTitle').textContent = s.title;
+  document.getElementById('demoStepDesc').textContent = s.desc;
+  document.getElementById('demoProgressBar').style.width = ((currentDemoStep + 1) / demoSteps.length * 100) + '%';
+  
+  if(voiceEnabled){
+    speakText(s.voice);
+  }
+}
+
+function nextDemoStep(){
+  currentDemoStep = (currentDemoStep + 1) % demoSteps.length;
+  renderDemoStep();
+}
+
+function prevDemoStep(){
+  currentDemoStep = (currentDemoStep - 1 + demoSteps.length) % demoSteps.length;
+  renderDemoStep();
+}
+
+function toggleDemoVoice(){
+  voiceEnabled = !voiceEnabled;
+  const btnText = document.getElementById('voiceBtnText');
+  const icon = document.getElementById('voiceIcon');
+  if(voiceEnabled){
+    btnText.textContent = "Voice On";
+    icon.textContent = "🔊";
+    speakText(demoSteps[currentDemoStep].voice);
+  } else {
+    btnText.textContent = "Voice Off";
+    icon.textContent = "🔇";
+    if('speechSynthesis' in window) window.speechSynthesis.cancel();
+    document.getElementById('speakingIndicator').classList.add('hidden');
+  }
+}
+
+function speakText(text){
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  
+  const synth = window.speechSynthesis;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.95;
+  utterance.pitch = 1.0;
+  
+  const indicator = document.getElementById('speakingIndicator');
+  utterance.onstart = () => indicator.classList.remove('hidden');
+  utterance.onend = () => indicator.classList.add('hidden');
+  utterance.onerror = () => indicator.classList.add('hidden');
+  
+  synth.speak(utterance);
+}
+
+function footerSubscribe(){
+  const el = document.getElementById('footerEmail');
+  document.getElementById('footerMsg').textContent = el.value ? `Subscribed — पंजीकृत: ${el.value}` : 'Enter an email address first.';
+  el.value='';
+}
+ 
+/* ---------------- REVEAL ON SCROLL ---------------- */
+const io = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{ if(e.isIntersecting) e.target.classList.add('in'); });
+},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=> io.observe(el));
+ 
+/* ---------------- FAQ ---------------- */
+const faqs = [
+  ["Do I need to install an app?", "No. Everything can also be done over a phone call or SMS through the helpline — the website is optional.", "क्या ऐप डाउनलोड करना ज़रूरी है?", "नहीं। हेल्पलाइन कॉल या एसएमएस से भी सब कुछ किया जा सकता है — वेबसाइट ज़रूरी नहीं।"],
+  ["How is the owner verified?", "Owners confirm their vehicle registration and mobile number before their trips are shown to farmers.", "मालिक का सत्यापन कैसे होता है?", "यात्रा दिखाने से पहले वाहन पंजीकरण और मोबाइल नंबर की पुष्टि की जाती है।"],
+  ["What if no vehicle is found in 48 hours?", "You get an SMS immediately, and Krishi-Anna widens the search to nearby routes automatically.", "48 घंटे में वाहन न मिले तो?", "आपको तुरंत एसएमएस मिलेगा और कृषि अन्न आस-पास के मार्गों में खोज बढ़ा देगा।"],
+  ["Who fixes the fare?", "The vehicle owner picks one of three fixed fare rules when posting the trip — there is no bargaining after that.", "किराया कौन तय करता है?", "वाहन मालिक यात्रा पोस्ट करते समय तीन तय नियमों में से एक चुनता है — बाद में मोलभाव नहीं होता।"],
+];
+document.getElementById('faq').innerHTML = faqs.map((f,i)=>`
+  <div>
+    <button class="faq-btn focus-ring w-full flex items-center justify-between text-left py-4" data-i="${i}">
+      <span class="font-medium">${f[0]}<br><span class="text-xs text-green-soft dark:text-cream/60 font-normal">${f[2]}</span></span>
+      <span class="faq-icon text-xl transition-transform">+</span>
+    </button>
+    <div class="faq-panel hidden pb-4 text-sm text-green-soft dark:text-cream/70">${f[1]}<br><span class="text-xs">${f[3]}</span></div>
+  </div>`).join('');
+document.querySelectorAll('.faq-btn').forEach(b=> b.addEventListener('click', ()=>{
+  const panel = b.nextElementSibling;
+  const icon = b.querySelector('.faq-icon');
+  panel.classList.toggle('hidden');
+  icon.style.transform = panel.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(45deg)';
+}));
+ 
+/* ================= FIND VEHICLES ================= */
+const trips = [
+  { id:1, state:'Maharashtra', from:'Nashik', to:'Pune', date:'2026-08-18', vehicle:'Pickup', owner:'Ramesh Patil', verified:true, pct:62, totalKg:900, pickup:'Sinnar bypass toll, 6:00 AM', lat:19.90, lng:73.85 },
+  { id:2, state:'Punjab', from:'Ludhiana', to:'Khanna', date:'2026-08-20', vehicle:'Mini truck', owner:'Gurpreet Singh', verified:true, pct:30, totalKg:1000, pickup:'Grain market gate 2, 5:30 AM', lat:30.90, lng:75.85 },
+  { id:3, state:'Uttar Pradesh', from:'Meerut', to:'Ghaziabad', date:'2026-08-19', vehicle:'Tractor-trolley', owner:'Rajesh Yadav', verified:false, pct:85, totalKg:1000, pickup:'Sadar mandi entrance, 7:00 AM', lat:28.98, lng:77.70 },
+  { id:4, state:'Gujarat', from:'Rajkot', to:'Ahmedabad', date:'2026-08-22', vehicle:'Truck', owner:'Mahesh Bhai Patel', verified:true, pct:45, totalKg:2000, pickup:'NH27 highway dhaba junction, 5:00 AM', lat:22.30, lng:70.80 },
+];
+ 
+let map, markers = {};
+function initMap(){
+  map = L.map('map', { scrollWheelZoom:false }).setView([22.9, 78.9], 4.4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap contributors', maxZoom:18 }).addTo(map);
+  trips.forEach(t=>{
+    const m = L.marker([t.lat, t.lng]).addTo(map).bindPopup(`<b>${t.from} → ${t.to}</b><br>${t.owner} · ${t.vehicle}<br>${t.pickup}`);
+    markers[t.id] = m;
+  });
+}
+function flyToPickup(id){
+  const t = trips.find(x=>x.id===id);
+  map.flyTo([t.lat, t.lng], 11, { duration: 1.2 });
+  markers[id].openPopup();
+  toast(`📍 Flew to pickup point for ${t.from} → ${t.to}`, 'green');
+}
+ 
+function renderCards(){
+  const state = document.getElementById('fState').value;
+  const veh = document.getElementById('fVehicle').value;
+  const sort = document.getElementById('fSort').value;
+  const verifiedOnly = document.getElementById('fVerified').checked;
+  let list = trips.filter(t=>
+    (!state || t.state===state) && (!veh || t.vehicle===veh) && (!verifiedOnly || t.verified)
+  );
+  list.sort((a,b)=> sort==='date' ? a.date.localeCompare(b.date) : (b.totalKg*(1-b.pct/100)) - (a.totalKg*(1-a.pct/100)));
+ 
+  const wrap = document.getElementById('cardList');
+  if(!list.length){ wrap.innerHTML = `<p class="text-sm text-green-soft dark:text-cream/60 border border-dashed border-gold/40 rounded-2xl p-8 text-center">No vehicles match these filters yet — try widening your search. / कोई वाहन नहीं मिला, फ़िल्टर बदलकर देखें।</p>`; return; }
+ 
+  wrap.innerHTML = list.map(t=>{
+    const freeKg = Math.round(t.totalKg*(1-t.pct/100));
+    return `
+    <div class="rounded-2xl border border-gold/30 bg-paper dark:bg-night-card p-5 shadow-sm flex gap-4">
+      <div class="sack" style="width:56px;--fill:${t.pct}%">
+        <div class="sack-fill"></div>
+        <div class="sack-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#1F3D2B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        </div>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <p class="font-display font-semibold text-lg">${t.from} → ${t.to}</p>
+            <p class="text-xs chip text-green-soft dark:text-cream/60">${t.date} · ${t.vehicle} · ${t.state}</p>
+          </div>
+          <span class="chip text-xs px-2.5 py-1 rounded-full ${t.verified ? 'bg-indigo/10 text-indigo dark:text-indigo-light' : 'bg-brick/10 text-brick'}">${t.verified ? '✔ Verified owner' : '⏳ Verification pending'}</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div class="rounded-xl bg-cream dark:bg-night-bg p-3">
+            <p class="text-[11px] chip text-green-soft dark:text-cream/60">Load already taken</p>
+            <p class="font-display font-bold">${t.pct}%</p>
+          </div>
+          <div class="rounded-xl bg-cream dark:bg-night-bg p-3">
+            <p class="text-[11px] chip text-green-soft dark:text-cream/60">Kilograms still free</p>
+            <p class="font-display font-bold">${freeKg} kg</p>
+          </div>
+        </div>
+        <p class="text-xs text-green-soft dark:text-cream/70 mt-3">👤 Owner: ${t.owner} &nbsp;·&nbsp; 📍 Pickup: ${t.pickup}</p>
+        <div class="flex gap-2 mt-3 flex-wrap">
+          <button onclick="flyToPickup(${t.id})" class="focus-ring text-sm rounded-lg border border-green-deep/40 px-3 py-1.5 hover:bg-green-deep hover:text-cream transition-colors">📍 Pickup location</button>
+          <button onclick="toast('Request sent to ${t.owner} — you will get an SMS within 48 hours.','gold')" class="focus-ring text-sm rounded-lg bg-green-deep text-cream px-3 py-1.5 hover:bg-green transition-colors">Request space / जगह माँगें</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+['fState','fVehicle','fSort','fVerified'].forEach(id=> document.getElementById(id).addEventListener('input', renderCards));
+initMap(); renderCards();
+ 
+/* ================= OFFER A TRIP ================= */
+const oTotal = document.getElementById('oTotal'), oCap = document.getElementById('oCap');
+const fareRadios = document.querySelectorAll('input[name="fare"]');
+const simCount = document.getElementById('simCount');
+ 
+function updateOfferPreview(){
+  const total = +oTotal.value, cap = Math.min(+oCap.value, total);
+  oCap.max = total; if(cap!==+oCap.value) oCap.value=cap;
+  document.getElementById('oCapVal').textContent = cap;
+  document.getElementById('oTotalVal').textContent = total;
+ 
+  const from = document.getElementById('oFrom').value || '—';
+  const to = document.getElementById('oTo').value || '—';
+  const date = document.getElementById('oDate').value || 'Not set';
+  const vehicle = document.getElementById('oVehicle').value;
+  const pickup = document.getElementById('oPickup').value || '—';
+  const fare = document.querySelector('input[name="fare"]:checked').value;
+  document.getElementById('journeyCostWrap').classList.toggle('hidden', fare!=='third');
+ 
+  const takenPct = Math.round((1 - cap/total)*100);
+  document.getElementById('prevRoute').textContent = `${from} → ${to}`;
+  document.getElementById('prevDate').textContent = `Date: ${date}`;
+  document.getElementById('prevVehicle').textContent = vehicle;
+  document.getElementById('prevPct').textContent = takenPct+'%';
+  document.getElementById('prevKg').textContent = cap+' kg';
+  document.getElementById('prevPickup').textContent = 'Pickup: '+pickup;
+  document.getElementById('prevSack').style.setProperty('--fill', takenPct+'%');
+ 
+  const n = +simCount.value;
+  document.getElementById('simCountVal').textContent = n;
+  let farmerFareText, ownerTotal, note;
+  if(fare==='flat'){
+    farmerFareText = '₹20 per farmer';
+    ownerTotal = 20*n;
+    note = `${n} farmer(s) × ₹20 = ₹${ownerTotal}`;
+  } else if(fare==='third'){
+    const cost = +document.getElementById('oJourneyCost').value || 0;
+    if(n>10){
+      const pool = Math.round(cost/3);
+      ownerTotal = pool;
+      farmerFareText = `₹${Math.round(pool/n)} per farmer (split active)`;
+      note = `Split activates once more than 10 join → ⅓ of ₹${cost} = ₹${pool}, ÷ ${n} farmers`;
+    } else {
+      ownerTotal = 0;
+      farmerFareText = 'Free until 11th farmer joins';
+      note = `${n} of 11 needed — split rule has not activated yet`;
+    }k
+
+  } else {
+    farmerFareText = 'Whatever a farmer wishes to give';
+    ownerTotal = '—';
+    note = 'Voluntary — not guaranteed, shown as "no fixed fare" to farmers';
+  }
+  document.getElementById('prevFareFarmer').textContent = farmerFareText;
+  document.getElementById('prevOwnerTotal').textContent = typeof ownerTotal==='number' ? '₹'+ownerTotal : ownerTotal;
+  document.getElementById('prevOwnerNote').textContent = note;
+}
+[oTotal,oCap,simCount,document.getElementById('oFrom'),document.getElementById('oTo'),document.getElementById('oDate'),
+ document.getElementById('oVehicle'),document.getElementById('oPickup'),document.getElementById('oJourneyCost')]
+ .forEach(el=> el.addEventListener('input', updateOfferPreview));
+fareRadios.forEach(r=> r.addEventListener('change', updateOfferPreview));
+updateOfferPreview();
+ 
+function publishTrip(){
+  const from = document.getElementById('oFrom').value, to = document.getElementById('oTo').value;
+  document.getElementById('publishMsg').textContent = `✔ Trip published: ${from} → ${to}. Farmers on this route will start seeing your listing. / यात्रा प्रकाशित हो गई।`;
+  toast(`✔ Trip published — ${from} → ${to} is now visible to farmers.`, 'green');
+}
+ 
+/* ================= REQUESTS ================= */
+const viewFarmerBtn = document.getElementById('viewFarmerBtn'), viewOwnerBtn = document.getElementById('viewOwnerBtn');
+function setReqView(v){
+  document.getElementById('farmerView').classList.toggle('hidden', v!=='farmer');
+  document.getElementById('ownerView').classList.toggle('hidden', v!=='owner');
+  viewFarmerBtn.classList.toggle('bg-green-deep', v==='farmer'); viewFarmerBtn.classList.toggle('text-cream', v==='farmer');
+  viewOwnerBtn.classList.toggle('bg-green-deep', v==='owner'); viewOwnerBtn.classList.toggle('text-cream', v==='owner');
+}
+viewFarmerBtn.addEventListener('click', ()=> setReqView('farmer'));
+viewOwnerBtn.addEventListener('click', ()=> setReqView('owner'));
+setReqView('farmer');
+ 
+const smsTemplates = {
+  accepted: (r)=> `KRISHI-ANNA: आपकी सवारी स्वीकार हो गई है / Your ride is CONFIRMED.\nवाहन/Vehicle: ${r.vehicle} (${r.owner})\nपिकअप/Pickup: ${r.pickupDate}, ${r.pickupTime}, ${r.pickupPlace}\nडिलीवरी/Delivery by: ${r.deliveryDate}\nसहायता/Help: 1800-XXX-XXXX`,
+  declined: (r)=> `KRISHI-ANNA: क्षमा करें, आपका अनुरोध अस्वीकार कर दिया गया / Sorry, your request was declined (${r.reason}).\nकृपया अन्य वाहन खोजें / Please search other vehicles.\n- कृषि मंत्रालय, भारत सरकार`,
+  novehicle: (r)=> `KRISHI-ANNA: 48 घंटों में कोई वाहन नहीं मिला / No vehicle was found within 48 hours for ${r.route}.\nहम आस-पास के मार्गों में खोज रहे हैं / We are widening the search nearby.\nसहायता के लिए कॉल करें / Call for help: 1800-XXX-XXXX`,
+};
+ 
+const farmerRequests = [
+  { id:'A1', status:'pending', route:'Nashik → Pune', vehicle:'Pickup', owner:'Ramesh Patil', deadline: Date.now() + (31*3600+900)*1000 },
+  { id:'A2', status:'accepted', route:'Rajkot → Ahmedabad', vehicle:'Truck', owner:'Mahesh Bhai Patel', pickupDate:'22 Aug', pickupTime:'5:00 AM', pickupPlace:'NH27 highway dhaba junction', deliveryDate:'23 Aug' },
+  { id:'A3', status:'declined', route:'Meerut → Ghaziabad', vehicle:'Tractor-trolley', owner:'Rajesh Yadav', reason:'no space left / जगह नहीं बची' },
+  { id:'A4', status:'novehicle', route:'Amreli → Surat' },
+];
+ 
+function fmtCountdown(ms){
+  if(ms<=0) return '00:00:00';
+  const h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000), s = Math.floor((ms%60000)/1000);
+  return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');
+}
+ 
+function statusMeta(status){
+  return {
+    pending:  {label:'⏳ Waiting for owner / प्रतीक्षा में', badge:'bg-gold/20 text-gold-dim'},
+    accepted: {label:'✔ Confirmed / पुष्टि हो गई', badge:'bg-green-deep/10 text-green-deep dark:text-green-soft'},
+    declined: {label:'✕ Declined / अस्वीकृत', badge:'bg-brick/10 text-brick'},
+    novehicle:{label:'⚠ No vehicle found / वाहन नहीं मिला', badge:'bg-indigo/10 text-indigo dark:text-indigo-light'},
+  }[status];
+}
+ 
+function renderFarmerView(){
+  const wrap = document.getElementById('farmerView');
+  wrap.innerHTML = farmerRequests.map(r=>{
+    const meta = statusMeta(r.status);
+    let smsBody = '';
+    if(r.status==='accepted') smsBody = smsTemplates.accepted(r);
+    if(r.status==='declined') smsBody = smsTemplates.declined(r);
+    if(r.status==='novehicle') smsBody = smsTemplates.novehicle(r);
+    return `
+    <div class="rounded-2xl border border-gold/30 bg-paper dark:bg-night-card p-5 shadow-sm flex flex-col gap-3">
+      <div class="flex items-start justify-between">
+        <p class="font-display font-semibold">${r.route}</p>
+        <span class="chip text-[11px] px-2 py-1 rounded-full ${meta.badge}">${meta.label}</span>
+      </div>
+      ${r.owner ? `<p class="text-xs text-green-soft dark:text-cream/60">${r.vehicle} · ${r.owner}</p>` : ''}
+      ${r.status==='pending' ? `
+        <div class="rounded-xl bg-cream dark:bg-night-bg p-3">
+          <p class="text-[11px] chip text-green-soft dark:text-cream/60 mb-1">Auto-search closes in / 48-घंटे की सीमा</p>
+          <p class="font-mono font-bold text-xl" id="cd-${r.id}">${fmtCountdown(r.deadline - Date.now())}</p>
+        </div>` : `
+        <div class="rounded-xl bg-cream dark:bg-night-bg p-3">
+          <p class="text-[11px] chip text-green-soft dark:text-cream/60 mb-1">SMS you would receive / आपको मिलने वाला एसएमएस</p>
+          <p class="font-mono text-xs whitespace-pre-line leading-relaxed">${smsBody}</p>
+        </div>`}
+    </div>`;
+  }).join('');
+}
+renderFarmerView();
+setInterval(()=>{
+  farmerRequests.filter(r=>r.status==='pending').forEach(r=>{
+    const el = document.getElementById('cd-'+r.id);
+    if(el) el.textContent = fmtCountdown(r.deadline - Date.now());
+  });
+}, 1000);
+ 
+const ownerRequests = [
+  { id:'O1', route:'Ludhiana → Khanna', farmer:'Baljeet Kaur', kg:120, decided:false },
+  { id:'O2', route:'Ludhiana → Khanna', farmer:'Sukhwinder Singh', kg:80, decided:false },
+  { id:'O3', route:'Ludhiana → Khanna', farmer:'Amanpreet Kaur', kg:150, decided:false },
+];
+function renderOwnerView(){
+  const wrap = document.getElementById('ownerView');
+  wrap.innerHTML = ownerRequests.map(r=>`
+    <div class="rounded-2xl border border-gold/30 bg-paper dark:bg-night-card p-5 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="font-display font-semibold">${r.farmer} <span class="text-xs font-body font-normal text-green-soft dark:text-cream/60">wants ${r.kg} kg on ${r.route}</span></p>
+        </div>
+        <div id="ownerAction-${r.id}" class="flex items-center gap-2">
+          ${r.decided ? '' : `
+            <input id="deliv-${r.id}" type="date" class="focus-ring rounded-lg border border-gold/40 bg-cream dark:bg-night-bg px-2 py-1.5 text-xs">
+            <button onclick="ownerAccept('${r.id}')" class="focus-ring text-sm rounded-lg bg-green-deep text-cream px-3 py-1.5">Accept / स्वीकारें</button>
+            <button onclick="ownerDecline('${r.id}')" class="focus-ring text-sm rounded-lg border border-brick text-brick px-3 py-1.5">Decline / अस्वीकार</button>
+          `}
+        </div>
+      </div>
+      <div id="ownerSms-${r.id}" class="mt-3"></div>
+    </div>`).join('');
+}
+function ownerAccept(id){
+  const r = ownerRequests.find(x=>x.id===id);
+  const dateInput = document.getElementById('deliv-'+id);
+  const delivery = dateInput.value ? new Date(dateInput.value).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) : 'to be confirmed';
+  r.decided = true;
+  document.getElementById('ownerAction-'+id).innerHTML = `<span class="chip text-xs px-2 py-1 rounded-full bg-green-deep/10 text-green-deep dark:text-green-soft">✔ Accepted</span>`;
+  const sms = smsTemplates.accepted({vehicle:'Mini truck', owner:'You', pickupDate: new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'}), pickupTime:'5:30 AM', pickupPlace:'Grain market gate 2', deliveryDate: delivery});
+  document.getElementById('ownerSms-'+id).innerHTML = `<div class="rounded-xl bg-cream dark:bg-night-bg p-3"><p class="text-[11px] chip text-green-soft dark:text-cream/60 mb-1">Confirmation SMS sent to farmer</p><p class="font-mono text-xs whitespace-pre-line leading-relaxed">${sms}</p></div>`;
+  toast(`✔ Accepted — confirmation SMS sent with delivery date: ${delivery}`, 'green');
+}
+function ownerDecline(id){
+  const r = ownerRequests.find(x=>x.id===id);
+  r.decided = true;
+  document.getElementById('ownerAction-'+id).innerHTML = `<span class="chip text-xs px-2 py-1 rounded-full bg-brick/10 text-brick">✕ Declined</span>`;
+  const sms = smsTemplates.declined({reason:'vehicle full / वाहन भरा हुआ'});
+  document.getElementById('ownerSms-'+id).innerHTML = `<div class="rounded-xl bg-cream dark:bg-night-bg p-3"><p class="text-[11px] chip text-green-soft dark:text-cream/60 mb-1">Decline SMS sent to farmer</p><p class="font-mono text-xs whitespace-pre-line leading-relaxed">${sms}</p></div>`;
+  toast('Declined — SMS sent to farmer.', 'brick');
+}
+renderOwnerView();
+</script>
+</body>
+</html> 

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Krishi-Anna Login</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f7f2;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            min-height: 100vh;
+        }
+
+        .login-container {
+            width: 400px;
+            background: white;
+
+            padding: 35px;
+
+            border-radius: 15px;
+
+            box-shadow:
+                0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .logo h1 {
+            margin: 0;
+            color: #2e7d32;
+        }
+
+        .logo p {
+            color: #666;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 6px;
+
+            font-weight: bold;
+        }
+
+        input,
+        select {
+            width: 100%;
+
+            padding: 12px;
+
+            border: 1px solid #ccc;
+            border-radius: 8px;
+
+            font-size: 15px;
+        }
+
+        button {
+            width: 100%;
+
+            margin-top: 25px;
+
+            padding: 13px;
+
+            border: none;
+            border-radius: 8px;
+
+            background: #2e7d32;
+            color: white;
+
+            font-size: 16px;
+            font-weight: bold;
+
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1b5e20;
+        }
+
+        #message {
+            text-align: center;
+            margin-top: 15px;
+            color: red;
+        }
+
+    </style>
+</head>
+
+<body>
+
+    <div class="login-container">
+
+        <div class="logo">
+
+            <h1>🌾 Krishi-Anna</h1>
+
+            <p>
+                Shared Harvest Transport Platform
+            </p>
+
+        </div>
+
+
+        <form id="loginForm">
+
+            <label for="username">
+                Username
+            </label>
+
+            <input
+                type="text"
+                id="username"
+                placeholder="Enter username"
+                required
+            >
+
+
+            <label for="password">
+                Password
+            </label>
+
+            <input
+                type="password"
+                id="password"
+                placeholder="Enter password"
+                required
+            >
+
+
+            <label for="role">
+                Login As
+            </label>
+
+            <select id="role" required>
+
+                <option value="">
+                    Select your role
+                </option>
+
+                <option value="user">
+                    User
+                </option>
+
+                <option value="driver">
+                    Driver
+                </option>
+
+            </select>
+
+
+            <button type="submit">
+                Login
+            </button>
+
+        </form>
+
+
+        <p id="message"></p>
+
+    </div>
+
+
+    <script>
+
+        document
+            .getElementById("loginForm")
+            .addEventListener("submit", async function(event) {
+
+                event.preventDefault();
+
+
+                const username =
+                    document.getElementById("username").value;
+
+                const password =
+                    document.getElementById("password").value;
+
+                const role =
+                    document.getElementById("role").value;
+
+
+                if (!role) {
+
+                    document.getElementById("message")
+                        .innerText = "Please select a role.";
+
+                    return;
+                }
+
+
+                try {
+
+                    const response = await fetch(
+                        "/auth/login",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body: JSON.stringify({
+
+                                username: username,
+                                password: password,
+                                role: role
+
+                            })
+                        }
+                    );
+
+
+                    const data =
+                        await response.json();
+
+
+                    if (!response.ok) {
+
+                        document.getElementById("message")
+                            .innerText =
+                            data.detail ||
+                            "Login failed.";
+
+                        return;
+                    }
+
+
+                    // Store JWT
+
+                    localStorage.setItem(
+                        "access_token",
+                        data.access_token
+                    );
+
+
+                    localStorage.setItem(
+                        "role",
+                        data.role
+                    );
+
+
+                    // Redirect according to role
+
+                    if (data.role === "admin") {
+
+                        window.location.href =
+                            "/admin";
+
+                    }
+
+                    else if (data.role === "driver") {
+
+                        window.location.href =
+                            "/driver";
+
+                    }
+
+                    else {
+
+                        window.location.href =
+                            "/user";
+
+                    }
+
+                }
+
+                catch (error) {
+
+                    document.getElementById("message")
+                        .innerText =
+                        "Unable to connect to server.";
+
+                }
+
+            });
+
+    </script>
+
+</body>
+
+</html>

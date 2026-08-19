@@ -1,0 +1,92 @@
+# models.py
+from database import Base  # <--- MAKE SURE THIS LINE IS AT THE TOP
+from sqlalchemy import Boolean, Column, Float, Integer, String
+
+
+class TripModel(Base):
+  __tablename__ = "trips"
+
+  id = Column(Integer, primary_key=True, index=True)
+  state = Column(String, index=True)
+  from_loc = Column(String, index=True)
+  to_loc = Column(String, index=True)
+  date = Column(String)
+  vehicle = Column(String)
+  owner = Column(String)
+  verified = Column(Boolean, default=False)
+  pct = Column(Integer, default=0)
+  total_kg = Column(Integer, default=1000)
+  price_per_kg = Column(Integer, default=0)
+  pickup = Column(String)
+  lat = Column(Float)
+  lng = Column(Float)
+
+
+class RequestModel(Base):
+  __tablename__ = "requests"
+
+  id = Column(String, primary_key=True, index=True)
+  status = Column(String, default="pending")
+  route = Column(String)
+  vehicle = Column(String)
+  owner = Column(String)
+  farmer_name = Column(String)
+  kg = Column(Integer)
+  pickup_date = Column(String, nullable=True)
+  pickup_time = Column(String, nullable=True)
+  pickup_place = Column(String, nullable=True)
+  delivery_date = Column(String, nullable=True)
+  reason = Column(String, nullable=True)
+  
+  
+  
+from enum import Enum
+
+from sqlalchemy import Column, Integer, String, Enum as SQLEnum,ForeignKey
+from database import Base
+from sqlalchemy.orm import relationship
+
+
+class UserRole(str, Enum):
+    USER = "user"
+    DRIVER = "driver"
+    ADMIN = "admin"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    username = Column(
+        String,
+        unique=True,
+        nullable=False,
+        index=True
+    )
+    email = Column(String, unique=True, index=True)
+    password = Column(
+        String,
+        nullable=True
+    )
+
+    role = Column(
+        SQLEnum(UserRole),
+        nullable=False,
+        default=UserRole.USER
+    )
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    phone_number = Column(String, nullable=True)
+    user_type = Column(String, nullable=True)
+    full_name = Column(String, nullable=True)
+    gender = Column(String, nullable=True)
+    aadhaar_doc = Column(String, nullable=True)
+    license_doc = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False)
+
+    user = relationship("User", back_populates="profile")

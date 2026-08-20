@@ -43,17 +43,59 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 export function Home() {
   const { t } = useLang()
-  const [phase, setPhase] = useState('truck')
   const navigate = useNavigate()
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [isHovered, setIsHovered] = useState(false)
+  const heroRef = useRef(null)
+
+  const sliderImages = [
+    '/slide1.png',
+    '/slide2.jpg',
+    '/slide3.jpg',
+    '/slide4.jpg'
+  ]
+
+  const handleNext = useCallback(() => {
+    setCurrentIndex(prev => (prev + 1) % sliderImages.length)
+  }, [sliderImages.length])
 
   useEffect(() => {
-    const id = setTimeout(
-      () => setPhase(p => (p === 'truck' ? 'slide' : 'truck')),
-      phase === 'truck' ? 9000 : 5000
-    )
+    if (isHovered) return
+    const timer = setInterval(() => {
+      handleNext()
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [handleNext, isHovered])
 
-    return () => clearTimeout(id)
-  }, [phase])
+  useEffect(() => {
+    const handleScroll = () => {
+      const el = heroRef.current
+      if (!el) return
+
+      const scrollY = window.scrollY
+      const maxScroll = 400
+      const progress = Math.min(scrollY / maxScroll, 1)
+
+      const opacityVal = 1 - progress
+      const blurVal = progress * 6
+      const translateYVal = progress * 30
+
+      el.style.opacity = opacityVal.toString()
+      el.style.filter = `blur(${blurVal}px)`
+      el.style.transform = `translateY(${translateYVal}px)`
+
+      if (progress >= 1) {
+        el.style.visibility = 'hidden'
+        el.style.pointerEvents = 'none'
+      } else {
+        el.style.visibility = 'visible'
+        el.style.pointerEvents = progress > 0.85 ? 'none' : 'auto'
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   const steps = [
     [
@@ -83,288 +125,192 @@ export function Home() {
   ]
 
   return (
-    <section className="max-w-7xl mx-auto px-4 pt-8 sm:pt-12">
-      <div className="hero-scene shadow-xl">
-        <div className="hero-sky"></div>
-        <div className="hero-sun"></div>
+    <div className="w-full min-h-screen bg-[#F5F7F6] relative overflow-hidden pb-16">
+      {/* Subtle cool background gradients/blurred shapes */}
+      <div className="absolute top-[-100px] left-1/4 w-[600px] h-[600px] rounded-full bg-green/5 blur-[120px] pointer-events-none"></div>
+      <div className="absolute top-[20%] right-[-100px] w-[500px] h-[500px] rounded-full bg-indigo/5 blur-[100px] pointer-events-none"></div>
+      <div className="absolute bottom-[10%] left-[-100px] w-[450px] h-[450px] rounded-full bg-green/5 blur-[110px] pointer-events-none"></div>
 
-        <svg
-          className="bird"
-          style={{ top: '18%' }}
-          width="30"
-          height="14"
-          viewBox="0 0 30 14"
+      <section className="max-w-7xl mx-auto px-4 pt-8 sm:pt-12 relative z-10">
+        {/* HERO SLIDESHOW CONTAINER */}
+        <div
+          ref={heroRef}
+          className="relative w-full aspect-[16/9] min-h-[380px] md:min-h-0 rounded-3xl overflow-hidden shadow-2xl border border-green/10 transition-all duration-300 ease-out"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
         >
-          <path
-            d="M0 8 Q7 0 15 8 Q23 0 30 8"
-            stroke="#1F3D2B"
-            strokeWidth="2"
-            fill="none"
-            strokeLinecap="round"
-          />
-        </svg>
-
-        <svg
-          className="bird"
-          style={{
-            top: '26%',
-            animationDelay: '-6s'
-          }}
-          width="22"
-          height="10"
-          viewBox="0 0 30 14"
-        >
-          <path
-            d="M0 8 Q7 0 15 8 Q23 0 30 8"
-            stroke="#1F3D2B"
-            strokeWidth="2"
-            fill="none"
-            strokeLinecap="round"
-          />
-        </svg>
-
-        <div className="field-row r1"></div>
-        <div className="field-row r2"></div>
-        <div className="field-row r3"></div>
-
-        <div className="lane"></div>
-
-        {/* MOVING TRUCK */}
-
-        <div className="truck-wrap">
-          <svg
-            className="truck-bounce"
-            width="130"
-            height="65"
-            viewBox="0 0 130 65"
-          >
-            <rect
-              x="4"
-              y="22"
-              width="70"
-              height="28"
-              rx="4"
-              fill="#1F3D2B"
-            />
-
-            <rect
-              x="12"
-              y="13"
-              width="22"
-              height="18"
-              rx="2"
-              fill="#E4C878"
-              stroke="#6B4226"
-            />
-
-            <rect
-              x="36"
-              y="13"
-              width="25"
-              height="18"
-              rx="2"
-              fill="#B23A2E"
-              stroke="#6B4226"
-            />
-
-            <path
-              d="M74 22 L100 22 L115 38 L115 50 L74 50 Z"
-              fill="#B23A2E"
-            />
-
-            <rect
-              x="82"
-              y="27"
-              width="20"
-              height="13"
-              rx="2"
-              fill="#FBF6EC"
-            />
-
-            <circle cx="28" cy="53" r="9" fill="#1F1F1F" />
-            <circle cx="28" cy="53" r="3" fill="#C89B3C" />
-
-            <circle cx="98" cy="53" r="9" fill="#1F1F1F" />
-            <circle cx="98" cy="53" r="3" fill="#C89B3C" />
-          </svg>
-        </div>
-
-        {/* SECOND SLIDE */}
-
-        {phase === 'slide' && (
-          <div className="absolute inset-0 z-10 bg-green-deep flex items-center justify-center animate-[fadeIn_.8s_ease]">
-            <img
-              src="/slide1.jpg"
-              alt="Goods transportation"
-              className="absolute inset-0 w-full h-full object-cover"
-              onError={e => {
-                e.target.style.display = 'none'
-              }}
-            />
-
-            <div className="absolute inset-0 bg-green-deep/70"></div>
-
-            <div className="relative text-center text-cream p-8">
-              <div className="text-6xl mb-4">
-                📦 🚚 📍
-              </div>
-
-              <h2 className="font-display text-3xl font-bold text-gold-light">
-                Move Goods. Share Space.
-              </h2>
-
-              <p className="mt-3 text-lg max-w-md mx-auto">
-                Connect with vehicles already travelling on your route.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* HERO CONTENT */}
-
-        <div className="absolute inset-0 flex items-end sm:items-center pointer-events-none">
-          <div className="p-5 sm:p-10 max-w-xl pointer-events-auto">
-            <span className="inline-block font-mono text-[11px] px-2.5 py-1 rounded-full bg-cream/80 text-green-deep border border-green-deep/20 mb-3">
-              Smart Goods Transportation
-            </span>
-
-            <h1 className="font-display font-extrabold text-3xl sm:text-5xl text-green-deep drop-shadow-sm leading-tight">
-              Safar-Saathi
-              <br />
-
-              <span className="text-2xl sm:text-3xl">
-                सफ़र-साथी
-              </span>
-            </h1>
-
-            <p className="mt-3 text-sm sm:text-base text-green-deep/90 font-medium max-w-md">
-              Find available vehicle space and move your goods easily.
-              <br />
-
-              <span className="text-xs opacity-80">
-                Send goods · Offer space · Share the journey
-              </span>
-            </p>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              {/* Find a Vehicle Button -> Always goes to /find */}
-              <button 
-                onClick={async () => {
-                  const token = localStorage.getItem("access_token");
-                  if (!token) {
-                    navigate('/login', { state: { intent: 'find' } });
-                    return;
-                  }
-                  try {
-                    const res = await fetch("http://localhost:8000/auth/status", {
-                      headers: { "Authorization": `Bearer ${token}` }
-                    });
-                    const data = await res.json();
-                    if (!data.is_profile_complete) {
-                      navigate('/complete-profile');
-                    } else if (data.user_type === 'driver') {
-                      localStorage.removeItem("access_token");
-                      navigate('/login', {
-                        state: {
-                          intent: 'find',
-                          error: 'This account belongs to Offer a Trip (Driver). Please use a Sender account for Find a Vehicle.'
-                        }
-                      });
-                    } else {
-                      navigate('/find');
-                    }
-                  } catch (err) {
-                    navigate('/login', { state: { intent: 'find' } });
-                  }
-                }}
-                className="bg-green-deep text-cream px-5 py-3 rounded-xl font-semibold hover:bg-green transition"
-              >
-                Find a Vehicle
-              </button>
-
-              {/* Offer a Trip Button */}
-              <button 
-                onClick={async () => {
-                  const token = localStorage.getItem("access_token");
-                  if (!token) {
-                    navigate('/login', { state: { intent: 'offer' } });
-                    return;
-                  }
-                  try {
-                    const res = await fetch("http://localhost:8000/auth/status", {
-                      headers: { "Authorization": `Bearer ${token}` }
-                    });
-                    const data = await res.json();
-                    
-                    if (!data.is_profile_complete) {
-                      navigate('/complete-profile');
-                    } else if (data.user_type !== 'driver') {
-                      localStorage.removeItem("access_token");
-                      navigate('/login', {
-                        state: {
-                          intent: 'offer',
-                          error: 'This account belongs to Find a Vehicle (Sender). Please use a Driver account for Offer a Trip.'
-                        }
-                      });
-                    } else {
-                      navigate('/offer');
-                    }
-                  } catch (err) {
-                    navigate('/login', { state: { intent: 'offer' } });
-                  }
-                }}
-                className="bg-gold text-green-deep px-5 py-3 rounded-xl font-semibold hover:bg-gold-light transition"
-              >
-                Offer a Trip
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* HOW IT WORKS */}
-
-      <div className="max-w-7xl mx-auto mt-16">
-        <Reveal>
-          <h2 className="font-display font-bold text-2xl sm:text-3xl">
-            How It Works
-
-            <span className="text-base font-body font-normal text-green-soft">
-              {' '} / Simple transport in 4 steps
-            </span>
-          </h2>
-        </Reveal>
-
-        <div className="grid sm:grid-cols-4 gap-4 mt-6">
-          {steps.map(([fill, Icon, h, d], i) => (
-            <Reveal
-              key={i}
-              d={i * 90}
-            >
-              <div className="spot rounded-2xl bg-paper p-5 border border-gold/20 h-full">
-                <SackGauge
-                  fill={fill}
-                  size={64}
+          {/* 1. BACKGROUND SLIDESHOW LAYER */}
+          <div className="absolute inset-0 z-0 select-none">
+            {sliderImages.map((src, index) => {
+              const isActive = index === currentIndex
+              return (
+                <div
+                  key={src}
+                  className={`absolute inset-0 transition-all duration-[1200ms] ease-in-out ${
+                    isActive
+                      ? 'opacity-100 scale-100 translate-x-0'
+                      : 'opacity-0 scale-105 translate-x-4 pointer-events-none'
+                  }`}
                 >
-                  <Icon
-                    size={22}
-                    className="text-green-deep"
+                  <img
+                    src={src}
+                    alt="Safar Saathi Background"
+                    className="w-full h-full object-cover"
                   />
-                </SackGauge>
+                </div>
+              )
+            })}
+          </div>
 
-                <p className="font-display font-semibold mt-3">
-                  {h}
-                </p>
+          {/* 2. GRADIENT OVERLAY (dark green/black transparent gradient, strongest on left behind text) */}
+          <div className="absolute inset-0 z-10 bg-gradient-to-r from-black/85 via-black/55 to-transparent"></div>
+          {/* Subtle green tint overlay */}
+          <div className="absolute inset-0 z-10 bg-green-deep/20 mix-blend-multiply"></div>
 
-                <p className="text-sm text-green-soft mt-1">
-                  {d}
-                </p>
+          {/* 3. FIXED FOREGROUND TEXT & BUTTONS LAYER */}
+          <div className="absolute inset-0 z-20 flex items-center px-6 sm:px-12 md:px-16 pointer-events-none">
+            <div className="max-w-xl text-left pointer-events-auto text-white">
+              <span className="inline-block font-mono text-[11px] px-2.5 py-1 rounded-full bg-green-deep/60 text-[#E4C878] border border-gold-light/20 mb-4 tracking-wider uppercase font-semibold">
+                Smart Goods Transportation
+              </span>
+
+              <h1 className="font-display font-extrabold text-3xl sm:text-5xl text-white drop-shadow-md leading-tight">
+                Safar-Saathi
+                <br />
+
+                <span className="text-2xl sm:text-3.5xl text-gold-light font-bold">
+                  सफ़र-साथी
+                </span>
+              </h1>
+
+              <p className="mt-4 text-sm sm:text-base text-cream/90 font-medium max-w-md drop-shadow">
+                Find available vehicle space and move your goods easily.
+                <br />
+
+                <span className="text-xs text-cream/70 font-normal">
+                  Send goods · Offer space · Share the journey
+                </span>
+              </p>
+
+              <div className="mt-8 flex flex-wrap gap-4">
+                {/* Find a Vehicle Button -> Always goes to /find */}
+                <button
+                  onClick={async () => {
+                    const token = localStorage.getItem("access_token");
+                    if (!token) {
+                      navigate('/login', { state: { intent: 'find' } });
+                      return;
+                    }
+                    try {
+                      const res = await fetch("http://localhost:8000/auth/status", {
+                        headers: { "Authorization": `Bearer ${token}` }
+                      });
+                      const data = await res.json();
+                      if (!data.is_profile_complete) {
+                        navigate('/complete-profile');
+                      } else if (data.user_type === 'driver') {
+                        localStorage.removeItem("access_token");
+                        navigate('/login', {
+                          state: {
+                            intent: 'find',
+                            error: 'This account belongs to Offer a Trip (Driver). Please use a Sender account for Find a Vehicle.'
+                          }
+                        });
+                      } else {
+                        navigate('/find');
+                      }
+                    } catch (err) {
+                      navigate('/login', { state: { intent: 'find' } });
+                    }
+                  }}
+                  className="bg-green-deep text-cream px-6 py-3.5 rounded-xl font-semibold hover:bg-green border border-green-light/20 transition-all shadow-lg hover:-translate-y-0.5"
+                >
+                  Find a Vehicle
+                </button>
+
+                {/* Offer a Trip Button */}
+                <button
+                  onClick={async () => {
+                    const token = localStorage.getItem("access_token");
+                    if (!token) {
+                      navigate('/login', { state: { intent: 'offer' } });
+                      return;
+                    }
+                    try {
+                      const res = await fetch("http://localhost:8000/auth/status", {
+                        headers: { "Authorization": `Bearer ${token}` }
+                      });
+                      const data = await res.json();
+
+                      if (!data.is_profile_complete) {
+                        navigate('/complete-profile');
+                      } else if (data.user_type !== 'driver') {
+                        localStorage.removeItem("access_token");
+                        navigate('/login', {
+                          state: {
+                            intent: 'offer',
+                            error: 'This account belongs to Find a Vehicle (Sender). Please use a Driver account for Offer a Trip.'
+                          }
+                        });
+                      } else {
+                        navigate('/offer');
+                      }
+                    } catch (err) {
+                      navigate('/login', { state: { intent: 'offer' } });
+                    }
+                  }}
+                  className="bg-gold text-green-deep px-6 py-3.5 rounded-xl font-semibold hover:bg-gold-light transition-all shadow-lg hover:-translate-y-0.5"
+                >
+                  Offer a Trip
+                </button>
               </div>
-            </Reveal>
-          ))}
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
+
+        {/* HOW IT WORKS */}
+        <div className="max-w-7xl mx-auto mt-12 sm:mt-20">
+          <Reveal>
+            <h2 className="font-display font-bold text-2xl sm:text-3xl text-green-deep">
+              How It Works
+
+              <span className="text-base font-body font-normal text-green-soft">
+                {' '} / Simple transport in 4 steps
+              </span>
+            </h2>
+          </Reveal>
+
+          <div className="grid sm:grid-cols-4 gap-4 mt-6">
+            {steps.map(([fill, Icon, h, d], i) => (
+              <Reveal
+                key={i}
+                d={i * 90}
+              >
+                <div className="spot rounded-2xl bg-paper p-5 border border-gold/20 h-full">
+                  <SackGauge
+                    fill={fill}
+                    size={64}
+                  >
+                    <Icon
+                      size={22}
+                      className="text-green-deep"
+                    />
+                  </SackGauge>
+
+                  <p className="font-display font-semibold mt-3">
+                    {h}
+                  </p>
+
+                  <p className="text-sm text-green-soft mt-1">
+                    {d}
+                  </p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -731,13 +677,13 @@ export function FindVehicles() {
       f.sort === 'date'
         ? a.date.localeCompare(b.date)
         : (
-            b.totalKg *
-            (1 - b.pct / 100)
-          ) -
-          (
-            a.totalKg *
-            (1 - a.pct / 100)
-          )
+          b.totalKg *
+          (1 - b.pct / 100)
+        ) -
+        (
+          a.totalKg *
+          (1 - a.pct / 100)
+        )
     )
 
 
@@ -845,8 +791,8 @@ export function FindVehicles() {
       const R = 6371;
       const dLat = (r.deliveryCoords.lat - r.pickupCoords.lat) * Math.PI / 180;
       const dLon = (r.deliveryCoords.lng - r.pickupCoords.lng) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(r.pickupCoords.lat * Math.PI / 180) * Math.cos(r.deliveryCoords.lat * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(r.pickupCoords.lat * Math.PI / 180) * Math.cos(r.deliveryCoords.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       estimatedDist = Math.max(10, Math.round(R * c * 1.25));
     }
 
@@ -982,7 +928,7 @@ export function FindVehicles() {
 
       {/* 4-CARD QUICK METRICS OVERVIEW */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div 
+        <div
           onClick={() => setActiveTab('explore')}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -996,7 +942,7 @@ export function FindVehicles() {
           </div>
         </div>
 
-        <div 
+        <div
           onClick={() => setActiveTab('my_bookings')}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -1012,7 +958,7 @@ export function FindVehicles() {
           </div>
         </div>
 
-        <div 
+        <div
           onClick={() => setActiveTab('explore')}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -1026,7 +972,7 @@ export function FindVehicles() {
           </div>
         </div>
 
-        <div 
+        <div
           onClick={() => setActiveTab('explore')}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -1045,11 +991,10 @@ export function FindVehicles() {
       <div className="flex items-center gap-2 border-b border-gold/30 mb-6 overflow-x-auto no-scrollbar pb-1">
         <button
           onClick={() => setActiveTab('explore')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'explore'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'explore'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <Truck size={17} />
           <span>Explore Available Vehicles</span>
@@ -1060,11 +1005,10 @@ export function FindVehicles() {
 
         <button
           onClick={() => setActiveTab('my_bookings')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'my_bookings'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'my_bookings'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <Package size={17} />
           <span>My Bookings & Shipments</span>
@@ -1081,11 +1025,10 @@ export function FindVehicles() {
 
         <button
           onClick={() => setActiveTab('map')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'map'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'map'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <Route size={17} />
           <span>Live Map Radar</span>
@@ -1093,11 +1036,10 @@ export function FindVehicles() {
 
         <button
           onClick={() => setActiveTab('profile')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'profile'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'profile'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <Users size={17} />
           <span>Sender Profile</span>
@@ -1182,11 +1124,11 @@ export function FindVehicles() {
             <div className="lg:col-span-3 flex flex-col gap-4">
               {list.length > 0 ? (
                 list.map(trip => {
-                  const free = trip.available_space_kg !== undefined 
-                    ? trip.available_space_kg 
+                  const free = trip.available_space_kg !== undefined
+                    ? trip.available_space_kg
                     : Math.max(0, trip.totalKg - (trip.total_booked_kg || 0));
-                  const usedPct = trip.space_used_percentage !== undefined 
-                    ? trip.space_used_percentage 
+                  const usedPct = trip.space_used_percentage !== undefined
+                    ? trip.space_used_percentage
                     : (trip.pct || 0);
                   const bookedKg = trip.total_booked_kg || 0;
 
@@ -1201,11 +1143,10 @@ export function FindVehicles() {
                   return (
                     <div
                       key={trip.id}
-                      className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${
-                        isTripLive
+                      className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isTripLive
                           ? 'bg-paper border-green-400/80 shadow-md ring-1 ring-green-400/40'
                           : 'bg-paper border-gold/30 hover:border-gold'
-                      }`}
+                        }`}
                     >
                       <div>
                         {/* CARD TOP ROW */}
@@ -1260,13 +1201,12 @@ export function FindVehicles() {
                           </div>
                           <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden shadow-inner">
                             <div
-                              className={`h-full transition-all duration-500 rounded-full ${
-                                usedPct >= 90
+                              className={`h-full transition-all duration-500 rounded-full ${usedPct >= 90
                                   ? 'bg-red-500'
                                   : usedPct >= 70
                                     ? 'bg-amber-500'
                                     : 'bg-green-600'
-                              }`}
+                                }`}
                               style={{ width: `${Math.min(100, Math.max(0, usedPct))}%` }}
                             ></div>
                           </div>
@@ -1317,8 +1257,7 @@ export function FindVehicles() {
                                 <CheckCircle2 size={16} className="text-green-600" />
                                 <span className="font-bold text-xs text-green-deep">Your Booking:</span>
                               </div>
-                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                                myReq.status === 'pending'
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${myReq.status === 'pending'
                                   ? 'bg-gold/20 text-soil'
                                   : myReq.status === 'accepted'
                                     ? 'bg-green-deep/10 text-green-deep'
@@ -1327,7 +1266,7 @@ export function FindVehicles() {
                                       : myReq.status === 'completed'
                                         ? 'bg-green-700 text-white'
                                         : 'bg-red-100 text-red-700'
-                              }`}>
+                                }`}>
                                 {myReq.status === 'pending_passenger_confirmation' ? 'CONFIRMATION REQUIRED' : (myReq.status || 'PENDING').toUpperCase()}
                               </span>
                             </div>
@@ -1588,11 +1527,10 @@ export function FindVehicles() {
                 <button
                   key={key}
                   onClick={() => setMyBookingFilter(key)}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                    myBookingFilter === key
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer ${myBookingFilter === key
                       ? 'bg-green-deep text-cream shadow-sm'
                       : 'bg-cream text-green-soft hover:bg-gold/10 border border-gold/20'
-                  }`}
+                    }`}
                 >
                   {label}
                 </button>
@@ -1613,8 +1551,7 @@ export function FindVehicles() {
                 return (
                   <div
                     key={req.id}
-                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${
-                      isWaitingConf
+                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isWaitingConf
                         ? 'bg-amber-50/80 border-amber-400 shadow-md ring-1 ring-amber-400/50'
                         : isAccepted
                           ? 'bg-green-50/60 border-green-300'
@@ -1623,7 +1560,7 @@ export function FindVehicles() {
                             : isCancelled
                               ? 'bg-red-50/40 border-red-200 opacity-75'
                               : 'bg-paper border-gold/30'
-                    }`}
+                      }`}
                   >
                     <div>
                       {/* HEADER */}
@@ -1637,8 +1574,7 @@ export function FindVehicles() {
                           </p>
                         </div>
 
-                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
-                          isPending
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${isPending
                             ? 'bg-gold/20 text-soil'
                             : isAccepted
                               ? 'bg-green-600 text-white'
@@ -1647,7 +1583,7 @@ export function FindVehicles() {
                                 : isCompleted
                                   ? 'bg-emerald-600 text-white'
                                   : 'bg-red-500 text-white'
-                        }`}>
+                          }`}>
                           {isWaitingConf
                             ? 'CONFIRMATION REQUIRED'
                             : (req.status ? req.status.toUpperCase() : 'PENDING')
@@ -2665,7 +2601,7 @@ export function OfferTrip() {
 
       {/* 4-CARD QUICK METRICS OVERVIEW */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div 
+        <div
           onClick={() => { setActiveTab('trips'); setTripFilter('all'); }}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -2679,7 +2615,7 @@ export function OfferTrip() {
           </div>
         </div>
 
-        <div 
+        <div
           onClick={() => { setActiveTab('requests'); setRequestFilter(pendingRequestsCount > 0 ? 'pending' : 'all'); }}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -2695,7 +2631,7 @@ export function OfferTrip() {
           </div>
         </div>
 
-        <div 
+        <div
           onClick={() => setActiveTab('trips')}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -2709,7 +2645,7 @@ export function OfferTrip() {
           </div>
         </div>
 
-        <div 
+        <div
           onClick={() => setActiveTab('profile')}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
@@ -2732,11 +2668,10 @@ export function OfferTrip() {
       <div className="flex items-center gap-2 border-b border-gold/30 mb-6 overflow-x-auto no-scrollbar pb-1">
         <button
           onClick={() => setActiveTab('trips')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'trips'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'trips'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <Truck size={17} />
           <span>My Published Trips</span>
@@ -2747,11 +2682,10 @@ export function OfferTrip() {
 
         <button
           onClick={() => setActiveTab('requests')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'requests'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'requests'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <Package size={17} />
           <span>Incoming Requests</span>
@@ -2768,11 +2702,10 @@ export function OfferTrip() {
 
         <button
           onClick={() => setActiveTab('publish')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'publish'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'publish'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <span>➕</span>
           <span>Offer New Trip</span>
@@ -2780,11 +2713,10 @@ export function OfferTrip() {
 
         <button
           onClick={() => setActiveTab('profile')}
-          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-            activeTab === 'profile'
+          className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'profile'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
-          }`}
+            }`}
         >
           <ShieldCheck size={17} />
           <span>Driver Profile & ID</span>
@@ -2820,11 +2752,10 @@ export function OfferTrip() {
                 <button
                   key={key}
                   onClick={() => setTripFilter(key)}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                    tripFilter === key
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer ${tripFilter === key
                       ? 'bg-green-deep text-cream shadow-sm'
                       : 'bg-cream text-green-soft hover:bg-gold/10 border border-gold/20'
-                  }`}
+                    }`}
                 >
                   {label}
                 </button>
@@ -2846,8 +2777,7 @@ export function OfferTrip() {
                 return (
                   <div
                     key={trip.id}
-                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${
-                      isTripLive
+                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isTripLive
                         ? 'bg-green-50/80 border-green-400 shadow-md ring-1 ring-green-400/50'
                         : isPendingConfirmation
                           ? 'bg-amber-50/80 border-amber-400 shadow-md ring-1 ring-amber-400/50'
@@ -2856,7 +2786,7 @@ export function OfferTrip() {
                             : isCancelled
                               ? 'bg-red-50/40 border-red-200 opacity-75'
                               : 'bg-paper border-gold/30 hover:border-gold'
-                    }`}
+                      }`}
                   >
                     <div>
                       {/* CARD TOP ROW */}
@@ -2872,8 +2802,7 @@ export function OfferTrip() {
                           </p>
                         </div>
 
-                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${
-                          isTripLive
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${isTripLive
                             ? 'bg-green-600 text-white animate-pulse'
                             : isPendingConfirmation
                               ? 'bg-amber-500 text-white animate-pulse'
@@ -2882,7 +2811,7 @@ export function OfferTrip() {
                                 : isCancelled
                                   ? 'bg-red-500 text-white'
                                   : 'bg-gray-200 text-gray-700'
-                        }`}>
+                          }`}>
                           {isTripLive
                             ? '🔴 IN-TRANSIT'
                             : isPendingConfirmation
@@ -2906,13 +2835,12 @@ export function OfferTrip() {
                         </div>
                         <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden shadow-inner">
                           <div
-                            className={`h-full transition-all duration-500 rounded-full ${
-                              usedPct >= 90
+                            className={`h-full transition-all duration-500 rounded-full ${usedPct >= 90
                                 ? 'bg-red-500'
                                 : usedPct >= 70
                                   ? 'bg-amber-500'
                                   : 'bg-green-600'
-                            }`}
+                              }`}
                             style={{ width: `${Math.min(100, Math.max(0, usedPct))}%` }}
                           ></div>
                         </div>
@@ -3064,11 +2992,10 @@ export function OfferTrip() {
                 <button
                   key={key}
                   onClick={() => setRequestFilter(key)}
-                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                    requestFilter === key
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer ${requestFilter === key
                       ? 'bg-green-deep text-cream shadow-sm'
                       : 'bg-cream text-green-soft hover:bg-gold/10 border border-gold/20'
-                  }`}
+                    }`}
                 >
                   {label}
                 </button>
@@ -3089,8 +3016,7 @@ export function OfferTrip() {
                 return (
                   <div
                     key={req.id}
-                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${
-                      isPending
+                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isPending
                         ? 'bg-amber-50/60 border-amber-300 ring-1 ring-amber-300/40'
                         : isAccepted
                           ? 'bg-green-50/60 border-green-300'
@@ -3099,7 +3025,7 @@ export function OfferTrip() {
                             : isCancelled
                               ? 'bg-red-50/40 border-red-200 opacity-75'
                               : 'bg-paper border-gold/30'
-                    }`}
+                      }`}
                   >
                     <div>
                       {/* HEADER ROW */}
@@ -3113,8 +3039,7 @@ export function OfferTrip() {
                           </p>
                         </div>
 
-                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
-                          isPending
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${isPending
                             ? 'bg-amber-500 text-white animate-pulse'
                             : isAccepted
                               ? 'bg-green-600 text-white'
@@ -3123,7 +3048,7 @@ export function OfferTrip() {
                                 : isCompleted
                                   ? 'bg-emerald-600 text-white'
                                   : 'bg-red-500 text-white'
-                        }`}>
+                          }`}>
                           {isWaitingConf
                             ? 'WAITING PASSENGER CONF.'
                             : (req.status ? req.status.toUpperCase() : 'PENDING')
@@ -3797,17 +3722,17 @@ export function LoginPage() {
     setLoading(true)
     setLoginError('')
     try {
-    
+
       const res = await fetch("http://127.0.0.1:8000/auth/google-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          google_token: credentialResponse.credential 
+        body: JSON.stringify({
+          google_token: credentialResponse.credential
         })
       })
 
       const data = await res.json()
-      
+
       if (res.ok) {
         const intent = location.state?.intent || localStorage.getItem('login_intent')
 
@@ -3855,13 +3780,13 @@ export function LoginPage() {
         <div className="max-w-md w-full bg-paper p-8 rounded-2xl shadow-lg border border-gold/30 text-center">
           <h2 className="text-2xl font-display font-bold text-green-deep mb-2">Sign in to Safar-Saathi</h2>
           <p className="text-green-soft mb-4 text-sm">Choose any Google account to sign in.</p>
-          
+
           {loginError && (
             <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
               {loginError}
             </div>
           )}
-          
+
           <div className="flex justify-center">
             <GoogleLogin
               onSuccess={handleGoogleSuccess}
@@ -3883,10 +3808,10 @@ export function ProfileSetupPage() {
   const [gender, setGender] = useState('Male');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [userType, setUserType] = useState('sender'); // Auto-detected
-  
+
   const [aadhaarFile, setAadhaarFile] = useState(null);
   const [licenseFile, setLicenseFile] = useState(null);
-  
+
   const [submitting, setSubmitting] = useState(false);
   const [toast, notify] = useToast();
 
@@ -3902,7 +3827,7 @@ export function ProfileSetupPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (userType === 'driver') {
       if (!aadhaarFile || !licenseFile) {
         notify('⚠ Drivers must upload both verification documents.');
@@ -3957,10 +3882,10 @@ export function ProfileSetupPage() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           full_name: fullName,
           gender: gender,
-          phone_number: phoneNumber, 
+          phone_number: phoneNumber,
           user_type: userType,
           aadhaar_doc: aadhaarName,
           license_doc: licenseName
@@ -3994,20 +3919,20 @@ export function ProfileSetupPage() {
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-green-deep mb-1">Full Name</label>
-          <input 
-            type="text" 
-            value={fullName} 
-            onChange={(e) => setFullName(e.target.value)} 
-            placeholder="Enter your full name" 
+          <input
+            type="text"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Enter your full name"
             className={inputCls}
-            required 
+            required
           />
         </div>
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-green-deep mb-1">Gender</label>
-          <select 
-            value={gender} 
+          <select
+            value={gender}
             onChange={(e) => setGender(e.target.value)}
             className={inputCls}
           >
@@ -4019,24 +3944,24 @@ export function ProfileSetupPage() {
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-green-deep mb-1">Phone Number</label>
-          <input 
-            type="text" 
-            value={phoneNumber} 
-            onChange={(e) => setPhoneNumber(e.target.value)} 
-            placeholder="Enter 10-digit mobile number" 
+          <input
+            type="text"
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            placeholder="Enter 10-digit mobile number"
             className={inputCls}
-            required 
+            required
           />
         </div>
 
         {userType === 'driver' && (
           <div className="mb-6 p-4 rounded-xl bg-gold/10 border border-gold/30 space-y-4">
             <p className="font-semibold text-sm text-green-deep">Driver Verification Documents</p>
-            
+
             <div>
               <label className="block text-xs font-medium text-green-deep mb-1">Aadhaar Card Document / Image [Redacted]</label>
-              <input 
-                type="file" 
+              <input
+                type="file"
                 accept="image/*,application/pdf"
                 onChange={(e) => setAadhaarFile(e.target.files[0])}
                 className="text-xs text-green-soft"
@@ -4046,8 +3971,8 @@ export function ProfileSetupPage() {
 
             <div>
               <label className="block text-xs font-medium text-green-deep mb-1">Driving License Document / Image</label>
-              <input 
-                type="file" 
+              <input
+                type="file"
                 accept="image/*,application/pdf"
                 onChange={(e) => setLicenseFile(e.target.files[0])}
                 className="text-xs text-green-soft"
@@ -4057,8 +3982,8 @@ export function ProfileSetupPage() {
           </div>
         )}
 
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           disabled={submitting}
           className="w-full bg-green-deep text-cream py-3 rounded-xl font-semibold hover:bg-green transition"
         >

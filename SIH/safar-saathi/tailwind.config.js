@@ -12,8 +12,8 @@ export default {
         night: { bg: '#0F1A12', card: '#17241A', line: '#25352A' }
       },
       fontFamily: {
-        display: ['"Baloo 2"', '"Noto Sans Devanagari"', 'sans-serif'],
-        body: ['Inter', '"Noto Sans Devanagari"', 'sans-serif'],
+        display: ['"Noto Sans"', '"Noto Sans Devanagari"', 'sans-serif'],
+        body: ['"Noto Sans"', '"Noto Sans Devanagari"', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'monospace']
       },
       borderRadius: { '2xl': '1.25rem', '3xl': '1.75rem' }

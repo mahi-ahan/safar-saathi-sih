@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  BrowserRouter, 
-  Routes, 
-  Route, 
-  Link, 
-  NavLink, 
-  useNavigate, 
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Link,
+  NavLink,
+  useNavigate,
   useLocation
 } from 'react-router-dom';
 
@@ -174,10 +174,9 @@ function Header() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `px-3 py-2 rounded-full font-medium transition-colors ${
-                  isActive
-                    ? 'bg-green-deep text-cream'
-                    : 'text-green-deep hover:bg-green-deep/10'
+                `px-3 py-2 rounded-full font-medium transition-colors ${isActive
+                  ? 'bg-green-deep text-cream'
+                  : 'text-green-deep hover:bg-green-deep/10'
                 }`
               }
             >
@@ -218,10 +217,9 @@ function Header() {
               to={item.to}
               onClick={() => setOpen(false)}
               className={({ isActive }) =>
-                `px-3 py-2 rounded-lg text-left ${
-                  isActive
-                    ? 'bg-green-deep text-cream'
-                    : 'text-green-deep'
+                `px-3 py-2 rounded-lg text-left ${isActive
+                  ? 'bg-green-deep text-cream'
+                  : 'text-green-deep'
                 }`
               }
             >
@@ -305,7 +303,7 @@ function MaargMitra() {
 
       window.speechSynthesis?.speak(u)
 
-    } catch (e) {}
+    } catch (e) { }
   }
 
 
@@ -530,9 +528,9 @@ function MaargMitra() {
     pos.y - ph - 12 > 8
       ? pos.y - ph - 12
       : Math.min(
-          pos.y + 68,
-          window.innerHeight - ph - 8
-        )
+        pos.y + 68,
+        window.innerHeight - ph - 8
+      )
 
 
   return (
@@ -549,12 +547,10 @@ function MaargMitra() {
         className="fixed z-[100] w-14 h-14 rounded-full bg-indigo text-cream shadow-2xl flex items-center justify-center hover:bg-indigo-light transition-colors touch-none cursor-grab active:cursor-grabbing"
         title="MAARG-MITRA"
       >
-
-        {listening
-          ? <Volume2 size={24} className="pulse" />
-          : <Mic size={24} />
-        }
-
+        <div className={`delivery-girl ${listening ? 'pulse' : ''}`}>
+          👩🏻‍🦰
+          <span>📦</span>
+        </div>
       </button>
 
 
@@ -593,19 +589,17 @@ function MaargMitra() {
 
               <div
                 key={i}
-                className={`flex ${
-                  x.who === 'me'
+                className={`flex ${x.who === 'me'
                     ? 'justify-end'
                     : ''
-                }`}
+                  }`}
               >
 
                 <div
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-[12.5px] leading-relaxed ${
-                    x.who === 'me'
+                  className={`max-w-[85%] rounded-lg px-3 py-2 text-[12.5px] leading-relaxed ${x.who === 'me'
                       ? 'bg-indigo text-cream'
                       : 'bg-white border border-gold/30'
-                  }`}
+                    }`}
                 >
                   {x.msg}
                 </div>

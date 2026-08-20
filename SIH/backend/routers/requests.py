@@ -32,7 +32,7 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
 
     trip_default_dist = trip.distance_km if (trip and trip.distance_km and trip.distance_km > 0) else 150.0
     
-    exact_dist = calculate_haversine_km(req.pickup_lat, req.pickup_lng, req.delivery_lat, req.delivery_lng)
+    exact_dist = calculate_haversine_km(req.pickup_lat or 0.0, req.pickup_lng or 0.0, req.delivery_lat or 0.0, req.delivery_lng or 0.0)
     if exact_dist > 0:
         dist = exact_dist
     else:
@@ -47,7 +47,7 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
     share = req.per_person_share or 0.0
 
     if trip:
-        total_driver_amount = trip.total_driver_amount if (trip.total_driver_amount and trip.total_driver_amount > 0) else float(trip.price_per_kg * trip.total_kg)
+        total_driver_amount = trip.total_driver_amount if (trip.total_driver_amount and trip.total_driver_amount > 0) else float((trip.price_per_kg or 0) * (trip.total_kg or 1000))
         total_payload, total_kg_km, *rest = recalculate_trip_cost_shares(trip, db)
         if total_kg_km > 0 and total_driver_amount > 0:
             share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)

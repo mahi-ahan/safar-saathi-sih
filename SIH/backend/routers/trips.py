@@ -52,7 +52,7 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
         models.RequestModel.status.in_(["pending", "accepted", "in_transit", "pending_passenger_confirmation", "completed", "assigned"])
     ).all()
 
-    total_driver_amount = trip.total_driver_amount if (trip.total_driver_amount and trip.total_driver_amount > 0) else float(trip.price_per_kg * trip.total_kg)
+    total_driver_amount = trip.total_driver_amount if (trip.total_driver_amount and trip.total_driver_amount > 0) else float((trip.price_per_kg or 0) * (trip.total_kg or 1000))
     trip_default_dist = trip.distance_km if (trip.distance_km and trip.distance_km > 0) else 150.0
 
     total_payload = sum(req.goods_weight_kg if req.goods_weight_kg is not None else (req.kg or 0) for req in active_requests)
@@ -63,7 +63,7 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
         req_weight = float(req.goods_weight_kg if req.goods_weight_kg is not None else (req.kg or 0))
         
         # Calculate exact distance from locked-in pickup & delivery coordinates if available
-        exact_dist = calculate_haversine_km(req.pickup_lat, req.pickup_lng, req.delivery_lat, req.delivery_lng)
+        exact_dist = calculate_haversine_km(req.pickup_lat or 0.0, req.pickup_lng or 0.0, req.delivery_lat or 0.0, req.delivery_lng or 0.0)
         if exact_dist > 0:
             req_dist = exact_dist
         else:
@@ -83,8 +83,9 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
         req.per_person_share = share
 
     # 3. Calculate dynamic used percentage and available capacity in kg
-    available_space = max(0, trip.total_kg - total_payload)
-    space_used_pct = min(100, round((total_payload / trip.total_kg) * 100)) if trip.total_kg > 0 else 0
+    trip_capacity = trip.total_kg if (trip.total_kg and trip.total_kg > 0) else 1000
+    available_space = max(0, trip_capacity - total_payload)
+    space_used_pct = min(100, round((total_payload / trip_capacity) * 100)) if trip_capacity > 0 else 0
     trip.pct = space_used_pct
 
     db.commit()
@@ -135,33 +136,33 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
     total_payload, total_kg_km, available_space, space_used_pct, count = recalculate_trip_cost_shares(trip, db)
     return schemas.TripResponse(
         id=trip.id,
-        state=trip.state,
-        from_loc=trip.from_loc,
-        to_loc=trip.to_loc,
-        date=trip.date,
-        vehicle=trip.vehicle,
-        owner=trip.owner,
-        verified=trip.verified,
-        pct=space_used_pct,
-        space_used_percentage=space_used_pct,
-        total_kg=trip.total_kg,
-        available_space_kg=available_space,
-        price_per_kg=trip.price_per_kg,
-        total_driver_amount=trip.total_driver_amount,
+        state=trip.state or "",
+        from_loc=trip.from_loc or "",
+        to_loc=trip.to_loc or "",
+        date=trip.date or "",
+        vehicle=trip.vehicle or "",
+        owner=trip.owner or "",
+        verified=bool(trip.verified),
+        pct=space_used_pct or 0,
+        space_used_percentage=space_used_pct or 0,
+        total_kg=trip.total_kg or 0,
+        available_space_kg=available_space or 0,
+        price_per_kg=trip.price_per_kg or 0,
+        total_driver_amount=trip.total_driver_amount or 0.0,
         distance_km=trip.distance_km or 150.0,
-        pickup=trip.pickup,
-        lat=trip.lat,
-        lng=trip.lng,
+        pickup=trip.pickup or "",
+        lat=trip.lat or 0.0,
+        lng=trip.lng or 0.0,
         dest_lat=trip.dest_lat or 0.0,
         dest_lng=trip.dest_lng or 0.0,
         pickup_lat=trip.pickup_lat or trip.lat or 0.0,
         pickup_lng=trip.pickup_lng or trip.lng or 0.0,
-        status=trip.status,
-        is_live=trip.is_live,
-        speed=trip.speed,
-        total_booked_kg=total_payload,
-        total_kg_km=total_kg_km,
-        passenger_count=count
+        status=trip.status or "scheduled",
+        is_live=bool(trip.is_live),
+        speed=trip.speed or 0.0,
+        total_booked_kg=total_payload or 0,
+        total_kg_km=total_kg_km or 0.0,
+        passenger_count=count or 0
     )
 
 
@@ -344,6 +345,9 @@ def update_trip_status(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
+    if status in ("cancelled", "cancelled_by_driver") and trip.status not in ["pending", "scheduled"]:
+        raise HTTPException(status_code=400, detail="Cannot cancel a trip that has already started.")
+
     trip.status = status
     if status == "in_transit":
         trip.is_live = True
@@ -496,6 +500,9 @@ def cancel_trip(
     trip = db.query(models.TripModel).filter(models.TripModel.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+    if trip.status not in ["pending", "scheduled"]:
+        raise HTTPException(status_code=400, detail="Cannot cancel a trip that has already started.")
 
     trip.status = "cancelled_by_driver"
     trip.is_live = False

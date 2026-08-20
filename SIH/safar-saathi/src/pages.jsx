@@ -2216,7 +2216,12 @@ export function OfferTrip() {
   };
 
   const cancelTrip = async (tripId) => {
-    if (!window.confirm("Are you sure you want to cancel this trip? All connected passengers will be notified immediately.")) {
+    const targetTrip = myTrips.find(t => t.id === tripId);
+    if (targetTrip && targetTrip.status !== 'pending' && targetTrip.status !== 'scheduled') {
+      notify("⚠ Cannot cancel a trip that has already started.");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to cancel this scheduled trip? All connected passengers will be notified immediately.")) {
       return;
     }
     if (liveIntervalRef.current) {
@@ -2242,7 +2247,8 @@ export function OfferTrip() {
           setIncomingRequests(reqData);
         }
       } else {
-        notify("⚠ Failed to cancel trip.");
+        const errData = await res.json().catch(() => ({}));
+        notify(errData.detail || "⚠ Failed to cancel trip.");
       }
     } catch (err) {
       console.error("Failed to cancel trip", err);
@@ -2971,36 +2977,33 @@ export function OfferTrip() {
                             <MapPin size={15} />
                             Start Trip & Share GPS
                           </button>
-                          <button
-                            onClick={() => cancelTrip(trip.id)}
-                            className="px-3.5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
-                            title="Cancel this trip"
-                          >
-                            <X size={15} />
-                            Cancel
-                          </button>
+                          {(trip.status === 'scheduled' || trip.status === 'pending' || !trip.status) && (
+                            <button
+                              onClick={() => cancelTrip(trip.id)}
+                              className="px-3.5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                              title="Cancel this scheduled trip"
+                            >
+                              <X size={15} />
+                              Cancel
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="w-full space-y-2">
-                          <div className="text-xs text-green-900 font-semibold bg-green-100 border border-green-300 p-2 rounded-xl flex items-center justify-between">
-                            <span>📡 Live GPS Broadcasting ({trip.speed || 35} km/h)</span>
-                            <span className="w-2 h-2 rounded-full bg-green-600 animate-ping"></span>
+                          <div className="text-xs text-green-900 font-semibold bg-green-100 border border-green-300 p-2.5 rounded-xl flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 font-bold">
+                              <span>📡</span>
+                              <span>Live GPS Broadcasting ({trip.speed || 35} km/h)</span>
+                            </span>
+                            <span className="w-2.5 h-2.5 rounded-full bg-green-600 animate-ping"></span>
                           </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => driverCompleteTrip(trip.id)}
-                              className="flex-1 py-2 bg-green-deep hover:bg-green text-white font-semibold text-xs rounded-xl shadow-sm transition cursor-pointer"
-                            >
-                              Mark Ride Complete
-                            </button>
-                            <button
-                              onClick={() => cancelTrip(trip.id)}
-                              className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1 cursor-pointer"
-                            >
-                              <X size={14} />
-                              Cancel Ride
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => driverCompleteTrip(trip.id)}
+                            className="w-full py-2.5 bg-green-deep hover:bg-green text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <span>🏁</span>
+                            <span>Complete Ride & Request Passenger Confirmation</span>
+                          </button>
                         </div>
                       )}
                     </div>

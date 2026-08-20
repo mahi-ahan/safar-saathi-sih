@@ -47,21 +47,21 @@ class UserResponse(BaseModel):
 # ==================================================
 
 class TripCreate(BaseModel):
-    state: str
-    from_loc: str
-    to_loc: str
-    date: str
-    vehicle: str
-    owner: str
-    verified: bool = True
-    pct: int = 0
-    total_kg: int = 1000
-    price_per_kg: int = 0
+    state: Optional[str] = ""
+    from_loc: Optional[str] = ""
+    to_loc: Optional[str] = ""
+    date: Optional[str] = ""
+    vehicle: Optional[str] = ""
+    owner: Optional[str] = ""
+    verified: Optional[bool] = True
+    pct: Optional[int] = 0
+    total_kg: Optional[int] = 1000
+    price_per_kg: Optional[float] = 0.0
     total_driver_amount: Optional[float] = 0.0
     distance_km: Optional[float] = 150.0
-    pickup: str
-    lat: float = 0.0
-    lng: float = 0.0
+    pickup: Optional[str] = ""
+    lat: Optional[float] = 0.0
+    lng: Optional[float] = 0.0
     dest_lat: Optional[float] = 0.0
     dest_lng: Optional[float] = 0.0
     pickup_lat: Optional[float] = 0.0
@@ -73,9 +73,9 @@ class TripCreate(BaseModel):
 
 class TripResponse(TripCreate):
     id: int
-    total_booked_kg: Optional[int] = 0
-    available_space_kg: Optional[int] = 0
-    space_used_percentage: Optional[int] = 0
+    total_booked_kg: Optional[float] = 0.0
+    available_space_kg: Optional[float] = 0.0
+    space_used_percentage: Optional[float] = 0.0
     total_kg_km: Optional[float] = 0.0
     passenger_count: Optional[int] = 0
 
@@ -99,11 +99,11 @@ class TripLocationUpdate(BaseModel):
 
 class RequestCreate(BaseModel):
     id: str
-    route: str
-    vehicle: str
-    owner: str
-    farmer_name: str
-    kg: int
+    route: Optional[str] = ""
+    vehicle: Optional[str] = ""
+    owner: Optional[str] = ""
+    farmer_name: Optional[str] = ""
+    kg: Optional[int] = 0
     goods_weight_kg: Optional[int] = None
     distance_km: Optional[float] = 150.0
     pickup_place: Optional[str] = None
@@ -115,7 +115,7 @@ class RequestCreate(BaseModel):
 
 
 class RequestResponse(RequestCreate):
-    status: str
+    status: Optional[str] = "pending"
     goods_weight_kg: Optional[int] = None
     distance_km: Optional[float] = 150.0
     kg_km: Optional[float] = 0.0
@@ -123,7 +123,7 @@ class RequestResponse(RequestCreate):
     share_pct: Optional[float] = 0.0
     per_person_share: Optional[float] = 0.0
     total_driver_amount: Optional[float] = 0.0
-    total_payload_kg: Optional[int] = 0
+    total_payload_kg: Optional[float] = 0.0
     pickup_date: Optional[str] = None
     pickup_time: Optional[str] = None
     pickup_place: Optional[str] = None

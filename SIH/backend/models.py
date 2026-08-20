@@ -17,9 +17,15 @@ class TripModel(Base):
   pct = Column(Integer, default=0)
   total_kg = Column(Integer, default=1000)
   price_per_kg = Column(Integer, default=0)
+  total_driver_amount = Column(Float, default=0.0)
+  distance_km = Column(Float, default=150.0)
   pickup = Column(String)
   lat = Column(Float, default=0.0)
   lng = Column(Float, default=0.0)
+  dest_lat = Column(Float, nullable=True, default=0.0)
+  dest_lng = Column(Float, nullable=True, default=0.0)
+  pickup_lat = Column(Float, nullable=True, default=0.0)
+  pickup_lng = Column(Float, nullable=True, default=0.0)
   status = Column(String, default="scheduled")
   is_live = Column(Boolean, default=False)
   speed = Column(Float, default=0.0)
@@ -35,12 +41,25 @@ class RequestModel(Base):
   owner = Column(String)
   farmer_name = Column(String)
   kg = Column(Integer)
+  goods_weight_kg = Column(Integer, nullable=True)
+  distance_km = Column(Float, default=150.0)
+  kg_km = Column(Float, default=0.0)
+  per_person_share = Column(Float, default=0.0)
   user_id = Column(Integer, nullable=True)
   pickup_date = Column(String, nullable=True)
   pickup_time = Column(String, nullable=True)
   pickup_place = Column(String, nullable=True)
   delivery_date = Column(String, nullable=True)
+  pickup_lat = Column(Float, nullable=True, default=0.0)
+  pickup_lng = Column(Float, nullable=True, default=0.0)
+  delivery_lat = Column(Float, nullable=True, default=0.0)
+  delivery_lng = Column(Float, nullable=True, default=0.0)
   reason = Column(String, nullable=True)
+  rating = Column(Integer, nullable=True)
+  feedback = Column(String, nullable=True)
+
+
+
   
   
   

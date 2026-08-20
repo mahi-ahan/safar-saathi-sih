@@ -20,10 +20,53 @@ from routers import admins
 
 
 # =========================================================
-# DATABASE TABLE CREATION
+# DATABASE TABLE CREATION & AUTOMATIC MIGRATION
 # =========================================================
 
 models.Base.metadata.create_all(bind=engine)
+
+def auto_migrate():
+    from sqlalchemy import text
+    migrations = [
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS total_driver_amount FLOAT DEFAULT 0.0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS distance_km FLOAT DEFAULT 150.0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS dest_lat FLOAT DEFAULT 0.0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS dest_lng FLOAT DEFAULT 0.0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS pickup_lat FLOAT DEFAULT 0.0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS pickup_lng FLOAT DEFAULT 0.0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS is_live BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS speed FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS goods_weight_kg INTEGER;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS distance_km FLOAT DEFAULT 150.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS kg_km FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS per_person_share FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS pickup_date VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS pickup_time VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS pickup_place VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS delivery_date VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS pickup_lat FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS pickup_lng FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS delivery_lat FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS delivery_lng FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS reason VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS rating INTEGER;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS feedback VARCHAR;",
+
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception as e:
+                print(f"Migration notice: {e}")
+
+try:
+    auto_migrate()
+except Exception as e:
+    print(f"Auto-migration warning: {e}")
+
 
 
 # =========================================================

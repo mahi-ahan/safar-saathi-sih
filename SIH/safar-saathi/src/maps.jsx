@@ -256,7 +256,8 @@ function Maps({
   trips = [],
   selectedTripId = null,
   onTripSelect = null,
-  activeRequest = null
+  activeRequest = null,
+  focusMode = null
 }) {
   const mapRef = useRef(null)
   const leafletMapRef = useRef(null)
@@ -317,87 +318,20 @@ function Maps({
       position: 'bottomright'
     }).addTo(map)
 
-
-    trips.forEach(trip => {
-
-      if (
-        trip.lat === undefined ||
-        trip.lng === undefined
-      ) {
-        return
-      }
-
-
-      const marker = L.marker(
-        [trip.lat, trip.lng]
-      )
-        .addTo(map)
-        .bindPopup(`
-          <div style="
-            min-width:180px;
-            font-family:Arial,sans-serif;
-          ">
-
-            <b style="font-size:14px;">
-              🚚 ${trip.from} → ${trip.to}
-            </b>
-
-            <br/>
-
-            <span>
-              👤 ${trip.owner}
-            </span>
-
-            <br/>
-
-            <span>
-              🚛 ${trip.vehicle}
-            </span>
-
-            <br/>
-
-            <span>
-              📍 ${trip.pickup}
-            </span>
-
-          </div>
-        `)
-
-
-      marker.on('click', () => {
-
-        if (onTripSelect) {
-          onTripSelect(trip)
-        }
-
-      })
-
-
-      markersRef.current[trip.id] =
-        marker
-
-    })
-
-
     setLoading(false)
 
-
     return () => {
-
       if (leafletMapRef.current) {
-
         leafletMapRef.current.remove()
-
         leafletMapRef.current = null
       }
-
     }
 
   }, [mode])
 
 
   /* =====================================================
-     UPDATE FIND VEHICLE MARKERS
+     UPDATE FIND VEHICLE INDEPENDENT MARKERS
   ===================================================== */
 
   useEffect(() => {
@@ -409,47 +343,38 @@ function Maps({
       return
     }
 
-    const map =
-      leafletMapRef.current
+    const map = leafletMapRef.current
 
-
-    Object.values(
-      markersRef.current
-    ).forEach(marker => {
-
+    Object.values(markersRef.current).forEach(marker => {
       map.removeLayer(marker)
-
     })
-
 
     markersRef.current = {}
 
-
     trips.forEach(trip => {
-
       if (
         trip.lat === undefined ||
         trip.lng === undefined ||
-        (trip.lat === 0 && trip.lng === 0)
+        (trip.lat === 0 && trip.lng === 0) ||
+        trip.status === 'cancelled_by_driver' ||
+        trip.status === 'cancelled' ||
+        trip.status === 'completed'
       ) {
         return
       }
 
       const isLive = trip.status === 'in_transit' || trip.is_live;
-      const markerIcon = isLive ? getTruckIcon('Moving') : undefined;
+      const truckIcon = isLive ? getTruckIcon('Moving') : getTruckIcon('Stopped');
 
-      const marker = L.marker(
+      // 1. Independent Live Driver / Vehicle Location Marker
+      const driverMarker = L.marker(
         [trip.lat, trip.lng],
-        markerIcon ? { icon: markerIcon } : {}
+        { icon: truckIcon }
       )
         .addTo(map)
         .bindPopup(`
-          <div style="
-            min-width:200px;
-            font-family:Arial,sans-serif;
-            padding: 4px;
-          ">
-            ${isLive ? `<div style="background:#22c55e;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">🔴 LIVE IN-TRANSIT (${trip.speed || 35} km/h)</div><br/>` : ''}
+          <div style="min-width:210px;font-family:Arial,sans-serif;padding:4px;">
+            ${isLive ? `<div style="background:#22c55e;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">🔴 LIVE IN-TRANSIT (${trip.speed || 35} km/h)</div><br/>` : `<div style="background:#4b5563;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">🚛 SCHEDULED VEHICLE</div><br/>`}
             <b style="font-size:14px;color:#1F3D2B;">
               🚚 ${trip.from || trip.from_loc} → ${trip.to || trip.to_loc}
             </b>
@@ -458,32 +383,76 @@ function Maps({
             <br/>
             <span style="font-size:12px;color:#4b5563;">🚛 Vehicle: ${trip.vehicle}</span>
             <br/>
-            <span style="font-size:12px;color:#4b5563;">📍 Pickup: ${trip.pickup}</span>
-            <br/>
             <span style="font-size:12px;color:#166534;font-weight:600;">Status: ${(trip.status || 'scheduled').toUpperCase()}</span>
           </div>
-        `)
+        `);
+
+      driverMarker.on('click', () => {
+        if (onTripSelect) onTripSelect(trip);
+      });
+      markersRef.current[`driver_${trip.id}`] = driverMarker;
+
+      // 2. Independent Pickup Location Marker
+      const pLat = trip.pickup_lat || trip.lat;
+      const pLng = trip.pickup_lng || trip.lng;
+      if (pLat && pLng) {
+        const pickupIcon = L.divIcon({
+          className: 'pickup-point-icon',
+          html: `<div style="background:#f59e0b;color:white;width:28px;height:28px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:12px;">📦</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const pickupMarker = L.marker(
+          [pLat, pLng],
+          { icon: pickupIcon }
+        )
+          .addTo(map)
+          .bindPopup(`
+            <div style="min-width:200px;font-family:Arial,sans-serif;padding:4px;">
+              <div style="background:#f59e0b;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">📦 PICKUP LOCATION</div><br/>
+              <b style="font-size:13px;color:#1F3D2B;">${trip.pickup || trip.from || 'Pickup Point'}</b><br/>
+              <span style="font-size:12px;color:#4b5563;">🚛 Vehicle: ${trip.vehicle} (${trip.owner})</span><br/>
+              <span style="font-size:12px;color:#166534;font-weight:600;">Available: ${trip.available_space_kg ?? (trip.total_kg || 1000)} kg</span>
+            </div>
+          `);
+
+        pickupMarker.on('click', () => {
+          if (onTripSelect) onTripSelect(trip);
+        });
+        markersRef.current[`pickup_${trip.id}`] = pickupMarker;
+      }
+    });
+
+  }, [trips, mode, onTripSelect])
 
 
-      marker.on('click', () => {
+  /* =====================================================
+     SMOOTH TARGET FOCUSING (PICKUP vs LIVE DRIVER)
+  ===================================================== */
 
-        if (onTripSelect) {
-          onTripSelect(trip)
-        }
+  useEffect(() => {
+    if (mode !== 'findVehicle' || !leafletMapRef.current || !focusMode) return;
+    const map = leafletMapRef.current;
+    const { type, lat, lng, tripId } = focusMode;
+    if (!lat || !lng) return;
 
-      })
+    map.flyTo([lat, lng], type === 'live_driver' ? 15 : 14, {
+      animate: true,
+      duration: 1.2
+    });
 
+    const targetMarkerKey = type === 'live_driver' ? `driver_${tripId}` : `pickup_${tripId}`;
+    const marker = markersRef.current[targetMarkerKey] || markersRef.current[tripId];
+    if (marker) {
+      setTimeout(() => {
+        try {
+          marker.openPopup();
+        } catch (e) {}
+      }, 500);
+    }
+  }, [focusMode, mode]);
 
-      markersRef.current[trip.id] =
-        marker
-
-    })
-
-  }, [
-    trips,
-    mode,
-    onTripSelect
-  ])
 
 
   /* =====================================================
@@ -506,7 +475,10 @@ function Maps({
     }
 
     const trip = trips.find(item => item.id === selectedTripId);
-    if (!trip) return;
+    if (!trip || trip.status === 'cancelled_by_driver' || trip.status === 'cancelled') {
+      setRouteInfo(null);
+      return;
+    }
 
     let isMounted = true;
 
@@ -518,6 +490,7 @@ function Maps({
 
         let destLat = trip.destLat;
         let destLng = trip.destLng;
+
 
         if (!destLat || !destLng) {
           const destResolved = await geocodeIndianLocation(trip.to || trip.to_loc);

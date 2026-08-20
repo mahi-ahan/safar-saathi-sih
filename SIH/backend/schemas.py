@@ -57,9 +57,15 @@ class TripCreate(BaseModel):
     pct: int = 0
     total_kg: int = 1000
     price_per_kg: int = 0
+    total_driver_amount: Optional[float] = 0.0
+    distance_km: Optional[float] = 150.0
     pickup: str
     lat: float = 0.0
     lng: float = 0.0
+    dest_lat: Optional[float] = 0.0
+    dest_lng: Optional[float] = 0.0
+    pickup_lat: Optional[float] = 0.0
+    pickup_lng: Optional[float] = 0.0
     status: Optional[str] = "scheduled"
     is_live: Optional[bool] = False
     speed: Optional[float] = 0.0
@@ -67,9 +73,15 @@ class TripCreate(BaseModel):
 
 class TripResponse(TripCreate):
     id: int
+    total_booked_kg: Optional[int] = 0
+    available_space_kg: Optional[int] = 0
+    space_used_percentage: Optional[int] = 0
+    total_kg_km: Optional[float] = 0.0
+    passenger_count: Optional[int] = 0
 
     class Config:
         from_attributes = True
+
 
 
 class TripLocationUpdate(BaseModel):
@@ -92,18 +104,48 @@ class RequestCreate(BaseModel):
     owner: str
     farmer_name: str
     kg: int
+    goods_weight_kg: Optional[int] = None
+    distance_km: Optional[float] = 150.0
+    pickup_place: Optional[str] = None
+    delivery_date: Optional[str] = None
+    pickup_lat: Optional[float] = 0.0
+    pickup_lng: Optional[float] = 0.0
+    delivery_lat: Optional[float] = 0.0
+    delivery_lng: Optional[float] = 0.0
 
 
 class RequestResponse(RequestCreate):
     status: str
+    goods_weight_kg: Optional[int] = None
+    distance_km: Optional[float] = 150.0
+    kg_km: Optional[float] = 0.0
+    total_trip_kg_km: Optional[float] = 0.0
+    share_pct: Optional[float] = 0.0
+    per_person_share: Optional[float] = 0.0
+    total_driver_amount: Optional[float] = 0.0
+    total_payload_kg: Optional[int] = 0
     pickup_date: Optional[str] = None
     pickup_time: Optional[str] = None
     pickup_place: Optional[str] = None
     delivery_date: Optional[str] = None
+    pickup_lat: Optional[float] = 0.0
+    pickup_lng: Optional[float] = 0.0
+    delivery_lat: Optional[float] = 0.0
+    delivery_lng: Optional[float] = 0.0
     reason: Optional[str] = None
+    rating: Optional[int] = None
+    feedback: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+
+class ConfirmCompletionRequest(BaseModel):
+    rating: Optional[int] = 5
+    feedback: Optional[str] = None
+
+
 
     # ==================================================
 # GOOGLE AUTH & PROFILE SCHEMAS (NEW)

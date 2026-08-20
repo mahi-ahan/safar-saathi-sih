@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List, Optional
 
 import models
 import schemas
-
 from database import get_db
 from auth.dependencies import require_roles, get_current_user
-
+from routers.trips import recalculate_trip_cost_shares, calculate_haversine_km, check_and_finalize_trip_completion
 
 router = APIRouter(
     prefix="/api/requests",
@@ -14,9 +14,81 @@ router = APIRouter(
 )
 
 
+
+def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schemas.RequestResponse:
+    """
+    Serializes a RequestModel with real-time distance-and-weight (Ton-Km) proportional cost share and trip payload metadata.
+    """
+    weight = req.goods_weight_kg if req.goods_weight_kg is not None else (req.kg or 0)
+    
+    # Locate linked trip
+    trip = None
+    if req.owner and req.route:
+        all_trips = db.query(models.TripModel).filter(models.TripModel.owner == req.owner).all()
+        for t in all_trips:
+            if f"{t.from_loc} → {t.to_loc}" == req.route:
+                trip = t
+                break
+
+    trip_default_dist = trip.distance_km if (trip and trip.distance_km and trip.distance_km > 0) else 150.0
+    
+    exact_dist = calculate_haversine_km(req.pickup_lat, req.pickup_lng, req.delivery_lat, req.delivery_lng)
+    if exact_dist > 0:
+        dist = exact_dist
+    else:
+        dist = float(req.distance_km if (req.distance_km and req.distance_km > 0) else trip_default_dist)
+        
+    req.distance_km = dist
+    req.kg_km = round(float(weight) * float(dist), 2)
+
+    total_driver_amount = 0.0
+    total_payload = weight
+    total_kg_km = req.kg_km
+    share = req.per_person_share or 0.0
+
+    if trip:
+        total_driver_amount = trip.total_driver_amount if (trip.total_driver_amount and trip.total_driver_amount > 0) else float(trip.price_per_kg * trip.total_kg)
+        total_payload, total_kg_km, *rest = recalculate_trip_cost_shares(trip, db)
+        if total_kg_km > 0 and total_driver_amount > 0:
+            share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)
+            req.per_person_share = share
+            db.commit()
+
+    share_pct = round((req.kg_km / total_kg_km * 100), 1) if total_kg_km > 0 else 100.0
+
+    return schemas.RequestResponse(
+        id=req.id,
+        route=req.route,
+        vehicle=req.vehicle,
+        owner=req.owner,
+        farmer_name=req.farmer_name,
+        kg=req.kg,
+        goods_weight_kg=weight,
+        distance_km=dist,
+        kg_km=req.kg_km,
+        total_trip_kg_km=total_kg_km,
+        share_pct=share_pct,
+        status=req.status,
+        per_person_share=share,
+        total_driver_amount=total_driver_amount,
+        total_payload_kg=total_payload,
+        pickup_date=req.pickup_date,
+        pickup_time=req.pickup_time,
+        pickup_place=req.pickup_place,
+        delivery_date=req.delivery_date,
+        pickup_lat=req.pickup_lat or 0.0,
+        pickup_lng=req.pickup_lng or 0.0,
+        delivery_lat=req.delivery_lat or 0.0,
+        delivery_lng=req.delivery_lng or 0.0,
+        reason=req.reason,
+        rating=req.rating,
+        feedback=req.feedback
+    )
+
+
 # ==================================================
 # CREATE REQUEST
-# USER ONLY
+# USER, DRIVER, ADMIN
 # ==================================================
 
 @router.post(
@@ -26,14 +98,35 @@ router = APIRouter(
 def create_request(
     req: schemas.RequestCreate,
     db: Session = Depends(get_db),
-
     current_user=Depends(
-        require_roles("user")
+        require_roles("user", "driver", "admin")
     )
 ):
+    weight = req.goods_weight_kg if req.goods_weight_kg is not None else req.kg
+    
+    # Calculate exact distance from locked-in pickup & delivery coordinates if provided
+    exact_dist = calculate_haversine_km(req.pickup_lat, req.pickup_lng, req.delivery_lat, req.delivery_lng)
+    if exact_dist > 0:
+        dist = exact_dist
+    else:
+        dist = req.distance_km if (req.distance_km and req.distance_km > 0) else 150.0
 
     db_req = models.RequestModel(
-        **req.model_dump(),
+        id=req.id,
+        route=req.route,
+        vehicle=req.vehicle,
+        owner=req.owner,
+        farmer_name=req.farmer_name,
+        kg=req.kg,
+        goods_weight_kg=weight,
+        distance_km=dist,
+        kg_km=round(float(weight) * float(dist), 2),
+        pickup_place=req.pickup_place,
+        delivery_date=req.delivery_date,
+        pickup_lat=req.pickup_lat or 0.0,
+        pickup_lng=req.pickup_lng or 0.0,
+        delivery_lat=req.delivery_lat or 0.0,
+        delivery_lng=req.delivery_lng or 0.0,
         status="pending",
         user_id=current_user.id
     )
@@ -42,12 +135,21 @@ def create_request(
     db.commit()
     db.refresh(db_req)
 
-    return db_req
+    # Recalculate trip cost shares & capacity for linked trip
+    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == req.owner).all()
+    for t in all_trips:
+        if f"{t.from_loc} → {t.to_loc}" == req.route:
+            recalculate_trip_cost_shares(t, db)
+            break
+
+    return serialize_request_with_cost(db_req, db)
+
+
 
 
 # ==================================================
 # GET MY REQUESTS
-# USER ONLY
+# USER, DRIVER, ADMIN
 # ==================================================
 
 @router.get(
@@ -56,13 +158,11 @@ def create_request(
 )
 def get_my_requests(
     db: Session = Depends(get_db),
-
     current_user=Depends(
-        require_roles("user")
+        require_roles("user", "driver", "admin")
     )
 ):
-
-    return (
+    requests = (
         db.query(models.RequestModel)
         .filter(
             models.RequestModel.user_id
@@ -70,6 +170,8 @@ def get_my_requests(
         )
         .all()
     )
+    return [serialize_request_with_cost(r, db) for r in requests]
+
 
 
 # ==================================================
@@ -90,8 +192,7 @@ def get_incoming_requests(
 ):
     """
     Returns requests sent to the current driver's published
-    trips. A driver matches by the owner name stored on the
-    request against their profile's full_name.
+    trips with real-time calculated cost shares.
     """
     from models import UserProfile, TripModel
 
@@ -122,13 +223,14 @@ def get_incoming_requests(
     # Collect owners to match
     owner_names = {t.owner for t in my_trips}
 
-    return (
+    requests = (
         db.query(models.RequestModel)
         .filter(
             models.RequestModel.owner.in_(owner_names)
         )
         .all()
     )
+    return [serialize_request_with_cost(r, db) for r in requests]
 
 
 # ==================================================
@@ -139,14 +241,11 @@ def get_incoming_requests(
 @router.delete("/{request_id}")
 def cancel_request(
     request_id: str,
-
     db: Session = Depends(get_db),
-
     current_user=Depends(
-        require_roles("user")
+        require_roles("user", "driver", "admin")
     )
 ):
-
     request = (
         db.query(models.RequestModel)
         .filter(
@@ -156,31 +255,34 @@ def cancel_request(
     )
 
     if not request:
-
         raise HTTPException(
             status_code=404,
             detail="Request not found"
         )
 
     # Make sure the user owns this request
-
     if request.user_id != current_user.id:
-
         raise HTTPException(
             status_code=403,
             detail="You cannot cancel this request"
         )
 
-    if request.status != "pending":
-
+    if request.status not in ["pending", "accepted", "assigned"]:
         raise HTTPException(
             status_code=400,
-            detail="Only pending requests can be cancelled"
+            detail="This request cannot be cancelled in its current state"
         )
 
     request.status = "cancelled"
-
     db.commit()
+
+    # Recalculate remaining passengers' shares and check completion for linked trip
+    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
+    for t in all_trips:
+        if f"{t.from_loc} → {t.to_loc}" == request.route:
+            check_and_finalize_trip_completion(t, db)
+            recalculate_trip_cost_shares(t, db)
+            break
 
     return {
         "message": "Request cancelled successfully"
@@ -203,11 +305,11 @@ def get_all_requests(
         require_roles("admin")
     )
 ):
-
-    return (
+    requests = (
         db.query(models.RequestModel)
         .all()
     )
+    return [serialize_request_with_cost(r, db) for r in requests]
 
 
 # ==================================================
@@ -219,9 +321,8 @@ def get_all_requests(
 def update_request_status(
     request_id: str,
     status: str,
-
+    reason: str | None = None,
     db: Session = Depends(get_db),
-
     current_user=Depends(
         require_roles(
             "user",
@@ -230,7 +331,6 @@ def update_request_status(
         )
     )
 ):
-
     request = (
         db.query(models.RequestModel)
         .filter(
@@ -240,7 +340,6 @@ def update_request_status(
     )
 
     if not request:
-
         raise HTTPException(
             status_code=404,
             detail="Request not found"
@@ -251,20 +350,134 @@ def update_request_status(
         "accepted",
         "assigned",
         "in_transit",
+        "pending_passenger_confirmation",
         "completed",
-        "cancelled"
+        "cancelled",
+        "cancelled_by_driver"
     ]
 
     if status not in allowed_statuses:
-
         raise HTTPException(
             status_code=400,
             detail="Invalid request status"
         )
 
     request.status = status
+    if reason:
+        request.reason = reason
+    elif status == "cancelled_by_driver":
+        request.reason = "The driver has cancelled this ride."
 
     db.commit()
     db.refresh(request)
 
-    return request
+    # Recalculate trip cost shares and check completion
+    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
+    for t in all_trips:
+        if f"{t.from_loc} → {t.to_loc}" == request.route:
+            check_and_finalize_trip_completion(t, db)
+            recalculate_trip_cost_shares(t, db)
+            break
+
+    return serialize_request_with_cost(request, db)
+
+
+# ==================================================
+# PASSENGER CONFIRMS RIDE COMPLETION & RATES (TWO-WAY STEP 2)
+# ==================================================
+
+@router.put(
+    "/{request_id}/confirm-completion",
+    response_model=schemas.RequestResponse
+)
+def confirm_request_completion(
+    request_id: str,
+    payload: schemas.ConfirmCompletionRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(
+        require_roles("user", "driver", "admin")
+    )
+):
+    """
+    Passenger confirms receipt of goods / trip completion, submits rating (1-5) and feedback.
+    Officially marks the request as 'completed' and closes the trip if all active booked passengers have confirmed.
+    """
+    request = (
+        db.query(models.RequestModel)
+        .filter(
+            models.RequestModel.id == request_id
+        )
+        .first()
+    )
+
+    if not request:
+        raise HTTPException(
+            status_code=404,
+            detail="Request not found"
+        )
+
+    request.status = "completed"
+    if payload.rating is not None:
+        request.rating = max(1, min(5, payload.rating))
+    if payload.feedback is not None:
+        request.feedback = payload.feedback
+
+    db.commit()
+
+    # Check and finalize linked trip if all active booked passengers are confirmed
+    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
+    for t in all_trips:
+        if f"{t.from_loc} → {t.to_loc}" == request.route:
+            check_and_finalize_trip_completion(t, db)
+            recalculate_trip_cost_shares(t, db)
+            break
+
+    db.refresh(request)
+    return serialize_request_with_cost(request, db)
+
+
+# ==================================================
+# CANCEL REQUEST BY DRIVER
+# DRIVER + ADMIN
+# ==================================================
+
+@router.put("/{request_id}/driver-cancel")
+def driver_cancel_request(
+    request_id: str,
+    reason: str | None = "The driver has cancelled this ride.",
+    db: Session = Depends(get_db),
+    current_user=Depends(
+        require_roles("driver", "admin")
+    )
+):
+    request = (
+        db.query(models.RequestModel)
+        .filter(
+            models.RequestModel.id == request_id
+        )
+        .first()
+    )
+
+    if not request:
+        raise HTTPException(
+            status_code=404,
+            detail="Request not found"
+        )
+
+    request.status = "cancelled_by_driver"
+    request.reason = reason or "The driver has cancelled this ride."
+
+    db.commit()
+
+    # Recalculate remaining passengers' shares and check completion for linked trip
+    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
+    for t in all_trips:
+        if f"{t.from_loc} → {t.to_loc}" == request.route:
+            check_and_finalize_trip_completion(t, db)
+            recalculate_trip_cost_shares(t, db)
+            break
+
+    db.refresh(request)
+    return serialize_request_with_cost(request, db)
+
+

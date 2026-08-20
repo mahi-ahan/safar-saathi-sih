@@ -53,6 +53,12 @@ def main():
         """
         ALTER TABLE user_profiles 
         ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE
+        """,
+
+        # Add user_id to requests table
+        """
+        ALTER TABLE requests 
+        ADD COLUMN IF NOT EXISTS user_id INTEGER DEFAULT NULL
         """
     ]
 

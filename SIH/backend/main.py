@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+import os
 
 from database import get_db, engine
 import models
@@ -61,6 +63,15 @@ app.add_middleware(
 
 
 # =========================================================
+# STATIC FILES (for uploaded documents)
+# =========================================================
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+# =========================================================
 # SEED INITIAL TRIP DATA
 # =========================================================
 
@@ -75,8 +86,8 @@ def seed_data():
             initial_trips = [
                 models.TripModel(
                     state="Maharashtra",
-                    from_loc="Nashik",
-                    to_loc="Pune",
+                    from_loc="Nashik, Maharashtra",
+                    to_loc="Pune, Maharashtra",
                     date="2026-08-18",
                     vehicle="Pickup",
                     owner="Ramesh Patil",
@@ -84,17 +95,16 @@ def seed_data():
                     pct=62,
                     total_kg=900,
                     price_per_kg=10,
-                    pickup=(
-                        "Sinnar bypass toll, "
-                        "6:00 AM"
-                    ),
-                    lat=19.90,
-                    lng=73.85,
+                    pickup="Sinnar Bypass Toll Plaza, Nashik",
+                    lat=19.9975,
+                    lng=73.7898,
+                    status="scheduled",
+                    is_live=False
                 ),
                 models.TripModel(
                     state="Punjab",
-                    from_loc="Ludhiana",
-                    to_loc="Khanna",
+                    from_loc="Ludhiana, Punjab",
+                    to_loc="Khanna, Punjab",
                     date="2026-08-20",
                     vehicle="Mini truck",
                     owner="Gurpreet Singh",
@@ -102,17 +112,16 @@ def seed_data():
                     pct=30,
                     total_kg=1000,
                     price_per_kg=8,
-                    pickup=(
-                        "Grain market gate 2, "
-                        "5:30 AM"
-                    ),
-                    lat=30.90,
-                    lng=75.85,
+                    pickup="Grain Market Gate 2, Ludhiana",
+                    lat=30.9010,
+                    lng=75.8573,
+                    status="scheduled",
+                    is_live=False
                 ),
                 models.TripModel(
                     state="Uttar Pradesh",
-                    from_loc="Meerut",
-                    to_loc="Ghaziabad",
+                    from_loc="Meerut, Uttar Pradesh",
+                    to_loc="Ghaziabad, Uttar Pradesh",
                     date="2026-08-19",
                     vehicle="Tractor-trolley",
                     owner="Rajesh Yadav",
@@ -120,17 +129,16 @@ def seed_data():
                     pct=85,
                     total_kg=1000,
                     price_per_kg=6,
-                    pickup=(
-                        "Sadar mandi entrance, "
-                        "7:00 AM"
-                    ),
-                    lat=28.98,
-                    lng=77.70,
+                    pickup="Sadar Mandi Entrance, Meerut",
+                    lat=28.9845,
+                    lng=77.7064,
+                    status="scheduled",
+                    is_live=False
                 ),
                 models.TripModel(
                     state="Gujarat",
-                    from_loc="Rajkot",
-                    to_loc="Ahmedabad",
+                    from_loc="Rajkot, Gujarat",
+                    to_loc="Ahmedabad, Gujarat",
                     date="2026-08-22",
                     vehicle="Truck",
                     owner="Mahesh Bhai Patel",
@@ -138,12 +146,11 @@ def seed_data():
                     pct=45,
                     total_kg=2000,
                     price_per_kg=7,
-                    pickup=(
-                        "NH27 highway dhaba junction, "
-                        "5:00 AM"
-                    ),
-                    lat=22.30,
-                    lng=70.80,
+                    pickup="NH27 Highway Dhaba Junction, Rajkot",
+                    lat=22.3039,
+                    lng=70.8022,
+                    status="scheduled",
+                    is_live=False
                 ),
             ]
 
@@ -210,6 +217,11 @@ def get_auth_status(current_user: User = Depends(get_current_user), db: Session 
     if not full_name:
         full_name = current_user.username
     
+    # Build document URLs
+    BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+    aadhaar_doc_url = f"{BASE_URL}/uploads/{aadhaar_doc}" if aadhaar_doc else None
+    license_doc_url = f"{BASE_URL}/uploads/{license_doc}" if license_doc else None
+    
     return {
         "email": current_user.email,
         "is_profile_complete": is_complete,
@@ -218,7 +230,9 @@ def get_auth_status(current_user: User = Depends(get_current_user), db: Session 
         "gender": gender,
         "phone_number": phone_number,
         "aadhaar_doc": aadhaar_doc,
+        "aadhaar_doc_url": aadhaar_doc_url,
         "license_doc": license_doc,
+        "license_doc_url": license_doc_url,
         "is_verified": is_verified
     }
 

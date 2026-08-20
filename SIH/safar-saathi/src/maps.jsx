@@ -6,6 +6,7 @@ import React, {
 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { geocodeIndianLocation } from './ui'
 
 
 /* =========================================================
@@ -252,36 +253,25 @@ function getTruckIcon(status) {
 
 function Maps({
   mode = 'live',
-
   trips = [],
-
   selectedTripId = null,
-
-  onTripSelect = null
+  onTripSelect = null,
+  activeRequest = null
 }) {
-
   const mapRef = useRef(null)
-
   const leafletMapRef = useRef(null)
-
   const markersRef = useRef({})
-
   const routeLayersRef = useRef({})
-
+  const activeRouteLayersRef = useRef([])
+  const activeRouteMarkersRef = useRef([])
   const trucksRef = useRef([])
-
   const animationRef = useRef(null)
-
   const lastTimeRef = useRef(null)
-
   const selectedTruckIdRef = useRef(null)
 
-
-  const [selectedTruck, setSelectedTruck] =
-    useState(null)
-
-  const [trucks, setTrucks] =
-    useState([])
+  const [routeInfo, setRouteInfo] = useState(null)
+  const [selectedTruck, setSelectedTruck] = useState(null)
+  const [trucks, setTrucks] = useState([])
 
   const [loading, setLoading] =
     useState(true)
@@ -439,38 +429,38 @@ function Maps({
 
       if (
         trip.lat === undefined ||
-        trip.lng === undefined
+        trip.lng === undefined ||
+        (trip.lat === 0 && trip.lng === 0)
       ) {
         return
       }
 
+      const isLive = trip.status === 'in_transit' || trip.is_live;
+      const markerIcon = isLive ? getTruckIcon('Moving') : undefined;
 
       const marker = L.marker(
-        [trip.lat, trip.lng]
+        [trip.lat, trip.lng],
+        markerIcon ? { icon: markerIcon } : {}
       )
         .addTo(map)
         .bindPopup(`
           <div style="
-            min-width:180px;
+            min-width:200px;
             font-family:Arial,sans-serif;
+            padding: 4px;
           ">
-
-            <b>
-              🚚 ${trip.from} → ${trip.to}
+            ${isLive ? `<div style="background:#22c55e;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">🔴 LIVE IN-TRANSIT (${trip.speed || 35} km/h)</div><br/>` : ''}
+            <b style="font-size:14px;color:#1F3D2B;">
+              🚚 ${trip.from || trip.from_loc} → ${trip.to || trip.to_loc}
             </b>
-
             <br/>
-
-            👤 ${trip.owner}
-
+            <span style="font-size:12px;color:#4b5563;">👤 Owner: ${trip.owner}</span>
             <br/>
-
-            🚛 ${trip.vehicle}
-
+            <span style="font-size:12px;color:#4b5563;">🚛 Vehicle: ${trip.vehicle}</span>
             <br/>
-
-            📍 ${trip.pickup}
-
+            <span style="font-size:12px;color:#4b5563;">📍 Pickup: ${trip.pickup}</span>
+            <br/>
+            <span style="font-size:12px;color:#166534;font-weight:600;">Status: ${(trip.status || 'scheduled').toUpperCase()}</span>
           </div>
         `)
 
@@ -497,50 +487,156 @@ function Maps({
 
 
   /* =====================================================
-     FLY TO SELECTED VEHICLE
+     GOOGLE MAPS STYLE ROUTE RENDERER FOR SELECTED VEHICLE
   ===================================================== */
 
   useEffect(() => {
+    if (mode !== 'findVehicle' || !leafletMapRef.current) return;
+    const map = leafletMapRef.current;
 
-    if (
-      mode !== 'findVehicle' ||
-      !selectedTripId ||
-      !leafletMapRef.current
-    ) {
-      return
+    // Clean up previous route layers & markers
+    activeRouteLayersRef.current.forEach(layer => map.removeLayer(layer));
+    activeRouteLayersRef.current = [];
+    activeRouteMarkersRef.current.forEach(marker => map.removeLayer(marker));
+    activeRouteMarkersRef.current = [];
+
+    if (!selectedTripId) {
+      setRouteInfo(null);
+      return;
     }
 
+    const trip = trips.find(item => item.id === selectedTripId);
+    if (!trip) return;
 
-    const trip =
-      trips.find(
-        item =>
-          item.id === selectedTripId
-      )
+    let isMounted = true;
 
+    async function drawTripRoute() {
+      try {
+        const startLat = trip.lat;
+        const startLng = trip.lng;
+        if (!startLat || !startLng) return;
 
-    if (!trip) return
+        let destLat = trip.destLat;
+        let destLng = trip.destLng;
 
+        if (!destLat || !destLng) {
+          const destResolved = await geocodeIndianLocation(trip.to || trip.to_loc);
+          if (destResolved) {
+            destLat = destResolved.lat;
+            destLng = destResolved.lng;
+          } else {
+            destLat = startLat + 0.8;
+            destLng = startLng + 0.8;
+          }
+        }
 
-    const marker =
-      markersRef.current[trip.id]
+        const startCoords = [startLat, startLng];
+        const destCoords = [destLat, destLng];
 
+        const routes = await getRoadRoute(startCoords, destCoords, false);
+        if (!isMounted || !routes || routes.length === 0) return;
 
-    leafletMapRef.current.flyTo(
-      [trip.lat, trip.lng],
-      10,
-      {
-        duration: 1.2
+        const bestRoute = routes[0];
+        const points = bestRoute.points;
+
+        // 1. Google Maps Outer Dark Blue Glow Casing Polyline
+        const casingPolyline = L.polyline(points, {
+          color: '#1d4ed8',
+          weight: 8,
+          opacity: 0.85,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+
+        // 2. Google Maps Inner Vibrant Sky Blue Driving Route Line
+        const corePolyline = L.polyline(points, {
+          color: '#38bdf8',
+          weight: 5,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+
+        activeRouteLayersRef.current = [casingPolyline, corePolyline];
+
+        // 3. Start Marker (🟢 Driver Origin)
+        const startIcon = L.divIcon({
+          className: 'route-start-icon',
+          html: `<div style="background:#16a34a;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;">🟢</div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        });
+        const startMarker = L.marker(startCoords, { icon: startIcon })
+          .addTo(map)
+          .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🟢 Origin:<br/><span style="font-weight:normal;color:#4b5563;">${trip.from || trip.from_loc}</span></div>`);
+
+        // 4. Destination Marker (🏁 Driver Destination)
+        const destIcon = L.divIcon({
+          className: 'route-dest-icon',
+          html: `<div style="background:#dc2626;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;">🏁</div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        });
+        const destMarker = L.marker(destCoords, { icon: destIcon })
+          .addTo(map)
+          .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🏁 Destination:<br/><span style="font-weight:normal;color:#4b5563;">${trip.to || trip.to_loc}</span></div>`);
+
+        const newMarkers = [startMarker, destMarker];
+
+        // 5. Sender Custom Pickup Pin (📦 Pickup)
+        if (activeRequest?.pickupCoords?.lat && activeRequest?.pickupCoords?.lng) {
+          const pickupIcon = L.divIcon({
+            className: 'sender-pickup-icon',
+            html: `<div style="background:#f59e0b;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;">📦</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          });
+          const pickupMarker = L.marker([activeRequest.pickupCoords.lat, activeRequest.pickupCoords.lng], { icon: pickupIcon })
+            .addTo(map)
+            .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">📦 Your Pickup:<br/><span style="font-weight:normal;color:#4b5563;">${activeRequest.pickupLocation}</span></div>`);
+          newMarkers.push(pickupMarker);
+        }
+
+        // 6. Sender Custom Delivery Pin (🎯 Delivery)
+        if (activeRequest?.deliveryCoords?.lat && activeRequest?.deliveryCoords?.lng) {
+          const deliveryIcon = L.divIcon({
+            className: 'sender-delivery-icon',
+            html: `<div style="background:#8b5cf6;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;">🎯</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          });
+          const deliveryMarker = L.marker([activeRequest.deliveryCoords.lat, activeRequest.deliveryCoords.lng], { icon: deliveryIcon })
+            .addTo(map)
+            .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🎯 Your Delivery:<br/><span style="font-weight:normal;color:#4b5563;">${activeRequest.deliveryLocation}</span></div>`);
+          newMarkers.push(deliveryMarker);
+        }
+
+        activeRouteMarkersRef.current = newMarkers;
+
+        // 7. Google Maps style Bounds Fitting
+        const bounds = L.latLngBounds(points);
+        if (activeRequest?.pickupCoords?.lat) bounds.extend([activeRequest.pickupCoords.lat, activeRequest.pickupCoords.lng]);
+        if (activeRequest?.deliveryCoords?.lat) bounds.extend([activeRequest.deliveryCoords.lat, activeRequest.deliveryCoords.lng]);
+        map.fitBounds(bounds, { padding: [35, 35], maxZoom: 13, animate: true, duration: 1 });
+
+        setRouteInfo({
+          from: trip.from || trip.from_loc,
+          to: trip.to || trip.to_loc,
+          distanceKm: (bestRoute.distance / 1000).toFixed(1),
+          durationText: formatDuration(Math.round(bestRoute.duration / 60))
+        });
+
+      } catch (err) {
+        console.error("Failed to load and draw road route", err);
       }
-    )
+    }
 
+    drawTripRoute();
 
-    marker?.openPopup()
-
-  }, [
-    selectedTripId,
-    mode,
-    trips
-  ])
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedTripId, activeRequest, mode, trips])
 
 
   /* =====================================================
@@ -2044,18 +2140,44 @@ function Maps({
                 fontWeight: 600
               }}
             >
-              ✓ Driver is following the AI
-              suggested route
+              ✓ Driver is following the AI suggested route
             </div>
-
           )}
-
         </div>
+      )}
 
+      {/* GOOGLE MAPS STYLE ROUTE CARD OVERLAY (FIND VEHICLE MODE) */}
+      {mode === 'findVehicle' && routeInfo && (
+        <div className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl p-3.5 shadow-2xl border border-gold/40 max-w-[260px] animate-[fadeIn_.3s_ease]">
+          <div className="flex items-center gap-2 text-green-deep font-bold text-[11px]">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
+            <span>DRIVING ROUTE</span>
+          </div>
+          <p className="font-display font-bold text-xs text-green-deep mt-1 truncate">
+            {routeInfo.from} → {routeInfo.to}
+          </p>
+          <div className="flex items-center gap-2 mt-1.5 text-[11px] font-mono">
+            <span className="bg-blue-50 text-blue-800 font-bold px-2 py-0.5 rounded-md border border-blue-200">
+              🛣️ {routeInfo.distanceKm} km
+            </span>
+            <span className="bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-md border border-amber-200">
+              ⏱ {routeInfo.durationText}
+            </span>
+          </div>
+          {activeRequest?.pickupLocation && (
+            <p className="text-[10px] text-green-deep mt-2 pt-1.5 border-t border-gold/20 truncate">
+              📦 <span className="font-semibold">Pickup:</span> {activeRequest.pickupLocation}
+            </p>
+          )}
+          {activeRequest?.deliveryLocation && (
+            <p className="text-[10px] text-green-deep mt-0.5 truncate">
+              🎯 <span className="font-semibold">Drop:</span> {activeRequest.deliveryLocation}
+            </p>
+          )}
+        </div>
       )}
 
     </div>
-
   )
 
 }

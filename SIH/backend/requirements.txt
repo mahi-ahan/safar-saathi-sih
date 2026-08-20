@@ -8,3 +8,5 @@ jinja2
 email-validator
 pydantic
 google-auth-oauthlib
+psycopg2
+python-multipart

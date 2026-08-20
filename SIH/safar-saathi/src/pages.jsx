@@ -26,7 +26,11 @@ import {
   inputCls,
   Reveal,
   useToast,
-  checkSize
+  checkSize,
+  LocationAutocomplete,
+  geocodeIndianLocation,
+  isPointAlongRoute,
+  haversineDistance
 } from './ui'
 
 import Maps from './Maps'
@@ -467,31 +471,15 @@ export function FindVehicles() {
   const [selectedTripId, setSelectedTripId] = useState(null)
   const [requestOpen, setRequestOpen] = useState(null)
   const [requests, setRequests] = useState({})
+  const [myRequests, setMyRequests] = useState([])
 
-  // Fetch logged-in user profile details AND available trips
+  // Fetch logged-in user profile details AND available trips with 3-second live polling
   useEffect(() => {
-    const fetchData = async () => {
-      const token = localStorage.getItem("access_token");
-      if (!token) return;
-      try {
-        // Fetch user profile
-        const res = await fetch("http://localhost:8000/auth/status", {
-          headers: { "Authorization": `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setProfile(data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch user status", err);
-      }
-
-      // Fetch published trips from backend
+    const fetchTrips = async () => {
       try {
         const tripsRes = await fetch("http://localhost:8000/api/trips");
         const tripsData = await tripsRes.json();
         if (tripsRes.ok && Array.isArray(tripsData)) {
-          // Map backend field names to frontend names
           const mappedTrips = tripsData.map(trip => ({
             id: trip.id,
             state: trip.state,
@@ -506,7 +494,10 @@ export function FindVehicles() {
             pricePerKg: trip.price_per_kg,
             pickup: trip.pickup,
             lat: trip.lat,
-            lng: trip.lng
+            lng: trip.lng,
+            status: trip.status || 'scheduled',
+            is_live: trip.is_live || false,
+            speed: trip.speed || 0
           }));
           setTrips(mappedTrips);
         }
@@ -514,7 +505,42 @@ export function FindVehicles() {
         console.error("Failed to fetch trips", err);
       }
     };
+
+    const fetchData = async () => {
+      const token = localStorage.getItem("access_token");
+      if (!token) return;
+      try {
+        const res = await fetch("http://localhost:8000/auth/status", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setProfile(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch user status", err);
+      }
+
+      await fetchTrips();
+
+      try {
+        const myReqRes = await fetch("http://localhost:8000/api/requests/my", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const myReqData = await myReqRes.json();
+        if (myReqRes.ok && Array.isArray(myReqData)) {
+          setMyRequests(myReqData);
+        }
+      } catch (err) {
+        console.error("Failed to fetch my requests", err);
+      }
+    };
+
     fetchData();
+
+    // 3-second live polling interval to capture real-time driver coordinates on map
+    const interval = setInterval(fetchTrips, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleLogout = () => {
@@ -578,11 +604,11 @@ export function FindVehicles() {
 
 
   const openRequest = trip => {
-    setRequestOpen(
-      requestOpen === trip.id
-        ? null
-        : trip.id
-    )
+    const nextOpen = requestOpen === trip.id ? null : trip.id;
+    setRequestOpen(nextOpen);
+    if (nextOpen) {
+      setSelectedTripId(trip.id);
+    }
 
     if (!requests[trip.id]) {
       setRequests(prev => ({
@@ -617,7 +643,7 @@ export function FindVehicles() {
   }
 
 
-  const submitRequest = trip => {
+  const submitRequest = async trip => {
     const r = requests[trip.id]
 
     const free = Math.round(
@@ -646,11 +672,71 @@ export function FindVehicles() {
       return
     }
 
-    notify(
-      `✔ Transport request sent to ${trip.owner}`
-    )
+    // Intercity Route Corridor Validation
+    const tripOriginCoords = { lat: trip.lat || 19.9975, lng: trip.lng || 73.7898 };
+    const tripDestCoords = { lat: trip.destLat || (trip.lat ? trip.lat + 1.2 : 18.5204), lng: trip.destLng || (trip.lng ? trip.lng + 1.2 : 73.8567) };
 
-    setRequestOpen(null)
+    if (r.pickupCoords && !isPointAlongRoute(r.pickupCoords, tripOriginCoords, tripDestCoords, 0.25)) {
+      notify(`⚠ Pickup location is not along the driver's travel route (${trip.from} → ${trip.to}). Please select a location along the intercity route.`);
+      return;
+    }
+
+    if (r.deliveryCoords && !isPointAlongRoute(r.deliveryCoords, tripOriginCoords, tripDestCoords, 0.25)) {
+      notify(`⚠ Delivery location is not along the driver's travel route (${trip.from} → ${trip.to}). Please select a location along the intercity route.`);
+      return;
+    }
+
+    // Actually POST the request to the backend so it
+    // persists and can be seen by the vehicle owner
+    const token = localStorage.getItem("access_token");
+    // Build a unique request ID to avoid primary-key collisions
+    // when multiple senders request the same trip.
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      const res = await fetch("http://localhost:8000/api/requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          id: requestId,
+          route: `${trip.from} → ${trip.to}`,
+          vehicle: trip.vehicle,
+          owner: trip.owner,
+          farmer_name: profile.full_name || 'User',
+          kg: Number(r.weight)
+        })
+      });
+
+      if (res.ok) {
+        notify(
+          `✔ Transport request sent to ${trip.owner}`
+        );
+        // Add the new request locally so the UI immediately
+        // shows "PENDING" status instead of "Request Space".
+        const created = await res.json();
+        setMyRequests(prev => [
+          ...prev,
+          {
+            id: created.id || requestId,
+            status: created.status || 'pending',
+            route: `${trip.from} → ${trip.to}`,
+            vehicle: trip.vehicle,
+            owner: trip.owner,
+            farmer_name: profile.full_name || 'User',
+            kg: Number(r.weight)
+          }
+        ]);
+        setRequestOpen(null);
+      } else {
+        const data = await res.json();
+        notify(data.detail || "Failed to send request.");
+      }
+    } catch (err) {
+      console.error("Failed to send request", err);
+      notify("Could not connect to backend. Request not sent.");
+    }
   }
 
 
@@ -910,6 +996,11 @@ export function FindVehicles() {
             )
 
             const r = requests[trip.id] || {}
+            const myReq = myRequests.find(
+              req =>
+                req.owner === trip.owner &&
+                req.route === `${trip.from} → ${trip.to}`
+            )
 
             return (
               <div
@@ -942,19 +1033,41 @@ export function FindVehicles() {
                         </p>
                       </div>
 
-                      <Chip
-                        tone={
-                          trip.verified
-                            ? 'indigo'
-                            : 'brick'
-                        }
-                      >
-                        {trip.verified
-                          ? '✔ Verified Owner'
-                          : '⏳ Verification Pending'
-                        }
-                      </Chip>
+                      <div className="flex items-center gap-2">
+                        {(trip.status === 'in_transit' || trip.is_live) && (
+                          <span className="animate-pulse bg-green-600 text-white font-bold text-xs px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                            <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                            🔴 LIVE IN-TRANSIT
+                          </span>
+                        )}
+                        <Chip
+                          tone={
+                            trip.verified
+                              ? 'indigo'
+                              : 'brick'
+                          }
+                        >
+                          {trip.verified
+                            ? '✔ Verified Owner'
+                            : '⏳ Verification Pending'
+                          }
+                        </Chip>
+                      </div>
                     </div>
+
+                    {(trip.status === 'in_transit' || trip.is_live) && (
+                      <div className="mt-2 rounded-xl bg-green-50 border border-green-300 p-2.5 flex items-center justify-between">
+                        <div className="text-xs text-green-800 font-medium">
+                          📍 Driver is currently live on route! Speed: {trip.speed || 35} km/h
+                        </div>
+                        <button
+                          onClick={() => fly(trip.id)}
+                          className="px-3 py-1 bg-green-700 hover:bg-green-800 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+                        >
+                          📍 Track Live
+                        </button>
+                      </div>
+                    )}
 
 
                     <div className="grid grid-cols-2 gap-3 mt-3">
@@ -1032,32 +1145,71 @@ export function FindVehicles() {
                     {/* REQUEST SPACE */}
 
                     <div className="rounded-xl border border-green-deep/20 bg-green-deep/5 p-4 flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Package
-                            size={19}
-                            className="text-green-deep"
-                          />
+                      {myReq ? (
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2
+                              size={19}
+                              className="text-green-soft"
+                            />
 
-                          <p className="font-semibold text-sm">
-                            Need Transport Space?
+                            <p className="font-semibold text-sm">
+                              Request Status
+                            </p>
+                          </div>
+
+                          <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${
+                            myReq.status === 'pending'
+                              ? 'bg-gold/20 text-soil'
+                              : myReq.status === 'accepted'
+                                ? 'bg-green-deep/10 text-green-deep'
+                                : 'bg-red-100 text-red-700'
+                          }`}>
+                            {myReq.status
+                              ? myReq.status.toUpperCase()
+                              : 'PENDING'
+                            }
+                          </span>
+
+                          <p className="text-xs text-green-soft mt-2">
+                            {myReq.status === 'accepted'
+                              ? '✔ Your request has been accepted by the captain.'
+                              : myReq.status === 'pending'
+                                ? '⏳ Waiting for the captain to accept.'
+                                : '✖ This request was cancelled.'
+                            }
                           </p>
                         </div>
+                      ) : (
+                        <>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Package
+                                size={19}
+                                className="text-green-deep"
+                              />
 
-                        <p className="text-xs text-green-soft mt-2">
-                          Send your goods details directly to the vehicle owner.
-                        </p>
-                      </div>
+                              <p className="font-semibold text-sm">
+                                Need Transport Space?
+                              </p>
+                            </div>
 
-                      <button
-                        onClick={() => openRequest(trip)}
-                        className="mt-4 text-sm rounded-lg bg-green-deep text-cream px-4 py-2 hover:bg-green transition-colors"
-                      >
-                        {requestOpen === trip.id
-                          ? 'Close Request'
-                          : 'Request Space'
-                        }
-                      </button>
+                            <p className="text-xs text-green-soft mt-2">
+                              Send your goods details directly to the vehicle owner.
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => openRequest(trip)}
+                            className="mt-4 text-sm rounded-lg bg-green-deep text-cream px-4 py-2 hover:bg-green transition-colors"
+                          >
+                            {requestOpen === trip.id
+                              ? 'Close Request'
+                              : 'Request Space'
+                            }
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1146,17 +1298,18 @@ export function FindVehicles() {
                         {/* USER PICKUP */}
 
                         <Field label="Your Pickup Location">
-                          <input
-                            className={inputCls}
+                          <LocationAutocomplete
                             value={r.pickupLocation || ''}
-                            placeholder="Enter exact pickup location"
-                            onChange={e =>
-                              updateRequest(
-                                trip.id,
-                                'pickupLocation',
-                                e.target.value
-                              )
-                            }
+                            placeholder="Search pickup city/hub in India..."
+                            onChange={val => updateRequest(trip.id, 'pickupLocation', val)}
+                            onSelectLocation={loc => {
+                              if (loc) {
+                                updateRequest(trip.id, 'pickupLocation', loc.name);
+                                updateRequest(trip.id, 'pickupCoords', { lat: loc.lat, lng: loc.lng });
+                              } else {
+                                updateRequest(trip.id, 'pickupCoords', null);
+                              }
+                            }}
                           />
                         </Field>
 
@@ -1164,17 +1317,18 @@ export function FindVehicles() {
                         {/* DELIVERY */}
 
                         <Field label="Delivery Location">
-                          <input
-                            className={inputCls}
+                          <LocationAutocomplete
                             value={r.deliveryLocation || ''}
-                            placeholder="Enter delivery location"
-                            onChange={e =>
-                              updateRequest(
-                                trip.id,
-                                'deliveryLocation',
-                                e.target.value
-                              )
-                            }
+                            placeholder="Search delivery city/hub in India..."
+                            onChange={val => updateRequest(trip.id, 'deliveryLocation', val)}
+                            onSelectLocation={loc => {
+                              if (loc) {
+                                updateRequest(trip.id, 'deliveryLocation', loc.name);
+                                updateRequest(trip.id, 'deliveryCoords', { lat: loc.lat, lng: loc.lng });
+                              } else {
+                                updateRequest(trip.id, 'deliveryCoords', null);
+                              }
+                            }}
                           />
                         </Field>
                       </div>
@@ -1283,47 +1437,45 @@ export function FindVehicles() {
         {/* RIGHT MAP */}
 
         <div className="lg:col-span-2">
-          <div className="sticky top-24">
-
-            <div
-              onClick={() => navigate('/maps')}
-              className="relative rounded-2xl overflow-hidden cursor-pointer border border-gold/30 shadow-sm hover:shadow-lg transition-all group"
-            >
-              <div className="pointer-events-none">
+            <div className="relative rounded-2xl overflow-hidden border border-gold/30 shadow-md bg-paper">
+              <div>
                 <Maps
                   mode="findVehicle"
                   trips={list}
-                  selectedTripId={selectedTripId}
+                  selectedTripId={requestOpen || selectedTripId}
+                  activeRequest={requestOpen && requests[requestOpen] ? requests[requestOpen] : (selectedTripId && requests[selectedTripId] ? requests[selectedTripId] : null)}
                   onTripSelect={trip => {
                     setSelectedTripId(trip.id)
                   }}
                 />
               </div>
 
-              <div className="absolute inset-x-0 bottom-0 bg-green-deep/90 text-cream px-4 py-3 flex items-center justify-between">
+              <div className="bg-paper border-t border-gold/20 px-4 py-3 flex items-center justify-between">
                 <div>
-                  <p className="font-semibold text-sm">
-                    Open Full Map
+                  <p className="font-semibold text-xs text-green-deep">
+                    Interactive Route Map
                   </p>
-
-                  <p className="text-xs text-cream/70">
-                    Click anywhere on the map
+                  <p className="text-[11px] text-green-soft">
+                    {requestOpen ? 'Showing live driving route for selected vehicle' : 'Click "Request Space" on any vehicle to view its driving route'}
                   </p>
                 </div>
 
-                <span className="text-lg group-hover:translate-x-1 transition-transform">
-                  ↗
-                </span>
+                <button
+                  onClick={() => navigate('/maps')}
+                  className="px-3 py-1.5 bg-green-deep hover:bg-green text-cream text-xs font-semibold rounded-xl shadow transition flex items-center gap-1"
+                >
+                  <span>Full Map</span>
+                  <span>↗</span>
+                </button>
               </div>
             </div>
 
-            <p className="text-xs text-green-soft mt-2 font-mono">
-              Click the map to view all vehicles on a separate map page.
+            <p className="text-xs text-green-soft mt-2 font-mono text-center">
+              Zoom and pan the map to explore road routes and pickup points across India.
             </p>
 
           </div>
         </div>
-      </div>
     </section>
   )
 }
@@ -1342,14 +1494,17 @@ export function OfferTrip() {
   const [editForm, setEditForm] = useState({ full_name: '', phone_number: '', gender: 'Male', aadhaar_doc: '', license_doc: '' });
   const [o, setO] = useState({
     from: '',
+    fromCoords: null,
     to: '',
+    toCoords: null,
     date: '',
     vehicle: 'Mini Truck',
     total: 1000,
     cap: 600,
     fare: 'driver',
     price: '',
-    pickup: ''
+    pickup: '',
+    pickupCoords: null
   })
 
   const [docs, setDocs] = useState({
@@ -1361,8 +1516,160 @@ export function OfferTrip() {
   const [arrived, setArrived] = useState(false)
   const [deliveryPhoto, setDeliveryPhoto] = useState(null)
   const [done, setDone] = useState(false)
+  const [incomingRequests, setIncomingRequests] = useState([])
+  const [myTrips, setMyTrips] = useState([])
+  const [activeLiveTripId, setActiveLiveTripId] = useState(null)
+  const liveIntervalRef = useRef(null)
 
-  // Fetch logged-in driver profile details
+  const fetchMyTrips = async () => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    try {
+      const res = await fetch("http://localhost:8000/api/trips/my", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Remove completed trips from "My Published Trips"
+        const activeTrips = data.filter(t => t.status !== 'completed');
+        setMyTrips(activeTrips);
+        const liveTrip = activeTrips.find(t => t.status === 'in_transit' || t.is_live);
+        if (liveTrip) {
+          setActiveLiveTripId(liveTrip.id);
+        } else {
+          setActiveLiveTripId(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch my trips", err);
+    }
+  };
+
+  const startLiveTrip = async (trip) => {
+    // ENFORCE MANDATORY LOCATION PERMISSION CHECK
+    if (!navigator.geolocation) {
+      notify("⚠ Location services are not supported by your browser. Cannot start trip.");
+      return;
+    }
+
+    notify("📡 Requesting location access...");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        // Location permission granted!
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 35;
+
+        const token = localStorage.getItem("access_token");
+        try {
+          // Update status to in_transit
+          const statusRes = await fetch(`http://localhost:8000/api/trips/${trip.id}/status?status=in_transit`, {
+            method: "PUT",
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+
+          if (!statusRes.ok) {
+            notify("⚠ Failed to start trip on server.");
+            return;
+          }
+
+          // Initial location push
+          await fetch(`http://localhost:8000/api/trips/${trip.id}/location`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              lat: lat,
+              lng: lng,
+              speed: speed,
+              status: "in_transit",
+              is_live: true
+            })
+          });
+
+          setActiveLiveTripId(trip.id);
+          notify("✔ Trip Started! Sharing live location with all senders.");
+          fetchMyTrips();
+
+          if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+
+          let step = 0;
+          liveIntervalRef.current = setInterval(() => {
+            navigator.geolocation.getCurrentPosition(
+              async (pos) => {
+                let currentLat = pos.coords.latitude;
+                let currentLng = pos.coords.longitude;
+
+                // Incremental simulation step so truck moves on map even on stationary desktop
+                step += 0.0005;
+                currentLat += (step * 0.02);
+                currentLng += (step * 0.02);
+
+                const currentSpeed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 40;
+
+                try {
+                  await fetch(`http://localhost:8000/api/trips/${trip.id}/location`, {
+                    method: "PUT",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                      lat: currentLat,
+                      lng: currentLng,
+                      speed: currentSpeed,
+                      status: "in_transit",
+                      is_live: true
+                    })
+                  });
+                } catch (e) {
+                  console.error("Location sync error", e);
+                }
+              },
+              (err) => console.warn("Periodic location sync warning", err),
+              { enableHighAccuracy: true }
+            );
+          }, 3000);
+
+        } catch (err) {
+          console.error("Error starting live trip", err);
+          notify("Could not connect to backend.");
+        }
+      },
+      (error) => {
+        // ENFORCE MANDATORY BLOCKING IF LOCATION ACCESS IS DENIED
+        console.error("Location permission error:", error);
+        notify("⚠ Location access is required to start the trip. Please enable location permissions in your browser.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const stopLiveTrip = async (tripId) => {
+    if (liveIntervalRef.current) {
+      clearInterval(liveIntervalRef.current);
+      liveIntervalRef.current = null;
+    }
+    const token = localStorage.getItem("access_token");
+    try {
+      const res = await fetch(`http://localhost:8000/api/trips/${tripId}/status?status=completed`, {
+        method: "PUT",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setActiveLiveTripId(null);
+        notify("✔ Trip completed! Live location sharing stopped.");
+        fetchMyTrips();
+      }
+    } catch (err) {
+      console.error("Failed to stop live trip", err);
+    }
+  };
+
+  // Fetch logged-in driver profile details + incoming requests + my trips
   useEffect(() => {
     const fetchStatus = async () => {
       const token = localStorage.getItem("access_token");
@@ -1374,12 +1681,39 @@ export function OfferTrip() {
         const data = await res.json();
         if (res.ok) {
           setProfile(data);
+          setDocs(prev => {
+            const next = { ...prev };
+            if (data.aadhaar_doc) {
+              next.identity = { name: data.aadhaar_doc, url: data.aadhaar_doc_url || null };
+            }
+            if (data.license_doc) {
+              next.license = { name: data.license_doc, url: data.license_doc_url || null };
+            }
+            return next;
+          });
         }
       } catch (err) {
         console.error("Failed to fetch user status", err);
       }
+
+      try {
+        const reqRes = await fetch("http://localhost:8000/api/requests/incoming", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const reqData = await reqRes.json();
+        if (reqRes.ok && Array.isArray(reqData)) {
+          setIncomingRequests(reqData);
+        }
+      } catch (err) {
+        console.error("Failed to fetch incoming requests", err);
+      }
+
+      await fetchMyTrips();
     };
     fetchStatus();
+    return () => {
+      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -1387,20 +1721,62 @@ export function OfferTrip() {
     navigate('/login');
   };
 
-  const upDoc = (key, file) => {
+  const upDoc = async (key, file) => {
     if (!file) return
 
-    if (checkSize(file)) {
-      setDocs(prev => ({
-        ...prev,
-        [key]: {
-          name: file.name,
-          url: URL.createObjectURL(file)
-        }
-      }))
+    if (!checkSize(file)) return
+
+    // Immediate local preview via object URL
+    const localUrl = URL.createObjectURL(file)
+    setDocs(prev => ({
+      ...prev,
+      [key]: {
+        name: file.name,
+        url: localUrl
+      }
+    }))
+
+    // Persist the document to the backend so it survives page reloads
+    const token = localStorage.getItem("access_token")
+    const docType = key === 'identity' ? 'aadhaar' : 'license'
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('doc_type', docType)
+
+      const res = await fetch("http://localhost:8000/auth/upload-document", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: formData
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setProfile(prev => ({
+          ...prev,
+          aadhaar_doc: data.aadhaar_doc || prev.aadhaar_doc,
+          aadhaar_doc_url: data.aadhaar_doc_url || prev.aadhaar_doc_url,
+          license_doc: data.license_doc || prev.license_doc,
+          license_doc_url: data.license_doc_url || prev.license_doc_url,
+          is_verified: data.is_verified
+        }))
+        // Use the server URL/name so the preview is stable across reloads
+        setDocs(prev => ({
+          ...prev,
+          [key]: {
+            name: data.filename || file.name,
+            url: data.url || localUrl
+          }
+        }))
+        notify(`✔ ${docType === 'aadhaar' ? 'Aadhaar' : 'Driving Licence'} uploaded successfully!`)
+      } else {
+        notify("⚠ Could not save document to server. It is only previewed locally.")
+      }
+    } catch (err) {
+      console.error("Failed to upload document", err)
+      notify("⚠ Could not save document to server. It is only previewed locally.")
     }
   }
-
 
   const taken = Math.round(
     (1 - o.cap / o.total) * 100
@@ -1417,7 +1793,10 @@ export function OfferTrip() {
       return;
     }
 
-    if (!docs.identity || !docs.license) {
+    // Check documents: either from local docs state or from profile (already uploaded)
+    const hasIdentity = docs.identity || profile.aadhaar_doc;
+    const hasLicense = docs.license || profile.license_doc;
+    if (!hasIdentity || !hasLicense) {
       notify('⚠ Please upload required verification documents.');
       return;
     }
@@ -1425,6 +1804,29 @@ export function OfferTrip() {
       notify('⚠ Please set a valid transport price.');
       return;
     }
+
+    // STRICT LOCATION VERIFICATION: Verify with OpenStreetMap Nominatim
+    notify('🔍 Verifying locations in India...');
+    let fromResolved = o.fromCoords;
+    if (!fromResolved) {
+      fromResolved = await geocodeIndianLocation(o.from);
+    }
+    if (!fromResolved) {
+      notify(`❌ "${o.from}" is not a valid location in India. Please enter a valid Indian city.`);
+      return;
+    }
+
+    let toResolved = o.toCoords;
+    if (!toResolved) {
+      toResolved = await geocodeIndianLocation(o.to);
+    }
+    if (!toResolved) {
+      notify(`❌ "${o.to}" is not a valid location in India. Please enter a valid Indian city.`);
+      return;
+    }
+
+    const tripLat = fromResolved.lat;
+    const tripLng = fromResolved.lng;
 
     // Send trip to backend
     const token = localStorage.getItem("access_token");
@@ -1436,25 +1838,26 @@ export function OfferTrip() {
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-          state: o.from,
-          from_loc: o.from,
-          to_loc: o.to,
+          state: fromResolved.state || fromResolved.shortName || o.from,
+          from_loc: fromResolved.shortName ? `${fromResolved.shortName}, ${fromResolved.state || 'India'}` : o.from,
+          to_loc: toResolved.shortName ? `${toResolved.shortName}, ${toResolved.state || 'India'}` : o.to,
           date: o.date,
           vehicle: o.vehicle,
           owner: profile.full_name || 'Driver',
-          verified: profile.is_verified || false,
+          verified: profile.is_verified || (!!hasIdentity && !!hasLicense),
           pct: taken,
           total_kg: o.total,
           price_per_kg: Number(o.price),
           pickup: o.pickup,
-          lat: 0,
-          lng: 0
+          lat: tripLat,
+          lng: tripLng
         })
       });
 
       if (res.ok) {
         setPublished(true);
-        notify(`✔ Trip published: ${o.from} → ${o.to}`);
+        notify(`✔ Trip published: ${fromResolved.shortName} → ${toResolved.shortName}`);
+        fetchMyTrips();
       } else {
         const data = await res.json();
         notify(data.detail || "Failed to publish trip.");
@@ -1658,6 +2061,208 @@ export function OfferTrip() {
       </div>
 
 
+      {/* INCOMING TRANSPORT REQUESTS PANEL */}
+      {incomingRequests.length > 0 && (
+        <div className="mt-6 rounded-2xl bg-paper border border-gold/30 p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="font-display font-bold text-lg flex items-center gap-2">
+                <Package size={18} className="text-green-soft" />
+                Incoming Transport Requests
+              </h3>
+              <p className="text-xs text-green-soft mt-1">
+                Senders have requested space in your published trips.
+              </p>
+            </div>
+            <Chip tone="indigo">
+              {incomingRequests.length} Request{incomingRequests.length !== 1 ? 's' : ''}
+            </Chip>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {incomingRequests.map(req => (
+              <div key={req.id} className="rounded-xl border border-gold/30 bg-cream p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm">
+                      {req.route || 'Trip Route'}
+                    </p>
+                    <p className="text-xs text-green-soft mt-1">
+                      👤 {req.farmer_name} · 🚚 {req.vehicle || 'Vehicle'} · ⚖ {req.kg} kg
+                    </p>
+                    <p className="text-xs text-green-soft mt-1">
+                      Owner: {req.owner}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                      req.status === 'pending'
+                        ? 'bg-gold/20 text-soil'
+                        : req.status === 'accepted'
+                          ? 'bg-green-deep/10 text-green-deep'
+                          : 'bg-red-100 text-red-700'
+                    }`}>
+                      {req.status ? req.status.toUpperCase() : 'PENDING'}
+                    </span>
+                  </div>
+                </div>
+
+                {req.status === 'pending' && (
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={async () => {
+                        const token = localStorage.getItem("access_token");
+                        try {
+                          const res = await fetch(
+                            `http://localhost:8000/api/requests/${req.id}/status?status=accepted`,
+                            {
+                              method: "PUT",
+                              headers: {
+                                "Authorization": `Bearer ${token}`
+                              }
+                            }
+                          );
+                          if (res.ok) {
+                            notify(`✔ Accepted request from ${req.farmer_name}`);
+                            // Refresh the list
+                            const reqRes = await fetch(
+                              "http://localhost:8000/api/requests/incoming",
+                              { headers: { "Authorization": `Bearer ${token}` } }
+                            );
+                            const reqData = await reqRes.json();
+                            if (reqRes.ok && Array.isArray(reqData)) {
+                              setIncomingRequests(reqData);
+                            }
+                          } else {
+                            notify("⚠ Failed to accept request.");
+                          }
+                        } catch (err) {
+                          notify("Could not connect to backend.");
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-green-deep text-cream font-semibold text-xs rounded-lg hover:bg-green transition"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const token = localStorage.getItem("access_token");
+                        try {
+                          const res = await fetch(
+                            `http://localhost:8000/api/requests/${req.id}/status?status=cancelled`,
+                            {
+                              method: "PUT",
+                              headers: {
+                                "Authorization": `Bearer ${token}`
+                              }
+                            }
+                          );
+                          if (res.ok) {
+                            notify(`✖ Rejected request from ${req.farmer_name}`);
+                            // Refresh the list
+                            const reqRes = await fetch(
+                              "http://localhost:8000/api/requests/incoming",
+                              { headers: { "Authorization": `Bearer ${token}` } }
+                            );
+                            const reqData = await reqRes.json();
+                            if (reqRes.ok && Array.isArray(reqData)) {
+                              setIncomingRequests(reqData);
+                            }
+                          } else {
+                            notify("⚠ Failed to reject request.");
+                          }
+                        } catch (err) {
+                          notify("Could not connect to backend.");
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-red-600 text-white font-semibold text-xs rounded-lg hover:bg-red-700 transition"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
+
+                {req.status === 'accepted' && (
+                  <p className="mt-2 text-xs text-green-soft font-medium">
+                    ✔ You have accepted this transport request.
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+
+      {/* MY PUBLISHED TRIPS & LIVE LOCATION CONTROL PANEL */}
+      {myTrips.length > 0 && (
+        <div className="mt-6 rounded-2xl bg-paper border border-gold/30 p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="font-display font-bold text-lg flex items-center gap-2 text-green-deep">
+                <Truck size={20} className="text-green-deep" />
+                My Published Trips & Live Location Control
+              </h3>
+              <p className="text-xs text-green-soft mt-1">
+                You must enable live location sharing when you start a trip so senders can track your actual location.
+              </p>
+            </div>
+            <Chip tone="indigo">
+              {myTrips.length} Trip{myTrips.length !== 1 ? 's' : ''}
+            </Chip>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            {myTrips.map(trip => {
+              const isTripLive = trip.id === activeLiveTripId || trip.status === 'in_transit' || trip.is_live;
+              return (
+                <div key={trip.id} className={`rounded-xl border p-4 transition-all ${isTripLive ? 'bg-green-50 border-green-400 shadow-md' : 'bg-cream border-gold/30'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-display font-bold text-base text-green-deep">
+                        {trip.from_loc || trip.from} → {trip.to_loc || trip.to}
+                      </p>
+                      <p className="text-xs text-green-soft font-mono mt-0.5">
+                        📅 {trip.date} · 🚛 {trip.vehicle} · ⚖ {trip.total_kg || trip.totalKg} kg
+                      </p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${isTripLive ? 'bg-green-600 text-white animate-pulse' : 'bg-gray-200 text-gray-700'}`}>
+                      {isTripLive ? '🔴 IN-TRANSIT' : (trip.status || 'SCHEDULED').toUpperCase()}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-gold/20 flex items-center justify-between gap-2">
+                    {!isTripLive ? (
+                      <button
+                        onClick={() => startLiveTrip(trip)}
+                        className="w-full py-2.5 bg-green-deep hover:bg-green text-cream font-semibold text-xs rounded-xl shadow transition flex items-center justify-center gap-2"
+                      >
+                        <MapPin size={16} />
+                        Start Trip & Share Live Location
+                      </button>
+                    ) : (
+                      <div className="w-full space-y-2">
+                        <div className="text-xs text-green-800 font-semibold bg-green-100 p-2 rounded-lg flex items-center justify-between">
+                          <span>📡 Live GPS Active ({trip.speed || 35} km/h)</span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-green-600 animate-ping"></span>
+                        </div>
+                        <button
+                          onClick={() => stopLiveTrip(trip.id)}
+                          className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-xl shadow transition"
+                        >
+                          Complete Trip & Stop Sharing Location
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+
       <div className="mt-6 grid lg:grid-cols-2 gap-8">
 
         {/* FORM */}
@@ -1669,31 +2274,33 @@ export function OfferTrip() {
           <div className="grid sm:grid-cols-2 gap-4">
 
             <Field label="From">
-              <input
-                className={inputCls}
+              <LocationAutocomplete
                 value={o.from}
-                placeholder="Starting city"
-                onChange={e =>
-                  setO({
-                    ...o,
-                    from: e.target.value
-                  })
-                }
+                placeholder="Search starting city/hub in India..."
+                onChange={val => setO(prev => ({ ...prev, from: val, fromCoords: null }))}
+                onSelectLocation={loc => {
+                  if (loc) {
+                    setO(prev => ({ ...prev, from: loc.name, fromCoords: { lat: loc.lat, lng: loc.lng } }));
+                  } else {
+                    setO(prev => ({ ...prev, fromCoords: null }));
+                  }
+                }}
               />
             </Field>
 
 
             <Field label="To">
-              <input
-                className={inputCls}
+              <LocationAutocomplete
                 value={o.to}
-                placeholder="Destination city"
-                onChange={e =>
-                  setO({
-                    ...o,
-                    to: e.target.value
-                  })
-                }
+                placeholder="Search destination city in India..."
+                onChange={val => setO(prev => ({ ...prev, to: val, toCoords: null }))}
+                onSelectLocation={loc => {
+                  if (loc) {
+                    setO(prev => ({ ...prev, to: loc.name, toCoords: { lat: loc.lat, lng: loc.lng } }));
+                  } else {
+                    setO(prev => ({ ...prev, toCoords: null }));
+                  }
+                }}
               />
             </Field>
 
@@ -1888,12 +2495,12 @@ export function OfferTrip() {
             <input
               className={inputCls}
               value={o.pickup}
-              placeholder="Enter pickup location and instructions"
+              placeholder="e.g. Near highway toll plaza gate 2, 6:00 AM / Be on time"
               onChange={e =>
-                setO({
-                  ...o,
+                setO(prev => ({
+                  ...prev,
                   pickup: e.target.value
-                })
+                }))
               }
             />
           </Field>
@@ -1907,64 +2514,104 @@ export function OfferTrip() {
                 size={18}
                 className="text-green-soft"
               />
-
               Vehicle Owner Verification (Aadhaar & Driving Licence)
             </h3>
 
+            {/* DRIVER VERIFICATION STATUS BANNER */}
+            <div className={`p-4 rounded-2xl border mb-4 flex items-start justify-between gap-3 ${profile.is_verified || (docs.identity?.name && docs.license?.name) ? 'bg-green-50 border-green-500 text-green-950 shadow-sm' : 'bg-amber-50 border-amber-300 text-amber-950'}`}>
+              <div className="flex items-start gap-3">
+                <span className="text-2xl mt-0.5">
+                  {profile.is_verified || (docs.identity?.name && docs.license?.name) ? '🛡️' : '⏳'}
+                </span>
+                <div>
+                  <h4 className="font-bold text-sm flex items-center gap-1.5">
+                    {profile.is_verified || (docs.identity?.name && docs.license?.name) ? (
+                      <>
+                        <span>Govt. ID & Driving License Verified</span>
+                        <span className="text-xs bg-green-600 text-white font-bold px-2 py-0.5 rounded-full">✔ VERIFIED</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Verification Pending</span>
+                        <span className="text-xs bg-amber-600 text-white font-bold px-2 py-0.5 rounded-full">ACTION REQUIRED</span>
+                      </>
+                    )}
+                  </h4>
+                  <p className="text-xs mt-1 text-gray-700">
+                    {profile.is_verified || (docs.identity?.name && docs.license?.name) ? (
+                      'Your Aadhaar and Driving License documents are verified. All your published trips will display the official "Verified Driver" badge.'
+                    ) : (
+                      'Please upload both your Aadhaar Card and Driving License below to get verified and unlock verified trip publishing.'
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="grid sm:grid-cols-2 gap-4">
               {[
-                ['identity', 'Identity Proof (Aadhaar Card)'],
-                ['license', 'Driving License']
-              ].map(([key, label]) => (
-                <div key={key} className="space-y-2">
-                  <label
-                    className="flex items-center justify-between gap-3 border-2 border-dashed border-gold/50 rounded-xl px-4 py-4 cursor-pointer hover:bg-cream transition"
-                  >
-                    <span className="font-semibold text-sm flex items-center gap-2">
-                      {docs[key] ? (
-                        <CheckCircle2
-                          size={16}
-                          className="text-green-soft"
-                        />
-                      ) : (
-                        <Upload
-                          size={16}
-                          className="text-gold"
-                        />
-                      )}
+                ['identity', 'Identity Proof (Aadhaar Card)', profile.aadhaar_doc, profile.aadhaar_doc_url],
+                ['license', 'Driving License', profile.license_doc, profile.license_doc_url]
+              ].map(([key, label, profileName, profileUrl]) => {
+                const docName = docs[key]?.name || profileName || '';
+                const docUrl = docs[key]?.url || profileUrl || null;
+                const isPdf = docName.toLowerCase().endsWith('.pdf');
+                const isDocVerified = !!docName;
 
-                      {label}
-                    </span>
+                return (
+                  <div key={key} className="space-y-2">
+                    <label
+                      className={`flex items-center justify-between gap-3 border-2 border-dashed rounded-xl px-4 py-4 cursor-pointer hover:bg-cream transition ${isDocVerified ? 'border-green-500 bg-green-50/40' : 'border-gold/50'}`}
+                    >
+                      <span className="font-semibold text-sm flex items-center gap-2">
+                        {isDocVerified ? (
+                          <CheckCircle2
+                            size={16}
+                            className="text-green-600"
+                          />
+                        ) : (
+                          <Upload
+                            size={16}
+                            className="text-gold"
+                          />
+                        )}
 
-                    <span className="text-xs text-green-soft truncate max-w-[110px]">
-                      {docs[key]?.name || 'Upload'}
-                    </span>
+                        {label}
+                      </span>
 
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept="image/*,application/pdf"
-                      onChange={e =>
-                        upDoc(
-                          key,
-                          e.target.files[0]
-                        )
-                      }
-                    />
-                  </label>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isDocVerified ? 'bg-green-100 text-green-800' : 'text-green-soft'}`}>
+                        {isDocVerified ? '✔ Verified' : 'Upload'}
+                      </span>
 
-                  {docs[key]?.url && (
-                    <div className="rounded-xl border border-gold/30 overflow-hidden bg-cream p-2">
-                      <p className="text-[10px] text-green-soft font-mono mb-1">Preview:</p>
-                      {docs[key].name.endsWith('.pdf') ? (
-                        <iframe src={docs[key].url} className="w-full h-32 rounded border border-gold/20 animate-[fadeIn_0.3s_ease]" title={label}></iframe>
-                      ) : (
-                        <img src={docs[key].url} alt={label} className="h-32 object-contain mx-auto rounded animate-[fadeIn_0.3s_ease]" />
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*,application/pdf"
+                        onChange={e =>
+                          upDoc(
+                            key,
+                            e.target.files[0]
+                          )
+                        }
+                      />
+                    </label>
+
+                    {docUrl && (
+                      <div className="rounded-xl border border-gold/30 overflow-hidden bg-cream p-2">
+                        <div className="flex items-center justify-between text-[11px] text-green-soft font-mono mb-1">
+                          <p className="truncate max-w-[200px] font-semibold text-green-deep">📄 {docName}</p>
+                          <span className="text-green-700 font-bold">✔ Verified</span>
+                        </div>
+                        {isPdf ? (
+                          <iframe src={docUrl} className="w-full h-32 rounded border border-gold/20 animate-[fadeIn_0.3s_ease]" title={label}></iframe>
+                        ) : (
+                          <img src={docUrl} alt={label} className="h-32 object-contain mx-auto rounded animate-[fadeIn_0.3s_ease]" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -2215,7 +2862,8 @@ export function LoginPage() {
     setLoading(true)
     setLoginError('')
     try {
-      const res = await fetch("http://localhost:8000/auth/google-login", {
+    
+      const res = await fetch("http://127.0.0.1:8000/auth/google-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -2331,6 +2979,43 @@ export function ProfileSetupPage() {
     const token = localStorage.getItem("access_token");
 
     try {
+      let aadhaarName = aadhaarFile ? aadhaarFile.name : null;
+      let licenseName = licenseFile ? licenseFile.name : null;
+
+      // Upload document files to backend so they are stored on disk
+      if (userType === 'driver') {
+        try {
+          const fd1 = new FormData();
+          fd1.append('file', aadhaarFile);
+          fd1.append('doc_type', 'aadhaar');
+          const up1 = await fetch("http://localhost:8000/auth/upload-document", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` },
+            body: fd1
+          });
+          if (up1.ok) {
+            const d1 = await up1.json();
+            aadhaarName = d1.filename || aadhaarName;
+          }
+
+          const fd2 = new FormData();
+          fd2.append('file', licenseFile);
+          fd2.append('doc_type', 'license');
+          const up2 = await fetch("http://localhost:8000/auth/upload-document", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` },
+            body: fd2
+          });
+          if (up2.ok) {
+            const d2 = await up2.json();
+            licenseName = d2.filename || licenseName;
+          }
+        } catch (err) {
+          console.error(err);
+          notify("⚠ Document upload failed. Continuing with filename only.");
+        }
+      }
+
       const res = await fetch("http://localhost:8000/auth/complete-profile", {
         method: "POST",
         headers: {
@@ -2342,8 +3027,8 @@ export function ProfileSetupPage() {
           gender: gender,
           phone_number: phoneNumber, 
           user_type: userType,
-          aadhaar_doc: aadhaarFile ? aadhaarFile.name : null,
-          license_doc: licenseFile ? licenseFile.name : null
+          aadhaar_doc: aadhaarName,
+          license_doc: licenseName
         })
       });
 

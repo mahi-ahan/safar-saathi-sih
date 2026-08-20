@@ -18,8 +18,11 @@ class TripModel(Base):
   total_kg = Column(Integer, default=1000)
   price_per_kg = Column(Integer, default=0)
   pickup = Column(String)
-  lat = Column(Float)
-  lng = Column(Float)
+  lat = Column(Float, default=0.0)
+  lng = Column(Float, default=0.0)
+  status = Column(String, default="scheduled")
+  is_live = Column(Boolean, default=False)
+  speed = Column(Float, default=0.0)
 
 
 class RequestModel(Base):
@@ -32,6 +35,7 @@ class RequestModel(Base):
   owner = Column(String)
   farmer_name = Column(String)
   kg = Column(Integer)
+  user_id = Column(Integer, nullable=True)
   pickup_date = Column(String, nullable=True)
   pickup_time = Column(String, nullable=True)
   pickup_place = Column(String, nullable=True)

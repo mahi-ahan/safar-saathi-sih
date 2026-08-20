@@ -58,8 +58,11 @@ class TripCreate(BaseModel):
     total_kg: int = 1000
     price_per_kg: int = 0
     pickup: str
-    lat: float
-    lng: float
+    lat: float = 0.0
+    lng: float = 0.0
+    status: Optional[str] = "scheduled"
+    is_live: Optional[bool] = False
+    speed: Optional[float] = 0.0
 
 
 class TripResponse(TripCreate):
@@ -67,6 +70,15 @@ class TripResponse(TripCreate):
 
     class Config:
         from_attributes = True
+
+
+class TripLocationUpdate(BaseModel):
+    lat: float
+    lng: float
+    speed: Optional[float] = 0.0
+    status: Optional[str] = "in_transit"
+    is_live: Optional[bool] = True
+
 
 
 # ==================================================

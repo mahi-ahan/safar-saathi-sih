@@ -1,8 +1,9 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 import models
 import os
+import shutil
 from dotenv import load_dotenv
 import schemas
 from database import get_db
@@ -20,6 +21,13 @@ router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
 )
+
+# Ensure uploads directory exists
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Base URL for serving uploaded files
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 
 # ==================================================
@@ -76,6 +84,10 @@ def google_login(payload: dict, db: Session = Depends(get_db)):
 
     access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
     
+    # Build document URLs if documents exist
+    aadhaar_url = f"{BASE_URL}/uploads/{aadhaar_doc}" if aadhaar_doc else None
+    license_url = f"{BASE_URL}/uploads/{license_doc}" if license_doc else None
+    
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -83,7 +95,9 @@ def google_login(payload: dict, db: Session = Depends(get_db)):
         "user_type": user_type,
         "full_name": full_name,
         "aadhaar_doc": aadhaar_doc,
-        "license_doc": license_doc
+        "aadhaar_doc_url": aadhaar_url,
+        "license_doc": license_doc,
+        "license_doc_url": license_url
     }
 
 
@@ -121,6 +135,9 @@ def complete_user_profile(
         
     db.commit()
     
+    aadhaar_url = f"{BASE_URL}/uploads/{profile.aadhaar_doc}" if profile.aadhaar_doc else None
+    license_url = f"{BASE_URL}/uploads/{profile.license_doc}" if profile.license_doc else None
+    
     return {
         "message": "Profile completed successfully", 
         "is_profile_complete": True,
@@ -129,7 +146,9 @@ def complete_user_profile(
         "phone_number": profile.phone_number,
         "user_type": profile.user_type,
         "aadhaar_doc": profile.aadhaar_doc,
+        "aadhaar_doc_url": aadhaar_url,
         "license_doc": profile.license_doc,
+        "license_doc_url": license_url,
         "is_verified": profile.is_verified
     }
 
@@ -171,6 +190,9 @@ def update_user_profile(
     db.commit()
     db.refresh(profile)
     
+    aadhaar_url = f"{BASE_URL}/uploads/{profile.aadhaar_doc}" if profile.aadhaar_doc else None
+    license_url = f"{BASE_URL}/uploads/{profile.license_doc}" if profile.license_doc else None
+    
     return {
         "message": "Profile updated successfully",
         "is_profile_complete": True,
@@ -179,7 +201,9 @@ def update_user_profile(
         "phone_number": profile.phone_number,
         "user_type": profile.user_type,
         "aadhaar_doc": profile.aadhaar_doc,
+        "aadhaar_doc_url": aadhaar_url,
         "license_doc": profile.license_doc,
+        "license_doc_url": license_url,
         "is_verified": profile.is_verified
     }
 
@@ -285,4 +309,66 @@ def login(
         "access_token": token,
         "token_type": "bearer",
         "role": user.role.value
+    }
+
+
+# ==================================================
+# DOCUMENT UPLOAD ENDPOINT
+# ==================================================
+
+@router.post("/upload-document")
+async def upload_document(
+    file: UploadFile = File(...),
+    doc_type: str = Form("aadhaar"),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Uploads a verification document (Aadhaar or Driving Licence).
+    Saves the file to disk and updates the user's profile with the filename.
+    """
+    if doc_type not in ("aadhaar", "license"):
+        raise HTTPException(status_code=400, detail="doc_type must be 'aadhaar' or 'license'")
+    
+    # Generate a unique filename to avoid collisions
+    ext = os.path.splitext(file.filename)[1] if file.filename else ""
+    unique_name = f"{current_user.id}_{doc_type}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = os.path.join(UPLOAD_DIR, unique_name)
+    
+    # Save file to disk
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Update user profile with the document filename
+    profile = db.query(models.UserProfile).filter(
+        models.UserProfile.user_id == current_user.id
+    ).first()
+    
+    if not profile:
+        profile = models.UserProfile(user_id=current_user.id)
+        db.add(profile)
+    
+    if doc_type == "aadhaar":
+        profile.aadhaar_doc = unique_name
+    else:
+        profile.license_doc = unique_name
+    
+    # Mark as verified if driver has both documents
+    if profile.user_type == 'driver' and profile.aadhaar_doc and profile.license_doc:
+        profile.is_verified = True
+    
+    db.commit()
+    db.refresh(profile)
+    
+    doc_url = f"{BASE_URL}/uploads/{unique_name}"
+    
+    return {
+        "message": f"{doc_type} document uploaded successfully",
+        "filename": unique_name,
+        "url": doc_url,
+        "aadhaar_doc": profile.aadhaar_doc,
+        "aadhaar_doc_url": f"{BASE_URL}/uploads/{profile.aadhaar_doc}" if profile.aadhaar_doc else None,
+        "license_doc": profile.license_doc,
+        "license_doc_url": f"{BASE_URL}/uploads/{profile.license_doc}" if profile.license_doc else None,
+        "is_verified": profile.is_verified
     }

@@ -78,6 +78,9 @@ class TripResponse(TripCreate):
     space_used_percentage: Optional[float] = 0.0
     total_kg_km: Optional[float] = 0.0
     passenger_count: Optional[int] = 0
+    slots_total: Optional[int] = 5
+    slots_filled: Optional[int] = 0
+    partners: Optional[list[dict]] = []
 
     class Config:
         from_attributes = True

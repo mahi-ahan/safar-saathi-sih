@@ -2,11 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+import math
 import models
 import schemas
 from database import get_db
 from auth.dependencies import require_roles, get_current_user
-from routers.trips import recalculate_trip_cost_shares, calculate_haversine_km, check_and_finalize_trip_completion
+from routers.trips import (
+    recalculate_trip_cost_shares,
+    calculate_haversine_km,
+    check_and_finalize_trip_completion,
+    is_passenger_on_route,
+    calculate_route_aware_price
+)
 
 router = APIRouter(
     prefix="/api/requests",
@@ -53,6 +60,12 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
             share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)
             req.per_person_share = share
             db.commit()
+        else:
+            share = calculate_route_aware_price(dist, trip=trip, service_fee=20.0)
+            req.per_person_share = share
+            db.commit()
+    else:
+        share = calculate_route_aware_price(dist, trip=None, service_fee=20.0)
 
     share_pct = round((req.kg_km / total_kg_km * 100), 1) if total_kg_km > 0 else 100.0
 
@@ -104,12 +117,53 @@ def create_request(
 ):
     weight = req.goods_weight_kg if req.goods_weight_kg is not None else req.kg
     
-    # Calculate exact distance from locked-in pickup & delivery coordinates if provided
-    exact_dist = calculate_haversine_km(req.pickup_lat, req.pickup_lng, req.delivery_lat, req.delivery_lng)
+    # 1. Locate linked trip
+    trip = None
+    if req.owner and req.route:
+        all_trips = db.query(models.TripModel).filter(models.TripModel.owner == req.owner).all()
+        for t in all_trips:
+            if f"{t.from_loc} → {t.to_loc}" == req.route:
+                trip = t
+                break
+
+    # 2. Strict Route Proximity Check (5 km start/dest buffer & intermediate corridor check)
+    if trip:
+        driver_start_lat = trip.pickup_lat if (trip.pickup_lat and trip.pickup_lat != 0.0) else trip.lat
+        driver_start_lng = trip.pickup_lng if (trip.pickup_lng and trip.pickup_lng != 0.0) else trip.lng
+        driver_dest_lat = trip.dest_lat
+        driver_dest_lng = trip.dest_lng
+
+        driver_route_coords = []
+        if driver_start_lat and driver_start_lng and (driver_start_lat != 0.0 or driver_start_lng != 0.0):
+            driver_route_coords.append((float(driver_start_lat), float(driver_start_lng)))
+        if driver_dest_lat and driver_dest_lng and (driver_dest_lat != 0.0 or driver_dest_lng != 0.0):
+            driver_route_coords.append((float(driver_dest_lat), float(driver_dest_lng)))
+
+        if len(driver_route_coords) >= 2:
+            # Verify Passenger Pickup
+            if req.pickup_lat and req.pickup_lng and (req.pickup_lat != 0.0 or req.pickup_lng != 0.0):
+                if not is_passenger_on_route((float(req.pickup_lat), float(req.pickup_lng)), driver_route_coords):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Route Mismatch: Requested pickup location is not along the driver's route corridor."
+                    )
+            # Verify Passenger Dropoff
+            if req.delivery_lat and req.delivery_lng and (req.delivery_lat != 0.0 or req.delivery_lng != 0.0):
+                if not is_passenger_on_route((float(req.delivery_lat), float(req.delivery_lng)), driver_route_coords):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Route Mismatch: Requested drop-off location is not along the driver's route corridor."
+                    )
+
+    # 3. Calculate exact on-route passenger distance & route-aware segment pricing
+    exact_dist = calculate_haversine_km(req.pickup_lat or 0.0, req.pickup_lng or 0.0, req.delivery_lat or 0.0, req.delivery_lng or 0.0)
     if exact_dist > 0:
         dist = exact_dist
     else:
-        dist = req.distance_km if (req.distance_km and req.distance_km > 0) else 150.0
+        trip_default_dist = trip.distance_km if (trip and trip.distance_km and trip.distance_km > 0) else 150.0
+        dist = req.distance_km if (req.distance_km and req.distance_km > 0) else trip_default_dist
+
+    initial_share = calculate_route_aware_price(dist, trip=trip, service_fee=20.0)
 
     db_req = models.RequestModel(
         id=req.id,
@@ -121,6 +175,7 @@ def create_request(
         goods_weight_kg=weight,
         distance_km=dist,
         kg_km=round(float(weight) * float(dist), 2),
+        per_person_share=initial_share,
         pickup_place=req.pickup_place,
         delivery_date=req.delivery_date,
         pickup_lat=req.pickup_lat or 0.0,
@@ -136,11 +191,8 @@ def create_request(
     db.refresh(db_req)
 
     # Recalculate trip cost shares & capacity for linked trip
-    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == req.owner).all()
-    for t in all_trips:
-        if f"{t.from_loc} → {t.to_loc}" == req.route:
-            recalculate_trip_cost_shares(t, db)
-            break
+    if trip:
+        recalculate_trip_cost_shares(trip, db)
 
     return serialize_request_with_cost(db_req, db)
 

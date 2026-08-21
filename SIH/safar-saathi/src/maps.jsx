@@ -505,17 +505,25 @@ function Maps({
 
         const startCoords = [startLat, startLng];
         const destCoords = [destLat, destLng];
-
         const routes = await getRoadRoute(startCoords, destCoords, false);
         if (!isMounted || !routes || routes.length === 0) return;
 
         const bestRoute = routes[0];
         const points = bestRoute.points;
 
+        // 0. Visual 1 km Route Corridor Buffer Band (Green glowing buffer)
+        const corridorBuffer = L.polyline(points, {
+          color: '#10b981',
+          weight: 26,
+          opacity: 0.22,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+
         // 1. Google Maps Outer Dark Blue Glow Casing Polyline
         const casingPolyline = L.polyline(points, {
-          color: '#1d4ed8',
-          weight: 8,
+          color: '#0369a1',
+          weight: 9,
           opacity: 0.85,
           lineCap: 'round',
           lineJoin: 'round'
@@ -530,7 +538,7 @@ function Maps({
           lineJoin: 'round'
         }).addTo(map);
 
-        activeRouteLayersRef.current = [casingPolyline, corePolyline];
+        activeRouteLayersRef.current = [corridorBuffer, casingPolyline, corePolyline];
 
         // 3. Start Marker (🟢 Driver Origin)
         const startIcon = L.divIcon({

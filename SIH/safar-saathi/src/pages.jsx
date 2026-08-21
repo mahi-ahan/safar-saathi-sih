@@ -31,7 +31,10 @@ import {
   LocationAutocomplete,
   geocodeIndianLocation,
   isPointAlongRoute,
-  haversineDistance
+  haversineDistance,
+  isPassengerOnRoute,
+  calculateRouteAwarePrice,
+  distanceToSegmentKm
 } from './ui'
 
 import Maps from './Maps'
@@ -512,6 +515,9 @@ export function FindVehicles() {
           total_booked_kg: trip.total_booked_kg || 0,
           total_kg_km: trip.total_kg_km || 0,
           passenger_count: trip.passenger_count || 0,
+          slots_total: trip.slots_total || 5,
+          slots_filled: trip.slots_filled !== undefined ? trip.slots_filled : (trip.passenger_count || 0),
+          partners: trip.partners || [],
           pickup: trip.pickup,
           lat: trip.lat,
           lng: trip.lng,
@@ -771,27 +777,58 @@ export function FindVehicles() {
       return
     }
 
-    // Intercity Route Corridor Validation
-    const tripOriginCoords = { lat: trip.lat || 19.9975, lng: trip.lng || 73.7898 };
-    const tripDestCoords = { lat: trip.destLat || (trip.lat ? trip.lat + 1.2 : 18.5204), lng: trip.destLng || (trip.lng ? trip.lng + 1.2 : 73.8567) };
+    // Resolve Coordinates (Ensure both pickup and delivery have verified GPS coordinates)
+    let pickupCoords = r.pickupCoords;
+    if (!pickupCoords || !pickupCoords.lat || !pickupCoords.lng) {
+      notify("🔍 Resolving pickup location coordinates...");
+      const resolved = await geocodeIndianLocation(r.pickupLocation);
+      if (resolved && resolved.lat && resolved.lng) {
+        pickupCoords = { lat: resolved.lat, lng: resolved.lng };
+        updateRequest(trip.id, 'pickupCoords', pickupCoords);
+      }
+    }
 
-    if (r.pickupCoords && !isPointAlongRoute(r.pickupCoords, tripOriginCoords, tripDestCoords, 0.25)) {
-      notify(`⚠ Pickup location is not along the driver's travel route (${trip.from} → ${trip.to}). Please select a location along the intercity route.`);
+    let deliveryCoords = r.deliveryCoords;
+    if (!deliveryCoords || !deliveryCoords.lat || !deliveryCoords.lng) {
+      notify("🔍 Resolving delivery location coordinates...");
+      const resolved = await geocodeIndianLocation(r.deliveryLocation);
+      if (resolved && resolved.lat && resolved.lng) {
+        deliveryCoords = { lat: resolved.lat, lng: resolved.lng };
+        updateRequest(trip.id, 'deliveryCoords', deliveryCoords);
+      }
+    }
+
+    if (!pickupCoords || !deliveryCoords) {
+      notify("❌ Please select a verified Indian location from the suggestions dropdown for both pickup and delivery.");
       return;
     }
 
-    if (r.deliveryCoords && !isPointAlongRoute(r.deliveryCoords, tripOriginCoords, tripDestCoords, 0.25)) {
-      notify(`⚠ Delivery location is not along the driver's travel route (${trip.from} → ${trip.to}). Please select a location along the intercity route.`);
-      return;
+    // Intercity Route Corridor Validation (5 km start/dest buffer + intermediate stop leverage)
+    const tripStart = { lat: trip.pickup_lat || trip.lat || 0, lng: trip.pickup_lng || trip.lng || 0 };
+    const tripDest = { lat: trip.dest_lat || trip.destLat || 0, lng: trip.dest_lng || trip.destLng || 0 };
+    const driverRoute = [tripStart, tripDest].filter(c => c.lat !== 0 || c.lng !== 0);
+
+    if (driverRoute.length >= 2) {
+      const isPickupOnRoute = isPassengerOnRoute(pickupCoords, driverRoute);
+      if (!isPickupOnRoute) {
+        notify(`❌ Route Mismatch: Requested pickup (${r.pickupLocation}) is not along the driver's route (${trip.from} → ${trip.to}). Booking blocked.`);
+        return;
+      }
+
+      const isDeliveryOnRoute = isPassengerOnRoute(deliveryCoords, driverRoute);
+      if (!isDeliveryOnRoute) {
+        notify(`❌ Route Mismatch: Requested drop-off (${r.deliveryLocation}) is not along the driver's route (${trip.from} → ${trip.to}). Booking blocked.`);
+        return;
+      }
     }
 
     // Calculate travel distance between user pickup and delivery locations
     let estimatedDist = trip.distance_km || 150;
-    if (r.pickupCoords && r.deliveryCoords) {
+    if (pickupCoords && deliveryCoords) {
       const R = 6371;
-      const dLat = (r.deliveryCoords.lat - r.pickupCoords.lat) * Math.PI / 180;
-      const dLon = (r.deliveryCoords.lng - r.pickupCoords.lng) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(r.pickupCoords.lat * Math.PI / 180) * Math.cos(r.deliveryCoords.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const dLat = (deliveryCoords.lat - pickupCoords.lat) * Math.PI / 180;
+      const dLon = (deliveryCoords.lng - pickupCoords.lng) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(pickupCoords.lat * Math.PI / 180) * Math.cos(deliveryCoords.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       estimatedDist = Math.max(10, Math.round(R * c * 1.25));
     }
@@ -1191,24 +1228,64 @@ export function FindVehicles() {
                           </div>
                         )}
 
-                        {/* LOAD CAPACITY BAR */}
-                        <div className="bg-cream rounded-xl border border-gold/20 p-3 mb-3">
-                          <div className="flex items-center justify-between text-xs font-semibold text-green-deep mb-1.5">
-                            <span>📦 Space Used: {usedPct}% ({bookedKg} kg)</span>
+                        {/* LIVE CAPACITY SLOTS & CO-SHARING PARTNERS */}
+                        <div className="bg-cream rounded-xl border border-gold/20 p-3 mb-3 space-y-2.5">
+                          <div className="flex items-center justify-between text-xs font-semibold text-green-deep">
+                            <span className="flex items-center gap-1.5">
+                              <span>🎯 Capacity Slots:</span>
+                              <span className="font-mono bg-white px-2 py-0.5 rounded-md border border-gold/30 text-green-deep font-bold">
+                                {trip.slots_filled || 0} of {trip.slots_total || 5} slots booked
+                              </span>
+                            </span>
                             <span className={free <= 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
-                              {free <= 0 ? '❌ Full Capacity' : `✔ ${free} kg available`}
+                              {free <= 0 ? '❌ Full Capacity' : `✔ ${free} kg space free`}
                             </span>
                           </div>
-                          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden shadow-inner">
-                            <div
-                              className={`h-full transition-all duration-500 rounded-full ${usedPct >= 90
-                                  ? 'bg-red-500'
-                                  : usedPct >= 70
-                                    ? 'bg-amber-500'
-                                    : 'bg-green-600'
-                                }`}
-                              style={{ width: `${Math.min(100, Math.max(0, usedPct))}%` }}
-                            ></div>
+                          {/* Visual Slots Track */}
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {Array.from({ length: trip.slots_total || 5 }).map((_, idx) => {
+                              const isFilled = idx < (trip.slots_filled || 0);
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`h-2 rounded-full transition-all duration-300 ${
+                                    isFilled ? 'bg-green-600 shadow-sm' : 'bg-gray-200/80 border border-dashed border-gray-300'
+                                  }`}
+                                  title={isFilled ? `Slot ${idx + 1}: Booked` : `Slot ${idx + 1}: Available`}
+                                />
+                              );
+                            })}
+                          </div>
+
+                          {/* Co-Sharing Partner List / Badges */}
+                          <div className="pt-1.5 border-t border-gold/15 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                            <div className="flex items-center gap-1 text-green-deep font-medium">
+                              <span>👥</span>
+                              <span className="font-semibold text-[11.5px]">Co-Sharing Partners:</span>
+                            </div>
+
+                            {trip.partners && trip.partners.length > 0 ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {trip.partners.slice(0, 3).map((p, pIdx) => (
+                                  <span
+                                    key={pIdx}
+                                    className="bg-white/90 text-green-deep border border-gold/30 px-2 py-0.5 rounded-lg text-[10.5px] font-semibold flex items-center gap-1 shadow-2xs"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                    <span>{p.farmer_name} ({p.goods_weight_kg}kg)</span>
+                                  </span>
+                                ))}
+                                {trip.partners.length > 3 && (
+                                  <span className="text-[10px] text-green-soft font-semibold">
+                                    +{trip.partners.length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-green-soft text-[10.5px] italic">
+                                ✨ Be the first partner! Next bookings will discount your trip.
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -1378,20 +1455,123 @@ export function FindVehicles() {
                               </Field>
                             </div>
 
-                            {/* DYNAMIC ESTIMATED FARE SHARE */}
-                            {r.weight && Number(r.weight) > 0 && (
-                              <div className="rounded-xl bg-gold/15 border border-gold/30 p-2.5 text-xs space-y-1">
-                                <div className="flex items-center justify-between text-green-deep font-semibold">
-                                  <span>Estimated Ton-Km Share:</span>
-                                  <span className="font-bold font-display text-sm">
-                                    ₹{Math.round(((Number(r.weight) * (trip.distance_km || 150)) / (((trip.total_kg_km || 0) + (Number(r.weight) * (trip.distance_km || 150))) || 1)) * (trip.total_driver_amount || (trip.pricePerKg * trip.totalKg) || 1000))}
-                                  </span>
+                            {/* DYNAMIC ROUTE CORRIDOR & SEGMENT PRICING PREVIEW */}
+                            {(() => {
+                              const driverRoute = [
+                                { lat: trip.pickup_lat || trip.lat || 0, lng: trip.pickup_lng || trip.lng || 0 },
+                                { lat: trip.dest_lat || trip.destLat || 0, lng: trip.dest_lng || trip.destLng || 0 }
+                              ].filter(c => c.lat !== 0 || c.lng !== 0);
+
+                              const hasPickup = Boolean(r.pickupCoords?.lat && r.pickupCoords?.lng);
+                              const hasDelivery = Boolean(r.deliveryCoords?.lat && r.deliveryCoords?.lng);
+                              const isPickupOnRoute = !hasPickup || driverRoute.length < 2 || isPassengerOnRoute(r.pickupCoords, driverRoute);
+                              const isDeliveryOnRoute = !hasDelivery || driverRoute.length < 2 || isPassengerOnRoute(r.deliveryCoords, driverRoute);
+                              const isRouteValid = isPickupOnRoute && isDeliveryOnRoute;
+
+                              const weightNum = Number(r.weight || 0);
+                              const tripCap = trip.totalKg || 1000;
+                              const tripTotalFare = trip.total_driver_amount || (trip.pricePerKg * tripCap) || 3000;
+                              const baseRatePerKg = trip.pricePerKg || (tripTotalFare / tripCap) || 12;
+
+                              // Upfront Maximum Estimated Solo Fare (Worst-case ceiling before pooling discount)
+                              const maxSoloFare = weightNum > 0
+                                ? Math.max(50, Math.round(((weightNum / tripCap) * tripTotalFare) + 20))
+                                : Math.round(baseRatePerKg * 10 + 20);
+
+                              // Segment distance and dynamic fare once pickup/delivery coordinates are chosen
+                              const hasCoords = hasPickup && hasDelivery;
+                              const segDist = hasCoords
+                                ? Math.max(5, Math.round(haversineDistance(r.pickupCoords.lat, r.pickupCoords.lng, r.deliveryCoords.lat, r.deliveryCoords.lng) * 1.25))
+                                : 0;
+
+                              const estimatedFare = hasCoords ? calculateRouteAwarePrice(segDist, trip, 20) : null;
+
+                              return (
+                                <div className="space-y-2.5">
+                                  {/* PROXIMITY CORRIDOR ALERT */}
+                                  {(hasPickup || hasDelivery) && (
+                                    <div className={`rounded-xl p-2.5 text-xs font-semibold flex items-center justify-between border ${
+                                      isRouteValid
+                                        ? 'bg-green-50 text-green-800 border-green-300'
+                                        : 'bg-red-50 text-red-800 border-red-300 animate-pulse'
+                                    }`}>
+                                      <span className="flex items-center gap-1.5">
+                                        <span>{isRouteValid ? '✔' : '❌'}</span>
+                                        <span>
+                                          {isRouteValid
+                                            ? "Route Corridor Validated (Start, destination, or valid intermediate stop)"
+                                            : "Route Mismatch: Selected location is outside the vehicle's transit corridor"}
+                                        </span>
+                                      </span>
+                                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-white/70">
+                                        {isRouteValid ? 'Valid Stop' : 'Off-Route'}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* TRANSPARENT PRICING & POOLING BREAKDOWN */}
+                                  {weightNum > 0 && (
+                                    <div className="rounded-2xl bg-gold/15 border border-gold/35 p-3 text-xs space-y-2.5 shadow-xs">
+                                      {/* 1. UPFRONT MAXIMUM SOLO ESTIMATE CEILING */}
+                                      <div className="flex items-start justify-between gap-3 pb-2 border-b border-gold/20">
+                                        <div>
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="text-sm">🛡️</span>
+                                            <span className="font-bold text-green-deep text-xs">Maximum Estimated Solo Fare:</span>
+                                          </div>
+                                          <p className="text-[10.5px] text-green-soft mt-0.5">
+                                            Absolute worst-case ceiling if no other cargo shares this vehicle.
+                                          </p>
+                                        </div>
+                                        <div className="text-right">
+                                          <span className="font-display font-bold text-base text-soil">
+                                            ₹{maxSoloFare.toLocaleString('en-IN')}
+                                          </span>
+                                          <span className="block text-[10px] text-gray-500 font-mono">Max Solo Ceiling</span>
+                                        </div>
+                                      </div>
+
+                                      {/* 2. DYNAMIC SHARED-LOAD ON-ROUTE SEGMENT FARE */}
+                                      {hasCoords ? (
+                                        <div className="bg-white/80 rounded-xl p-2.5 border border-green-300 space-y-1">
+                                          <div className="flex items-center justify-between text-green-deep font-semibold">
+                                            <span className="flex items-center gap-1 text-green-800">
+                                              <span>💚</span>
+                                              <span>Your Calculated Segment Fare:</span>
+                                            </span>
+                                            <span className="font-bold font-display text-lg text-green-deep">
+                                              ₹{estimatedFare.toLocaleString('en-IN')}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center justify-between text-[11px] text-green-soft">
+                                            <span>Travel Segment: {segDist} km (incl. ₹20 service fee)</span>
+                                            <span>Workload: {weightNum * segDist} kg·km</span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="bg-white/70 rounded-xl p-2 border border-gold/20 text-[11px] text-green-soft flex items-center justify-between">
+                                          <span>📍 Base Rate: <strong>₹{baseRatePerKg.toFixed(1)}/kg</strong></span>
+                                          <span className="text-[10.5px] text-soil font-medium">Select pickup & delivery below for exact route fare</span>
+                                        </div>
+                                      )}
+
+                                      {/* 3. SHARED POOLING ADVANTAGE BANNER */}
+                                      <div className="rounded-xl bg-green-50 p-2.5 border border-green-200 text-[11px] text-green-900 flex items-start gap-2">
+                                        <span className="text-sm shrink-0">⚡</span>
+                                        <div>
+                                          <p className="font-bold text-green-900">
+                                            Shared-Load Automatic Discount Active:
+                                          </p>
+                                          <p className="text-[10.5px] text-green-800 mt-0.5 leading-relaxed">
+                                            This price will <strong>automatically drop further</strong> as more co-sharing partners join this vehicle. Total cost is distributed fairly by exact Ton-Km weight × distance.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                                <p className="text-[10.5px] text-green-soft">
-                                  Workload: {Number(r.weight) * (trip.distance_km || 150)} kg·km
-                                </p>
-                              </div>
-                            )}
+                              );
+                            })()}
 
                             <div className="grid sm:grid-cols-2 gap-3">
                               <Field label="Your Pickup Location">
@@ -2119,6 +2299,7 @@ export function OfferTrip() {
   })
 
   const [published, setPublished] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false)
   const [arrived, setArrived] = useState(false)
   const [deliveryPhoto, setDeliveryPhoto] = useState(null)
   const [done, setDone] = useState(false)
@@ -2445,6 +2626,7 @@ export function OfferTrip() {
   )
 
   const publishTrip = async () => {
+    if (isPublishing) return;
     if (
       !o.from ||
       !o.to ||
@@ -2467,32 +2649,34 @@ export function OfferTrip() {
       return;
     }
 
-    // STRICT LOCATION VERIFICATION: Verify with OpenStreetMap Nominatim
+    setIsPublishing(true);
     notify('🔍 Verifying locations in India...');
-    let fromResolved = o.fromCoords;
-    if (!fromResolved) {
-      fromResolved = await geocodeIndianLocation(o.from);
-    }
-    if (!fromResolved) {
-      notify(`❌ "${o.from}" is not a valid location in India. Please enter a valid Indian city.`);
-      return;
-    }
-
-    let toResolved = o.toCoords;
-    if (!toResolved) {
-      toResolved = await geocodeIndianLocation(o.to);
-    }
-    if (!toResolved) {
-      notify(`❌ "${o.to}" is not a valid location in India. Please enter a valid Indian city.`);
-      return;
-    }
-
-    const tripLat = fromResolved.lat;
-    const tripLng = fromResolved.lng;
-
-    // Send trip to backend
-    const token = localStorage.getItem("access_token");
     try {
+      let fromResolved = o.fromCoords;
+      if (!fromResolved) {
+        fromResolved = await geocodeIndianLocation(o.from);
+      }
+      if (!fromResolved) {
+        notify(`❌ "${o.from}" is not a valid location in India. Please enter a valid Indian city.`);
+        setIsPublishing(false);
+        return;
+      }
+
+      let toResolved = o.toCoords;
+      if (!toResolved) {
+        toResolved = await geocodeIndianLocation(o.to);
+      }
+      if (!toResolved) {
+        notify(`❌ "${o.to}" is not a valid location in India. Please enter a valid Indian city.`);
+        setIsPublishing(false);
+        return;
+      }
+
+      const tripLat = fromResolved.lat;
+      const tripLng = fromResolved.lng;
+
+      // Send trip to backend
+      const token = localStorage.getItem("access_token");
       const res = await fetch("http://localhost:8000/api/trips", {
         method: "POST",
         headers: {
@@ -2523,8 +2707,27 @@ export function OfferTrip() {
 
       if (res.ok) {
         setPublished(true);
-        notify(`✔ Trip published: ${fromResolved.shortName} → ${toResolved.shortName}`);
-        fetchMyTrips();
+        notify(`✔ Trip published successfully: ${fromResolved.shortName} → ${toResolved.shortName}`);
+        // Reset form state
+        setO({
+          from: '',
+          fromCoords: null,
+          to: '',
+          toCoords: null,
+          date: '',
+          vehicle: 'Mini Truck',
+          total: 1000,
+          cap: 600,
+          fare: 'driver',
+          price: '',
+          totalDriverAmount: '',
+          pickup: '',
+          pickupCoords: null
+        });
+        await fetchMyTrips();
+        // Immediately redirect to published trips list
+        setActiveTab('trips');
+        setTripFilter('all');
       } else {
         const data = await res.json();
         notify(data.detail || "Failed to publish trip.");
@@ -2532,6 +2735,8 @@ export function OfferTrip() {
     } catch (err) {
       console.error("Failed to publish trip", err);
       notify("Could not connect to backend.");
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -3439,8 +3644,8 @@ export function OfferTrip() {
               </button>
             </div>
 
-            <Btn size="lg" onClick={publishTrip} className="w-full">
-              Publish Trip Load
+            <Btn size="lg" onClick={publishTrip} disabled={isPublishing} className="w-full">
+              {isPublishing ? '⏳ Publishing Trip...' : 'Publish Trip Load'}
             </Btn>
           </form>
 

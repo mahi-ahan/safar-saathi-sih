@@ -35,6 +35,101 @@ def calculate_haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -
     return round(max(5.0, R * c * 1.25), 2)
 
 
+def distance_to_segment_km(p_lat: float, p_lng: float, a_lat: float, a_lng: float, b_lat: float, b_lng: float) -> float:
+    """
+    Computes precise geodesic cross-track / perpendicular distance (in km) from coordinate point P to line segment AB.
+    """
+    R = 6371.0  # Earth radius in km
+    phi_0 = math.radians((a_lat + b_lat + p_lat) / 3.0)
+    
+    x_a = R * math.radians(a_lng) * math.cos(phi_0)
+    y_a = R * math.radians(a_lat)
+    
+    x_b = R * math.radians(b_lng) * math.cos(phi_0)
+    y_b = R * math.radians(b_lat)
+    
+    x_p = R * math.radians(p_lng) * math.cos(phi_0)
+    y_p = R * math.radians(p_lat)
+    
+    dx = x_b - x_a
+    dy = y_b - y_a
+    l2 = dx * dx + dy * dy
+    
+    if l2 == 0:
+        return math.hypot(x_p - x_a, y_p - y_a)
+        
+    t = max(0.0, min(1.0, ((x_p - x_a) * dx + (y_p - y_a) * dy) / l2))
+    proj_x = x_a + t * dx
+    proj_y = y_a + t * dy
+    
+    return math.hypot(x_p - proj_x, y_p - proj_y)
+
+
+def is_passenger_on_route(passenger_coords: tuple[float, float], driver_route_coords: list[tuple[float, float]], threshold_km: float = 5.0) -> bool:
+    """
+    Validates passenger coordinates against the vehicle's route geometry:
+    1. Start Point: Allow a buffer up to 5 km from the trip's starting point.
+    2. Destination: Pinpoint within 5 km of destination stop.
+    3. In-Between / Intermediate Route: Full leverage for passengers to select pickup/drop-off
+       points anywhere in between as long as they lie along the vehicle's path.
+    """
+    if not passenger_coords or len(passenger_coords) < 2:
+        return True
+    p_lat, p_lng = float(passenger_coords[0]), float(passenger_coords[1])
+    if (p_lat == 0.0 and p_lng == 0.0) or not driver_route_coords or len(driver_route_coords) < 2:
+        return True
+
+    origin_lat, origin_lng = float(driver_route_coords[0][0]), float(driver_route_coords[0][1])
+    dest_lat, dest_lng = float(driver_route_coords[-1][0]), float(driver_route_coords[-1][1])
+
+    # 1. Start Point buffer (up to 5 km from starting point)
+    dist_to_origin = calculate_haversine_km(p_lat, p_lng, origin_lat, origin_lng)
+    if dist_to_origin <= 5.0:
+        return True
+
+    # 2. Destination Point buffer (up to 5 km from destination stop)
+    dist_to_dest = calculate_haversine_km(p_lat, p_lng, dest_lat, dest_lng)
+    if dist_to_dest <= 5.0:
+        return True
+
+    # 3. Intermediate route corridor check (full leverage anywhere along vehicle path)
+    direct_dist = calculate_haversine_km(origin_lat, origin_lng, dest_lat, dest_lng)
+    dist_via_point = dist_to_origin + dist_to_dest
+    max_allowed_detour = (direct_dist * 1.25) + 15.0
+
+    if dist_via_point <= max_allowed_detour and dist_to_origin <= (direct_dist + 15.0) and dist_to_dest <= (direct_dist + 15.0):
+        return True
+
+    # 4. Check detailed segment polyline if provided
+    min_dist = float("inf")
+    for i in range(len(driver_route_coords) - 1):
+        a_lat, a_lng = float(driver_route_coords[i][0]), float(driver_route_coords[i][1])
+        b_lat, b_lng = float(driver_route_coords[i + 1][0]), float(driver_route_coords[i + 1][1])
+        if (a_lat == 0.0 and a_lng == 0.0) or (b_lat == 0.0 and b_lng == 0.0):
+            continue
+        d = distance_to_segment_km(p_lat, p_lng, a_lat, a_lng, b_lat, b_lng)
+        if d < min_dist:
+            min_dist = d
+
+    return min_dist <= threshold_km
+
+
+def calculate_route_aware_price(passenger_dist_km: float, trip: models.TripModel | None = None, service_fee: float = 20.0) -> float:
+    """
+    Calculates cost based on the actual on-route distance segment:
+    Formula: (Base Price per KM * Passenger Distance) + Service Fee
+    """
+    if trip and trip.distance_km and trip.distance_km > 0 and trip.total_driver_amount and trip.total_driver_amount > 0:
+        base_price_per_km = float(trip.total_driver_amount) / float(trip.distance_km)
+    elif trip and trip.price_per_kg and trip.price_per_kg > 0:
+        base_price_per_km = float(trip.price_per_kg)
+    else:
+        base_price_per_km = 12.0  # default base price per km
+
+    price = round((base_price_per_km * passenger_dist_km) + service_fee, 2)
+    return max(0.0, price)
+
+
 def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
     """
     Dynamically recalculates proportional cost shares for all active passengers on a trip
@@ -134,6 +229,29 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         check_and_finalize_trip_completion(trip, db)
 
     total_payload, total_kg_km, available_space, space_used_pct, count = recalculate_trip_cost_shares(trip, db)
+
+    route_str = f"{trip.from_loc} → {trip.to_loc}"
+    active_requests = db.query(models.RequestModel).filter(
+        models.RequestModel.owner == trip.owner,
+        models.RequestModel.route == route_str,
+        models.RequestModel.status.in_(["pending", "accepted", "in_transit", "pending_passenger_confirmation", "completed", "assigned"])
+    ).all()
+
+    partners = [
+        {
+            "id": r.id,
+            "farmer_name": r.farmer_name or "Cargo Partner",
+            "goods_weight_kg": r.goods_weight_kg if r.goods_weight_kg is not None else (r.kg or 0),
+            "status": r.status,
+            "pickup_place": r.pickup_place or r.route
+        }
+        for r in active_requests
+    ]
+
+    total_capacity = trip.total_kg or 1000
+    slots_total = max(5, int(total_capacity / 200))
+    slots_filled = min(slots_total, len(active_requests))
+
     return schemas.TripResponse(
         id=trip.id,
         state=trip.state or "",
@@ -162,7 +280,10 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         speed=trip.speed or 0.0,
         total_booked_kg=total_payload or 0,
         total_kg_km=total_kg_km or 0.0,
-        passenger_count=count or 0
+        passenger_count=count or 0,
+        slots_total=slots_total,
+        slots_filled=slots_filled,
+        partners=partners
     )
 
 

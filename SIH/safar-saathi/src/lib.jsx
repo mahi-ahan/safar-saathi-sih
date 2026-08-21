@@ -1414,6 +1414,24 @@ export function AppProvider({ children }) {
     }
   })
 
+  const [authModal, setAuthModal] = useState({
+    isOpen: false,
+    intent: 'find',
+    onSuccess: null
+  })
+
+  const openAuthModal = (intent = 'find', onSuccess = null) => {
+    setAuthModal({
+      isOpen: true,
+      intent,
+      onSuccess
+    })
+  }
+
+  const closeAuthModal = () => {
+    setAuthModal(prev => ({ ...prev, isOpen: false }))
+  }
+
   const setUser = userData => {
     setUserState(userData)
     try {
@@ -1429,7 +1447,10 @@ export function AppProvider({ children }) {
     <AppCtx.Provider
       value={{
         user,
-        setUser
+        setUser,
+        authModal,
+        openAuthModal,
+        closeAuthModal
       }}
     >
       {children}

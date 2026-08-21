@@ -19,6 +19,7 @@ import {
 
 import { useLang } from './lib'
 import { TTSButton } from './tts'
+import { AuthModal } from './AuthModal'
 
 import {
   Btn,
@@ -48,6 +49,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 export function Home() {
   const { t } = useLang()
   const navigate = useNavigate()
+  const [authModal, setAuthModal] = useState({ isOpen: false, intent: 'find' })
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
   const heroRef = useRef(null)
@@ -201,13 +203,13 @@ export function Home() {
                 </span>
               </p>
 
-              <div className="mt-8 flex flex-wrap gap-4">
-                {/* Find a Vehicle Button -> Always goes to /find */}
+                  <div className="mt-8 flex flex-wrap gap-4">
+                {/* Find a Vehicle Button -> Smooth AuthModal if not signed in */}
                 <button
                   onClick={async () => {
                     const token = localStorage.getItem("access_token");
                     if (!token) {
-                      navigate('/login', { state: { intent: 'find' } });
+                      setAuthModal({ isOpen: true, intent: 'find' });
                       return;
                     }
                     try {
@@ -218,18 +220,12 @@ export function Home() {
                       if (!data.is_profile_complete) {
                         navigate('/complete-profile');
                       } else if (data.user_type === 'driver') {
-                        localStorage.removeItem("access_token");
-                        navigate('/login', {
-                          state: {
-                            intent: 'find',
-                            error: 'This account belongs to Offer a Trip (Driver). Please use a Sender account for Find a Vehicle.'
-                          }
-                        });
+                        setAuthModal({ isOpen: true, intent: 'find' });
                       } else {
                         navigate('/find');
                       }
                     } catch (err) {
-                      navigate('/login', { state: { intent: 'find' } });
+                      setAuthModal({ isOpen: true, intent: 'find' });
                     }
                   }}
                   className="bg-green-deep text-cream px-6 py-3.5 rounded-xl font-semibold hover:bg-green border border-green-light/20 transition-all shadow-lg hover:-translate-y-0.5 cursor-pointer"
@@ -237,12 +233,12 @@ export function Home() {
                   {t('cta.find', 'Find a Vehicle')}
                 </button>
 
-                {/* Offer a Trip Button */}
+                {/* Offer a Trip Button -> Smooth AuthModal if not signed in */}
                 <button
                   onClick={async () => {
                     const token = localStorage.getItem("access_token");
                     if (!token) {
-                      navigate('/login', { state: { intent: 'offer' } });
+                      setAuthModal({ isOpen: true, intent: 'offer' });
                       return;
                     }
                     try {
@@ -250,22 +246,15 @@ export function Home() {
                         headers: { "Authorization": `Bearer ${token}` }
                       });
                       const data = await res.json();
-
                       if (!data.is_profile_complete) {
                         navigate('/complete-profile');
                       } else if (data.user_type !== 'driver') {
-                        localStorage.removeItem("access_token");
-                        navigate('/login', {
-                          state: {
-                            intent: 'offer',
-                            error: 'This account belongs to Find a Vehicle (Sender). Please use a Driver account for Offer a Trip.'
-                          }
-                        });
+                        setAuthModal({ isOpen: true, intent: 'offer' });
                       } else {
                         navigate('/offer');
                       }
                     } catch (err) {
-                      navigate('/login', { state: { intent: 'offer' } });
+                      setAuthModal({ isOpen: true, intent: 'offer' });
                     }
                   }}
                   className="bg-gold text-green-deep px-6 py-3.5 rounded-xl font-semibold hover:bg-gold-light transition-all shadow-lg hover:-translate-y-0.5 cursor-pointer"
@@ -298,19 +287,14 @@ export function Home() {
                 <div className="spot rounded-2xl bg-paper p-5 border border-gold/20 h-full">
                   <SackGauge
                     fill={fill}
-                    size={64}
-                  >
-                    <Icon
-                      size={22}
-                      className="text-green-deep"
-                    />
-                  </SackGauge>
+                    Icon={Icon}
+                  />
 
-                  <p className="font-display font-semibold mt-3">
+                  <h3 className="font-display font-bold text-lg text-green-deep mt-4">
                     {h}
-                  </p>
+                  </h3>
 
-                  <p className="text-sm text-green-soft mt-1">
+                  <p className="text-xs text-green-soft mt-1 leading-relaxed">
                     {d}
                   </p>
                 </div>
@@ -319,6 +303,13 @@ export function Home() {
           </div>
         </div>
       </section>
+
+      {/* FROSTED-GLASS AUTH POPUP MODAL */}
+      <AuthModal
+        isOpen={authModal.isOpen}
+        intent={authModal.intent}
+        onClose={() => setAuthModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   )
 }

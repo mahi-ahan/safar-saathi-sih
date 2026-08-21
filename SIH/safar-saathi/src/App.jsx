@@ -29,11 +29,13 @@ import {
 } from 'lucide-react';
 
 import { speakText, stopSpeech } from './tts';
+import { AuthModal } from './AuthModal';
 
 import {
   LangProvider,
   useLang,
   AppProvider,
+  useApp,
   LANGS
 } from './lib';
 
@@ -124,19 +126,54 @@ const NAV = [
 
 function Header() {
   const { t } = useLang()
-
+  const { openAuthModal } = useApp()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
+
+  const handleNavClick = async (e, item) => {
+    if (item.key === 'home') {
+      setOpen(false)
+      return
+    }
+
+    e.preventDefault()
+    setOpen(false)
+
+    const intent = item.key === 'find' ? 'find' : 'offer'
+    const token = localStorage.getItem("access_token")
+
+    if (!token) {
+      openAuthModal(intent)
+      return
+    }
+
+    try {
+      const res = await fetch("http://localhost:8000/auth/status", {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (!data.is_profile_complete) {
+        navigate('/complete-profile')
+      } else if (intent === 'find' && data.user_type === 'driver') {
+        openAuthModal('find')
+      } else if (intent === 'offer' && data.user_type !== 'driver') {
+        openAuthModal('offer')
+      } else {
+        navigate(item.to)
+      }
+    } catch (err) {
+      openAuthModal(intent)
+    }
+  }
 
   return (
     <header className="sticky top-0 z-40 backdrop-blur bg-cream/90 border-b border-gold/30">
-
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-
         <Link
           to="/"
           className="flex items-center gap-2"
         >
-
           <div
             className="sack"
             style={{
@@ -145,62 +182,48 @@ function Header() {
             }}
           >
             <div className="sack-fill"></div>
-
             <div className="sack-icon text-white text-xs font-bold">
               📦
             </div>
-
           </div>
 
           <span className="text-left leading-tight">
-
             <span className="block font-display font-bold text-lg sm:text-xl text-green-deep">
-
               Safar-Saathi
-
               <span className="text-gold-dim">
                 {' '}सफ़र-साथी
               </span>
-
             </span>
-
             <span className="block text-[10px] font-mono uppercase tracking-wider text-green-soft">
               {t('tagline')}
             </span>
-
           </span>
-
         </Link>
 
-
         {/* DESKTOP NAV */}
-
         <nav className="hidden md:flex items-center gap-1 font-mono text-xs">
-
-          {NAV.map(item => (
-
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `px-3 py-2 rounded-full font-medium transition-colors ${isActive
-                  ? 'bg-green-deep text-cream'
-                  : 'text-green-deep hover:bg-green-deep/10'
-                }`
-              }
-            >
-              {t('nav.' + item.key)}
-            </NavLink>
-
-          ))}
-
+          {NAV.map(item => {
+            const isActive = location.pathname === item.to
+            return (
+              <a
+                key={item.to}
+                href={item.to}
+                onClick={e => handleNavClick(e, item)}
+                className={`px-3.5 py-2 rounded-full font-medium transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-green-deep text-cream shadow-sm'
+                    : 'text-green-deep hover:bg-green-deep/10'
+                }`}
+              >
+                {t('nav.' + item.key)}
+              </a>
+            )
+          })}
         </nav>
 
-
         {/* MOBILE MENU BUTTON */}
-
         <button
-          className="md:hidden p-2 rounded-lg border border-gold/50"
+          className="md:hidden p-2 rounded-lg border border-gold/50 cursor-pointer"
           onClick={() => setOpen(o => !o)}
           aria-label="Menu"
         >
@@ -209,38 +232,30 @@ function Header() {
             : <Menu size={20} />
           }
         </button>
-
       </div>
 
-
-      {/* MOBILE NAV */}
-
+      {/* MOBILE NAV (HAMBURGER MENU) */}
       {open && (
-
-        <nav className="md:hidden px-4 pb-3 flex flex-col gap-1 font-mono text-sm border-t border-gold/20">
-
-          {NAV.map(item => (
-
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setOpen(false)}
-              className={({ isActive }) =>
-                `px-3 py-2 rounded-lg text-left ${isActive
-                  ? 'bg-green-deep text-cream'
-                  : 'text-green-deep'
-                }`
-              }
-            >
-              {t('nav.' + item.key)}
-            </NavLink>
-
-          ))}
-
+        <nav className="md:hidden px-4 pb-3 flex flex-col gap-1.5 font-mono text-sm border-t border-gold/20 animate-[fadeIn_0.15s_ease]">
+          {NAV.map(item => {
+            const isActive = location.pathname === item.to
+            return (
+              <a
+                key={item.to}
+                href={item.to}
+                onClick={e => handleNavClick(e, item)}
+                className={`px-3 py-2.5 rounded-xl text-left font-medium transition-colors cursor-pointer ${
+                  isActive
+                    ? 'bg-green-deep text-cream font-semibold'
+                    : 'text-green-deep hover:bg-green-deep/10 bg-white/50 border border-gold/20'
+                }`}
+              >
+                {t('nav.' + item.key)}
+              </a>
+            )
+          })}
         </nav>
-
       )}
-
     </header>
   )
 }
@@ -317,6 +332,7 @@ const MARG_KNOWLEDGE = {
 
 function MaargMitra() {
   const { t, lang } = useLang()
+  const { openAuthModal } = useApp()
   const nav = useNavigate()
 
   const [open, setOpen] = useState(false)
@@ -344,7 +360,7 @@ function MaargMitra() {
     return enDict[key] || "I am here to help you navigate Safar-Saathi.";
   }
 
-  const reply = (keyOrText, go = null) => {
+  const reply = async (keyOrText, go = null) => {
     const msg = MARG_KNOWLEDGE.en[keyOrText] ? getKnowledgeText(keyOrText) : keyOrText;
 
     setLog(l => [
@@ -361,7 +377,31 @@ function MaargMitra() {
     });
 
     if (go) {
-      setTimeout(() => nav(go), 800);
+      if (go === '/find' || go === '/offer') {
+        const intent = go === '/find' ? 'find' : 'offer';
+        const token = localStorage.getItem("access_token");
+        if (!token) {
+          setTimeout(() => openAuthModal(intent), 600);
+          return;
+        }
+        try {
+          const res = await fetch("http://localhost:8000/auth/status", {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (!data.is_profile_complete) {
+            setTimeout(() => nav('/complete-profile'), 700);
+          } else if ((intent === 'find' && data.user_type === 'driver') || (intent === 'offer' && data.user_type !== 'driver')) {
+            setTimeout(() => openAuthModal(intent), 600);
+          } else {
+            setTimeout(() => nav(go), 700);
+          }
+        } catch (err) {
+          setTimeout(() => openAuthModal(intent), 600);
+        }
+      } else {
+        setTimeout(() => nav(go), 700);
+      }
     }
   }
 
@@ -790,66 +830,30 @@ function ProtectedRoute({ children, requiredType }) {
 /* ================= APP SHELL ================= */
 
 function Shell() {
+  const { authModal, closeAuthModal } = useApp()
 
   useEffect(() => {
-
     const fn = e => {
-
-      const card =
-        e.target.closest('.spot')
-
-      if (!card) {
-        return
-      }
-
-      const r =
-        card.getBoundingClientRect()
-
-      card.style.setProperty(
-        '--mx',
-        e.clientX - r.left + 'px'
-      )
-
-      card.style.setProperty(
-        '--my',
-        e.clientY - r.top + 'px'
-      )
-
+      const card = e.target.closest('.spot')
+      if (!card) return
+      const r = card.getBoundingClientRect()
+      card.style.setProperty('--mx', e.clientX - r.left + 'px')
+      card.style.setProperty('--my', e.clientY - r.top + 'px')
     }
 
-    window.addEventListener(
-      'mousemove',
-      fn,
-      {
-        passive: true
-      }
-    )
-
-    return () =>
-      window.removeEventListener(
-        'mousemove',
-        fn
-      )
-
+    window.addEventListener('mousemove', fn, { passive: true })
+    return () => window.removeEventListener('mousemove', fn)
   }, [])
 
-
   return (
-
     <div className="min-h-screen flex flex-col">
-
       <TopStrip />
-
       <Header />
-
 
       <main className="flex-1">
         <Routes>
           {/* HOME */}
-          <Route
-            path="/"
-            element={<Home />}
-          />
+          <Route path="/" element={<Home />} />
 
           {/* LOGIN & PROFILE SETUP */}
           <Route path="/login" element={<LoginPage />} />
@@ -876,28 +880,24 @@ function Shell() {
           />
 
           {/* SEPARATE FULL MAP PAGE */}
-          <Route
-            path="/maps"
-            element={<Maps />}
-          />
+          <Route path="/maps" element={<Maps />} />
 
           {/* FALLBACK */}
-          <Route
-            path="*"
-            element={<Home />}
-          />
+          <Route path="*" element={<Home />} />
         </Routes>
       </main>
 
-
       <Footer />
-
       <MaargMitra />
-
       <ScrollTop />
 
+      {/* GLOBAL AUTH MODAL */}
+      <AuthModal
+        isOpen={authModal?.isOpen}
+        intent={authModal?.intent}
+        onClose={closeAuthModal}
+      />
     </div>
-
   )
 }
 
@@ -905,22 +905,13 @@ function Shell() {
 /* ================= APP ================= */
 
 export default function App() {
-
   return (
-
     <LangProvider>
-
-      <AppProvider>
-
-        <BrowserRouter>
-
+      <BrowserRouter>
+        <AppProvider>
           <Shell />
-
-        </BrowserRouter>
-
-      </AppProvider>
-
+        </AppProvider>
+      </BrowserRouter>
     </LangProvider>
-
   )
 }

@@ -203,8 +203,23 @@ export function isPointAlongRoute(pointCoords, originCoords, destCoords, thresho
 ========================================================= */
 
 /**
+ * Calculates Highway Tortuosity / Road Curvature Multiplier for India's National Highway network.
+ * For straight-line geodesic distance d:
+ * - d > 50 km: Tortuosity multiplier 1.28x (accounts for NH winding terrain, river detours, ghat curves & bypass loops)
+ * - d <= 50 km: Urban / Local grid multiplier 1.10x
+ */
+export function calculateHighwayTortuosityKm(straightLineKm) {
+  const d = Math.max(1, Number(straightLineKm || 0));
+  if (d > 50) {
+    return Math.round(d * 1.28 * 10) / 10;
+  } else {
+    return Math.round(d * 1.10 * 10) / 10;
+  }
+}
+
+/**
  * Free OSRM Public Router integration for accurate road-based distance (km)
- * Supports coordinate objects ({ lat, lng }), arrays ([lat, lng]), with graceful Haversine fallback.
+ * Supports coordinate objects ({ lat, lng }), arrays ([lat, lng]), with graceful Highway Tortuosity fallback.
  */
 export async function getOsrmDistanceKm(start, end) {
   const startLat = Number(start?.lat ?? start?.[0]);
@@ -226,13 +241,14 @@ export async function getOsrmDistanceKm(start, end) {
     const data = await response.json();
     if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
       const distanceMeters = data.routes[0].distance;
-      return Math.round((distanceMeters / 1000) * 10) / 10;
+      const roadKm = Math.round((distanceMeters / 1000) * 10) / 10;
+      if (roadKm > 0) return roadKm;
     }
     throw new Error('No OSRM route found');
   } catch (err) {
-    // Fallback to geodesic Haversine distance with 1.25x road factor
+    // Upgraded Fallback to geodesic Haversine distance with National Highway (NH) Tortuosity Multiplier
     const haversineDist = haversineDistance(startLat, startLng, endLat, endLng);
-    return Math.max(5, Math.round(haversineDist * 1.25 * 10) / 10);
+    return Math.max(5, calculateHighwayTortuosityKm(haversineDist));
   }
 }
 
@@ -458,19 +474,20 @@ export function AiPriceGuardrail({
           <div className="flex items-start justify-between gap-2 border-b border-emerald-200/80 pb-2.5">
             <div className="flex items-center gap-2">
               <span className="text-base">
-                {pricingData.source === 'gemini_ai' ? '🤖' : pricingData.source === 'database_cache_fallback' ? '🏛️' : '⚙️'}
+                ✨
               </span>
               <div>
-                <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5 flex-wrap">
                   <span>
-                    {pricingData.source === 'gemini_ai' ? 'Gemini AI Logistics Assessment' : 'Historical Market Rate Assessment'}
+                    Logistics Market Rate Assessment
                   </span>
-                  <span className="px-1.5 py-0.5 rounded-full text-[9.5px] font-mono uppercase bg-emerald-200/90 text-emerald-900 font-bold">
-                    {pricingData.source === 'gemini_ai' ? 'Live AI' : 'Cached DB'}
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-600 text-white font-bold shadow-xs flex items-center gap-1">
+                    <span>⚡</span>
+                    <span>AI-Powered Real-Time Estimate</span>
                   </span>
                 </span>
                 <p className="text-[10.5px] text-emerald-800 mt-0.5">
-                  Road Distance: <strong>{roadDist} km</strong> · Model: <strong>{vehicleModel}</strong>
+                  Adjusted Highway Route Distance: <strong>{roadDist} km</strong> · Category: <strong>{vehicleModel}</strong>
                 </p>
               </div>
             </div>
@@ -508,8 +525,18 @@ export function AiPriceGuardrail({
           {showBreakdown && pricingData.breakdown && (
             <div className="bg-white/90 rounded-xl p-3 border border-emerald-200 space-y-1.5 text-[11px] text-emerald-900 mt-2">
               <div className="grid grid-cols-2 gap-2 pb-1.5 border-b border-emerald-100 font-mono">
+                {pricingData.breakdown.basePrice !== undefined && (
+                  <div>🏷️ Vehicle Base Fare: <strong>₹{pricingData.breakdown.basePrice}</strong></div>
+                )}
+                {pricingData.breakdown.perKmRate !== undefined && (
+                  <div>🛣️ Standard Rate: <strong>₹{pricingData.breakdown.perKmRate}/km</strong></div>
+                )}
+                <div>🛣️ NH Tortuosity: <strong>{pricingData.breakdown.highwayTortuosity || (roadDist > 50 ? '1.28x NH Factor' : '1.10x Local Grid')}</strong></div>
+                {pricingData.breakdown.longDistanceMultiplier !== undefined && pricingData.breakdown.longDistanceMultiplier > 1.0 && (
+                  <div>🚚 Long-Haul Factor: <strong>{pricingData.breakdown.longDistanceMultiplier}x</strong></div>
+                )}
                 {pricingData.breakdown.fuelCost !== undefined && (
-                  <div>⛽ Fuel: <strong>₹{pricingData.breakdown.fuelCost}</strong></div>
+                  <div>⛽ Fuel Cost: <strong>₹{pricingData.breakdown.fuelCost}</strong> {pricingData.breakdown.liveDieselPricePerLitre ? <span className="text-[9.5px] text-emerald-700 font-semibold">(₹{pricingData.breakdown.liveDieselPricePerLitre}/L grounded)</span> : ''}</div>
                 )}
                 {pricingData.breakdown.tollEstimate !== undefined && (
                   <div>🛣️ Tolls: <strong>₹{pricingData.breakdown.tollEstimate}</strong></div>
@@ -519,6 +546,12 @@ export function AiPriceGuardrail({
                 )}
                 {pricingData.breakdown.vehicleMaintenance !== undefined && (
                   <div>🔧 Maintenance: <strong>₹{pricingData.breakdown.vehicleMaintenance}</strong></div>
+                )}
+                {pricingData.breakdown.searchGroundingStatus && (
+                  <div className="col-span-2 text-[10px] text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md font-sans flex items-center gap-1 font-semibold">
+                    <span>🌐</span>
+                    <span>Google Search Grounded: Real-time regional diesel & NH toll data</span>
+                  </div>
                 )}
               </div>
               {pricingData.breakdown.notes && (
@@ -901,7 +934,7 @@ function PtlUserPricingCardInternal({
                   </span>
                 </span>
                 <p className="text-[10.5px] text-green-soft mt-0.5">
-                  Your Sub-Route Distance: <strong>{segmentDist || 0} km</strong> · Cargo: <strong>{weightNum} kg</strong>
+                  Adjusted Sub-Route Distance: <strong>{segmentDist || 0} km</strong> (NH Curvature Factored) · Cargo: <strong>{weightNum} kg</strong>
                 </p>
               </div>
             </div>

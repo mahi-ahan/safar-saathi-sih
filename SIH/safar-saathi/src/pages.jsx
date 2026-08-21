@@ -38,6 +38,7 @@ import {
   geocodeIndianLocation,
   isPointAlongRoute,
   haversineDistance,
+  calculateHighwayTortuosityKm,
   isPassengerOnRoute,
   calculateRouteAwarePrice,
   calculateStrictFare,
@@ -326,11 +327,11 @@ const TRIPS = [
     from: 'Lucknow',
     to: 'Delhi',
     date: '2026-08-20',
-    vehicle: 'Mini Truck',
+    vehicle: 'Mini-Truck',
     owner: 'Ramesh Kumar',
     verified: true,
     pct: 55,
-    totalKg: 1200,
+    totalKg: 900,
     pricePerKg: 8,
     pickup: 'Alambagh Transport Nagar, Lucknow',
     lat: 26.8467,
@@ -342,11 +343,11 @@ const TRIPS = [
     from: 'Mumbai',
     to: 'Pune',
     date: '2026-08-21',
-    vehicle: 'Pickup',
+    vehicle: 'Mini-Truck',
     owner: 'Amit Patil',
     verified: true,
     pct: 30,
-    totalKg: 1000,
+    totalKg: 1200,
     pricePerKg: 10,
     pickup: 'Andheri East, Mumbai',
     lat: 19.1197,
@@ -358,11 +359,11 @@ const TRIPS = [
     from: 'Delhi',
     to: 'Jaipur',
     date: '2026-08-22',
-    vehicle: 'Truck',
+    vehicle: 'Heavy-Truck',
     owner: 'Sandeep Sharma',
     verified: true,
     pct: 70,
-    totalKg: 3000,
+    totalKg: 8000,
     pricePerKg: 6,
     pickup: 'Okhla Industrial Area, Delhi',
     lat: 28.5355,
@@ -374,11 +375,11 @@ const TRIPS = [
     from: 'Bengaluru',
     to: 'Chennai',
     date: '2026-08-23',
-    vehicle: 'Tempo',
+    vehicle: 'Heavy-Truck',
     owner: 'Arjun Reddy',
     verified: false,
     pct: 40,
-    totalKg: 1500,
+    totalKg: 2500,
     pricePerKg: 7,
     pickup: 'Electronic City, Bengaluru',
     lat: 12.8399,
@@ -673,7 +674,7 @@ export function FindVehicles() {
 
       return (
         (!f.state || trip.state === f.state) &&
-        (!f.veh || trip.vehicle === f.veh) &&
+        (!f.veh || getVehicleCapacitySpec(trip.vehicle).name === getVehicleCapacitySpec(f.veh).name) &&
         (!f.ver || trip.verified) &&
         (!f.pickupSearch ||
           (trip.pickup || '').toLowerCase().includes(f.pickupSearch.toLowerCase()) ||
@@ -828,12 +829,18 @@ export function FindVehicles() {
     // Calculate travel distance between user pickup and delivery locations
     let estimatedDist = trip.distance_km || 150;
     if (pickupCoords && deliveryCoords) {
-      const R = 6371;
-      const dLat = (deliveryCoords.lat - pickupCoords.lat) * Math.PI / 180;
-      const dLon = (deliveryCoords.lng - pickupCoords.lng) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(pickupCoords.lat * Math.PI / 180) * Math.cos(deliveryCoords.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      estimatedDist = Math.max(10, Math.round(R * c * 1.25));
+      try {
+        const osrmDist = await getOsrmDistanceKm(pickupCoords, deliveryCoords);
+        if (osrmDist > 0) {
+          estimatedDist = osrmDist;
+        } else {
+          const direct = haversineDistance(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng);
+          estimatedDist = Math.max(5, calculateHighwayTortuosityKm(direct));
+        }
+      } catch (e) {
+        const direct = haversineDistance(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng);
+        estimatedDist = Math.max(5, calculateHighwayTortuosityKm(direct));
+      }
     }
 
     // Actually POST the request to the backend so it
@@ -1131,12 +1138,10 @@ export function FindVehicles() {
                 onChange={e => setF({ ...f, veh: e.target.value })}
               >
                 <option value="">{t('find.allVehicles', 'All Vehicle Types')}</option>
-                <option value="Bike">Bike / Scooter</option>
-                <option value="Auto">Auto / Rickshaw</option>
-                <option value="Pickup">Pickup</option>
-                <option value="Mini Truck">Mini Truck</option>
-                <option value="Tempo">Tempo</option>
-                <option value="Truck">Truck</option>
+                <option value="Two-Wheeler">🛵 Two-Wheeler (Bike / Scooter)</option>
+                <option value="Three-Wheeler/Auto">🛺 Three-Wheeler/Auto (Rickshaw)</option>
+                <option value="Mini-Truck">🛻 Mini-Truck (Tata Ace / Pickup)</option>
+                <option value="Heavy-Truck">🚛 Heavy-Truck (HCV / Lorry)</option>
               </select>
 
               <select
@@ -1490,7 +1495,7 @@ export function FindVehicles() {
                               // Segment distance and dynamic fare once pickup/delivery coordinates are chosen
                               const hasCoords = hasPickup && hasDelivery;
                               const segDist = hasCoords
-                                ? Math.max(5, Math.round(haversineDistance(r.pickupCoords.lat, r.pickupCoords.lng, r.deliveryCoords.lat, r.deliveryCoords.lng) * 1.25))
+                                ? Math.max(5, calculateHighwayTortuosityKm(haversineDistance(r.pickupCoords.lat, r.pickupCoords.lng, r.deliveryCoords.lat, r.deliveryCoords.lng)))
                                 : 0;
 
                               const estimatedFare = hasCoords ? calculateRouteAwarePrice(segDist, { ...trip, weight: weightNum }, 20) : null;
@@ -2256,6 +2261,83 @@ export function FindVehicles() {
 
 
 /* =========================================================
+   VEHICLE PHYSICAL CAPACITY SPECIFICATIONS & HARD LIMITS
+========================================================= */
+
+export const VEHICLE_CAPACITY_SPECS = {
+  'Two-Wheeler': {
+    name: 'Two-Wheeler',
+    displayName: 'Two-Wheeler (Bike / Scooter)',
+    defaultKg: 30,
+    maxKg: 50,
+    minKg: 5,
+    maxDistanceKm: 20,
+    basePrice: 150,
+    perKmRate: 12,
+    step: 5,
+    icon: '🛵',
+    description: 'Two-Wheeler (Max 50 kg · Max 20 km range)'
+  },
+  'Three-Wheeler/Auto': {
+    name: 'Three-Wheeler/Auto',
+    displayName: 'Three-Wheeler/Auto (Cargo Rickshaw)',
+    defaultKg: 200,
+    maxKg: 350,
+    minKg: 20,
+    maxDistanceKm: 100,
+    basePrice: 350,
+    perKmRate: 16,
+    step: 10,
+    icon: '🛺',
+    description: 'Three-Wheeler (Max 350 kg · Max 100 km range)'
+  },
+  'Mini-Truck': {
+    name: 'Mini-Truck',
+    displayName: 'Mini-Truck (Tata Ace / Pickup / Bolero)',
+    defaultKg: 800,
+    maxKg: 1500,
+    minKg: 50,
+    maxDistanceKm: 500,
+    basePrice: 1200,
+    perKmRate: 24,
+    step: 50,
+    icon: '🛻',
+    description: 'Mini-Truck (Max 1,500 kg · Max 500 km range)'
+  },
+  'Heavy-Truck': {
+    name: 'Heavy-Truck',
+    displayName: 'Heavy-Truck (HCV / 10-Wheeler / Lorry)',
+    defaultKg: 8000,
+    maxKg: 25000,
+    minKg: 500,
+    maxDistanceKm: Infinity,
+    basePrice: 4500,
+    perKmRate: 42,
+    step: 250,
+    icon: '🚛',
+    description: 'Heavy Commercial HCV (Max 25,000 kg · Any distance)'
+  }
+};
+
+export function getVehicleCapacitySpec(vehicleName) {
+  if (!vehicleName) return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
+  const v = String(vehicleName).toLowerCase().trim();
+  if (v.includes('two') || v.includes('bike') || v.includes('scooter') || v.includes('motorcycle')) {
+    return VEHICLE_CAPACITY_SPECS['Two-Wheeler'];
+  }
+  if (v.includes('three') || v.includes('auto') || v.includes('rickshaw')) {
+    return VEHICLE_CAPACITY_SPECS['Three-Wheeler/Auto'];
+  }
+  if (v.includes('mini') || v.includes('ace') || v.includes('chota') || v.includes('jeeto') || v.includes('pickup') || v.includes('bolero') || v.includes('yodha') || v.includes('van') || v.includes('eeco') || v.includes('supro')) {
+    return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
+  }
+  if (v.includes('heavy') || v.includes('truck') || v.includes('lorry') || v.includes('hcv') || v.includes('trailer') || v.includes('tempo') || v.includes('407') || v.includes('canter') || v.includes('tractor')) {
+    return VEHICLE_CAPACITY_SPECS['Heavy-Truck'];
+  }
+  return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
+}
+
+/* =========================================================
    OFFER A TRIP + DRIVER DELIVERY
 ========================================================= */
 
@@ -2273,9 +2355,9 @@ export function OfferTrip() {
     to: '',
     toCoords: null,
     date: '',
-    vehicle: 'Mini Truck',
-    total: 1000,
-    cap: 600,
+    vehicle: 'Mini-Truck',
+    total: 800,
+    cap: 800,
     fare: 'driver',
     price: '',
     totalDriverAmount: '',
@@ -2297,6 +2379,38 @@ export function OfferTrip() {
   const [myTrips, setMyTrips] = useState([])
   const [activeLiveTripId, setActiveLiveTripId] = useState(null)
   const liveIntervalRef = useRef(null)
+
+  // Calculated Road Distance for Vehicle Suitability Validation
+  const [routeDistanceKm, setRouteDistanceKm] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    const calculateDistance = async () => {
+      if (o.fromCoords && o.toCoords) {
+        try {
+          const d = await getOsrmDistanceKm(o.fromCoords, o.toCoords);
+          if (isMounted && d > 0) {
+            setRouteDistanceKm(d);
+            return;
+          }
+        } catch (e) {
+          // fallback haversine
+        }
+        const direct = haversineDistance(o.fromCoords.lat, o.fromCoords.lng, o.toCoords.lat, o.toCoords.lng);
+        if (isMounted && direct > 0) {
+          setRouteDistanceKm(calculateHighwayTortuosityKm(direct));
+        }
+      } else {
+        if (isMounted) setRouteDistanceKm(0);
+      }
+    };
+    calculateDistance();
+    return () => { isMounted = false; };
+  }, [o.fromCoords, o.toCoords, o.from, o.to]);
+
+  const currentVehSpec = useMemo(() => getVehicleCapacitySpec(o.vehicle), [o.vehicle]);
+  const isCapacityExceeded = Number(o.total) > currentVehSpec.maxKg || Number(o.total) < currentVehSpec.minKg || Number(o.cap) > Number(o.total);
+  const isDistanceExceeded = routeDistanceKm > 0 && currentVehSpec.maxDistanceKm !== Infinity && routeDistanceKm > currentVehSpec.maxDistanceKm;
 
   const fetchMyTrips = async () => {
     const token = localStorage.getItem("access_token");
@@ -2639,8 +2753,21 @@ export function OfferTrip() {
       notify('⚠ Please upload required verification documents.');
       return;
     }
-    if (!o.price || Number(o.price) <= 0) {
-      notify('⚠ Please set a valid transport price.');
+    const spec = getVehicleCapacitySpec(o.vehicle);
+    if (Number(o.total) > spec.maxKg) {
+      notify(`❌ Physical Limit Exceeded: ${o.total} kg exceeds the physical limit of ${spec.maxKg} kg for ${spec.displayName || spec.name}.`);
+      return;
+    }
+    if (Number(o.total) < spec.minKg) {
+      notify(`❌ Invalid Capacity: Minimum capacity for ${spec.displayName || spec.name} is ${spec.minKg} kg.`);
+      return;
+    }
+    if (Number(o.cap) > Number(o.total)) {
+      notify(`❌ Available capacity (${o.cap} kg) cannot exceed total vehicle capacity (${o.total} kg).`);
+      return;
+    }
+    if (routeDistanceKm > 0 && spec.maxDistanceKm !== Infinity && routeDistanceKm > spec.maxDistanceKm) {
+      notify(`❌ Distance Limit Exceeded: ${spec.displayName || spec.name} cannot be used for routes exceeding ${spec.maxDistanceKm} km (Current route is ${routeDistanceKm.toFixed(1)} km).`);
       return;
     }
 
@@ -2710,9 +2837,9 @@ export function OfferTrip() {
           to: '',
           toCoords: null,
           date: '',
-          vehicle: 'Mini Truck',
-          total: 1000,
-          cap: 600,
+          vehicle: 'Mini-Truck',
+          total: 800,
+          cap: 800,
           fare: 'driver',
           price: '',
           totalDriverAmount: '',
@@ -3519,57 +3646,164 @@ export function OfferTrip() {
                 <select
                   className={inputCls}
                   value={o.vehicle}
-                  onChange={e => setO({ ...o, vehicle: e.target.value })}
+                  onChange={e => {
+                    const newVeh = e.target.value;
+                    const spec = getVehicleCapacitySpec(newVeh);
+                    setO(prev => ({
+                      ...prev,
+                      vehicle: newVeh,
+                      total: spec.defaultKg,
+                      cap: spec.defaultKg
+                    }));
+                  }}
                 >
-                  <option value="Bike">Bike / Scooter</option>
-                  <option value="Auto">Auto / Rickshaw</option>
-                  <option value="Pickup">Pickup</option>
-                  <option value="Mini Truck">Mini Truck</option>
-                  <option value="Tempo">Tempo</option>
-                  <option value="Van">Van</option>
-                  <option value="Truck">Truck</option>
-                  <option value="Other">Other</option>
+                  {Object.entries(VEHICLE_CAPACITY_SPECS).map(([key, spec]) => {
+                    const exceedsDist = routeDistanceKm > 0 && spec.maxDistanceKm !== Infinity && routeDistanceKm > spec.maxDistanceKm;
+                    return (
+                      <option key={key} value={key} disabled={exceedsDist}>
+                        {spec.icon} {spec.displayName || spec.name} {exceedsDist ? `🚫 (Exceeds ${spec.maxDistanceKm}km max range)` : `(Max ${spec.maxKg.toLocaleString('en-IN')}kg · Max ${spec.maxDistanceKm === Infinity ? 'Any dist' : spec.maxDistanceKm + 'km'})`}
+                      </option>
+                    );
+                  })}
                 </select>
               </Field>
             </div>
 
-            {/* CAPACITY SLIDERS */}
-            <div className="bg-cream rounded-2xl border border-gold/30 p-4 space-y-3">
-              <label className="text-sm font-semibold text-green-deep block">
-                {t('driver.total_kg', 'Vehicle Cargo Capacity')}: <span className="font-mono text-soil">{o.cap} kg {t('card.space_free', 'free')}</span> / {o.total} kg total
-              </label>
-
-              <div>
-                <p className="text-[11px] text-green-soft mb-1 font-mono">{t('offer.total', 'Total Vehicle Limit')}: {o.total} kg</p>
-                <input
-                  type="range"
-                  min="50"
-                  max="5000"
-                  step="50"
-                  value={o.total}
-                  onChange={e =>
-                    setO({
-                      ...o,
-                      total: +e.target.value,
-                      cap: Math.min(o.cap, +e.target.value)
-                    })
-                  }
-                  className="w-full accent-soil cursor-pointer"
-                />
+            {/* CAPACITY RESTRICTIONS & SLIDERS */}
+            <div className="bg-cream rounded-2xl border border-gold/30 p-4 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <label className="text-sm font-semibold text-green-deep block">
+                  {t('driver.total_kg', 'Vehicle Cargo Capacity')}: <span className="font-mono text-soil font-bold">{o.cap} kg {t('card.space_free', 'free')}</span> / {o.total} kg total
+                </label>
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-green-deep/10 text-green-deep border border-gold/30">
+                  <span>{currentVehSpec.icon}</span>
+                  <span>Limit: Max {currentVehSpec.maxKg.toLocaleString('en-IN')} kg · {currentVehSpec.maxDistanceKm === Infinity ? 'Any dist' : `${currentVehSpec.maxDistanceKm} km max`}</span>
+                </span>
               </div>
 
-              <div>
-                <p className="text-[11px] text-green-soft mb-1 font-mono">{t('offer.shareableCapacity', 'Available Space to Share')}: {o.cap} kg</p>
+              {/* TOTAL VEHICLE CAPACITY WITH HARD MAX */}
+              <div className="bg-white/70 p-3.5 rounded-xl border border-gold/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-green-deep font-semibold">
+                    {t('offer.total', 'Total Vehicle Limit')} <span className="text-[11px] text-green-soft font-normal">(Physical max: {currentVehSpec.maxKg} kg)</span>
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={currentVehSpec.minKg}
+                      max={currentVehSpec.maxKg}
+                      step={currentVehSpec.step}
+                      value={o.total}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        const clamped = Math.min(currentVehSpec.maxKg, Math.max(0, val));
+                        setO(prev => ({
+                          ...prev,
+                          total: clamped,
+                          cap: Math.min(prev.cap, clamped)
+                        }));
+                      }}
+                      className="w-24 text-right font-mono font-bold text-xs px-2 py-1 bg-white border border-gold/40 rounded-lg outline-none focus:border-green-deep"
+                    />
+                    <span className="text-xs font-mono text-green-soft font-bold">kg</span>
+                  </div>
+                </div>
+
+                <input
+                  type="range"
+                  min={currentVehSpec.minKg}
+                  max={currentVehSpec.maxKg}
+                  step={currentVehSpec.step}
+                  value={o.total}
+                  onChange={e => {
+                    const val = +e.target.value;
+                    setO(prev => ({
+                      ...prev,
+                      total: val,
+                      cap: Math.min(prev.cap, val)
+                    }));
+                  }}
+                  className="w-full accent-soil cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] font-mono text-green-soft">
+                  <span>Min: {currentVehSpec.minKg} kg</span>
+                  <span className="text-green-deep font-bold">Default: {currentVehSpec.defaultKg} kg</span>
+                  <span>Max: {currentVehSpec.maxKg} kg</span>
+                </div>
+              </div>
+
+              {/* AVAILABLE SPACE TO SHARE WITH HARD CEILING */}
+              <div className="bg-white/70 p-3.5 rounded-xl border border-gold/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-green-deep font-semibold">
+                    {t('offer.shareableCapacity', 'Available Space to Share')} <span className="text-[11px] text-green-soft font-normal">(Up to {o.total} kg)</span>
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max={o.total}
+                      step={currentVehSpec.step}
+                      value={o.cap}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        const clamped = Math.min(Number(o.total), Math.max(0, val));
+                        setO(prev => ({
+                          ...prev,
+                          cap: clamped
+                        }));
+                      }}
+                      className="w-24 text-right font-mono font-bold text-xs px-2 py-1 bg-white border border-gold/40 rounded-lg outline-none focus:border-green-deep"
+                    />
+                    <span className="text-xs font-mono text-green-soft font-bold">kg</span>
+                  </div>
+                </div>
+
                 <input
                   type="range"
                   min="0"
                   max={o.total}
-                  step="10"
+                  step={currentVehSpec.step || 10}
                   value={o.cap}
-                  onChange={e => setO({ ...o, cap: +e.target.value })}
+                  onChange={e => setO(prev => ({ ...prev, cap: +e.target.value }))}
                   className="w-full accent-gold cursor-pointer"
                 />
+                <div className="flex justify-between text-[10px] font-mono text-green-soft">
+                  <span>0 kg</span>
+                  <span className="text-soil font-bold">Available: {o.cap} kg</span>
+                  <span>Total Cap: {o.total} kg</span>
+                </div>
               </div>
+
+              {/* HARD PHYSICAL LIMIT WARNING IF EXCEEDED */}
+              {isCapacityExceeded && (
+                <div className="rounded-xl bg-red-50 border border-red-300 p-3 text-xs text-red-700 flex items-start gap-2 animate-[fadeIn_0.2s_ease]">
+                  <span className="text-base shrink-0">🚫</span>
+                  <div>
+                    <p className="font-bold text-red-800">Physical Capacity Limit Violation</p>
+                    <p className="text-[11.5px] text-red-700 mt-0.5">
+                      {Number(o.total) > currentVehSpec.maxKg
+                        ? `A ${currentVehSpec.displayName || currentVehSpec.name} physically cannot carry ${Number(o.total).toLocaleString('en-IN')} kg. The maximum allowed capacity is strictly ${currentVehSpec.maxKg.toLocaleString('en-IN')} kg.`
+                        : Number(o.total) < currentVehSpec.minKg
+                        ? `Declared capacity is below the minimum threshold of ${currentVehSpec.minKg} kg for ${currentVehSpec.displayName || currentVehSpec.name}.`
+                        : `Available space (${o.cap} kg) cannot exceed total vehicle capacity (${o.total} kg).`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* VEHICLE-ROUTE DISTANCE SUITABILITY CONSTRAINT WARNING */}
+              {isDistanceExceeded && (
+                <div className="rounded-xl bg-amber-50 border-2 border-amber-400 p-3 text-xs text-amber-900 flex items-start gap-2.5 animate-[fadeIn_0.2s_ease]">
+                  <span className="text-lg shrink-0">🚫</span>
+                  <div>
+                    <p className="font-bold text-amber-950 text-xs">Vehicle-Route Distance Constraint</p>
+                    <p className="text-[11px] text-amber-900 mt-0.5 leading-relaxed">
+                      <strong>{currentVehSpec.displayName || currentVehSpec.name}</strong> is designated for local trips up to <strong>{currentVehSpec.maxDistanceKm} km</strong>. Your route ({o.from || 'Origin'} → {o.to || 'Destination'}) is approx. <strong>{routeDistanceKm.toFixed(1)} km</strong>. Please select a suitable vehicle category (such as <strong>Mini-Truck</strong> or <strong>Heavy-Truck</strong>) to offer this trip.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* PRICING & TON-KM EXPLANATION */}
@@ -3665,8 +3899,19 @@ export function OfferTrip() {
               </button>
             </div>
 
-            <Btn size="lg" onClick={publishTrip} disabled={isPublishing} className="w-full">
-              {isPublishing ? '⏳ Publishing Trip...' : 'Publish Trip Load'}
+            <Btn
+              size="lg"
+              onClick={publishTrip}
+              disabled={isPublishing || isCapacityExceeded || isDistanceExceeded}
+              className="w-full"
+            >
+              {isPublishing
+                ? '⏳ Publishing Trip...'
+                : isDistanceExceeded
+                ? '🚫 Route Distance Exceeds Vehicle Range'
+                : isCapacityExceeded
+                ? '🚫 Fix Invalid Capacity to Publish'
+                : 'Publish Trip Load'}
             </Btn>
           </form>
 

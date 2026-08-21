@@ -16,10 +16,23 @@ router = APIRouter(
 )
 
 
+def calculate_highway_tortuosity_km(straight_line_km: float) -> float:
+    """
+    Applies an automatic National Highway (NH) Road Curvature / Tortuosity Multiplier:
+    - If straight-line geodesic distance > 50 km: applies a 1.28x multiplier (1.25x - 1.30x) to realistically estimate actual winding NH road network distance.
+    - If straight-line geodesic distance <= 50 km: applies a 1.10x local/urban grid multiplier.
+    """
+    d = max(1.0, float(straight_line_km or 0.0))
+    if d > 50.0:
+        return round(d * 1.28, 2)
+    else:
+        return round(d * 1.10, 2)
+
+
 def calculate_haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Computes precise geodesic distance (in km) between two coordinate points
-    with a road network detour multiplier (1.25x).
+    with automatic National Highway (NH) Tortuosity Multiplier applied.
     """
     if not lat1 or not lon1 or not lat2 or not lon2:
         return 0.0
@@ -32,7 +45,8 @@ def calculate_haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -
          math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
          math.sin(d_lon / 2) ** 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return round(max(5.0, R * c * 1.25), 2)
+    geodesic_straight = R * c
+    return round(max(5.0, calculate_highway_tortuosity_km(geodesic_straight)), 2)
 
 
 def distance_to_segment_km(p_lat: float, p_lng: float, a_lat: float, a_lng: float, b_lat: float, b_lng: float) -> float:
@@ -424,8 +438,36 @@ def create_trip(
         )
     )
 ):
+    # BULLETPROOF PHYSICAL CAPACITY ENFORCEMENT
+    limits = schemas.get_vehicle_capacity_limits(trip.vehicle)
+    declared_kg = trip.total_kg if trip.total_kg is not None else limits["default_kg"]
+
+    if declared_kg > limits["max_kg"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Physical Capacity Exceeded: '{trip.vehicle}' cannot hold {declared_kg} kg. The maximum physical capacity for {limits['name']} is strictly {limits['max_kg']} kg."
+        )
+
+    if declared_kg < limits["min_kg"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid Capacity: '{trip.vehicle}' capacity of {declared_kg} kg is below the minimum threshold of {limits['min_kg']} kg."
+        )
+
+    # VEHICLE-ROUTE DISTANCE SUITABILITY ENFORCEMENT
+    trip_dist = float(trip.distance_km or 0.0)
+    max_dist = limits.get("max_distance_km", float("inf"))
+    if trip_dist > 0 and max_dist != float("inf") and trip_dist > max_dist:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Route Distance Suitability Violation: '{trip.vehicle}' is limited to a maximum route distance of {max_dist:.0f} km (attempted {trip_dist:.1f} km). For long-distance freight, please select a suitable vehicle category like Mini-Truck or Heavy-Truck."
+        )
+
+    trip_data = trip.model_dump()
+    trip_data["total_kg"] = declared_kg
+
     db_trip = models.TripModel(
-        **trip.model_dump()
+        **trip_data
     )
 
     db.add(db_trip)

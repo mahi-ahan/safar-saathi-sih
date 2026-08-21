@@ -43,15 +43,101 @@ class UserResponse(BaseModel):
 
 
 # ==================================================
-# TRIP SCHEMAS
+# STRICT VEHICLE CATEGORIES, PHYSICAL LIMITS & DISTANCE CONSTRAINTS
 # ==================================================
+
+VEHICLE_SPECS = {
+    "Two-Wheeler": {
+        "name": "Two-Wheeler",
+        "display_name": "Two-Wheeler (Bike / Scooter)",
+        "min_kg": 5,
+        "default_kg": 30,
+        "max_kg": 50,
+        "max_distance_km": 20.0,
+        "base_price": 150.0,
+        "per_km_rate": 12.0,
+        "efficiency_km_per_l": 40.0,
+        "icon": "🛵",
+        "aliases": ["two-wheeler", "bike", "scooter", "motorcycle", "2-wheeler"]
+    },
+    "Three-Wheeler/Auto": {
+        "name": "Three-Wheeler/Auto",
+        "display_name": "Three-Wheeler/Auto (Cargo Rickshaw)",
+        "min_kg": 20,
+        "default_kg": 200,
+        "max_kg": 350,
+        "max_distance_km": 100.0,
+        "base_price": 350.0,
+        "per_km_rate": 16.0,
+        "efficiency_km_per_l": 25.0,
+        "icon": "🛺",
+        "aliases": ["three-wheeler/auto", "three-wheeler", "auto", "rickshaw", "3-wheeler", "auto rickshaw"]
+    },
+    "Mini-Truck": {
+        "name": "Mini-Truck",
+        "display_name": "Mini-Truck (Tata Ace / Pickup / Bolero)",
+        "min_kg": 50,
+        "default_kg": 800,
+        "max_kg": 1500,
+        "max_distance_km": 500.0,
+        "base_price": 1200.0,
+        "per_km_rate": 24.0,
+        "efficiency_km_per_l": 14.0,
+        "icon": "🛻",
+        "aliases": ["mini-truck", "mini truck", "tata ace", "chota hathi", "pickup", "bolero", "van", "eeco", "jeeto", "supro", "yodha"]
+    },
+    "Heavy-Truck": {
+        "name": "Heavy-Truck",
+        "display_name": "Heavy-Truck (HCV / 10-Wheeler / Lorry)",
+        "min_kg": 500,
+        "default_kg": 8000,
+        "max_kg": 25000,
+        "max_distance_km": float("inf"),
+        "base_price": 4500.0,
+        "per_km_rate": 42.0,
+        "efficiency_km_per_l": 4.5,
+        "icon": "🚛",
+        "aliases": ["heavy-truck", "heavy truck", "truck", "lorry", "hcv", "trailer", "10-wheeler", "12-wheeler", "tempo", "407", "canter", "tractor"]
+    }
+}
+
+def get_vehicle_spec(vehicle_str: str) -> dict:
+    if not vehicle_str:
+        return VEHICLE_SPECS["Mini-Truck"]
+    v = vehicle_str.lower().strip()
+    
+    # Exact category match
+    for k, spec in VEHICLE_SPECS.items():
+        if k.lower() == v:
+            return spec
+            
+    # Alias / substring match
+    for k, spec in VEHICLE_SPECS.items():
+        for alias in spec["aliases"]:
+            if alias in v:
+                return spec
+                
+    return VEHICLE_SPECS["Mini-Truck"]
+
+def get_vehicle_capacity_limits(vehicle_str: str) -> dict:
+    spec = get_vehicle_spec(vehicle_str)
+    return {
+        "name": spec["display_name"],
+        "default_kg": spec["default_kg"],
+        "max_kg": spec["max_kg"],
+        "min_kg": spec["min_kg"],
+        "max_distance_km": spec["max_distance_km"],
+        "base_price": spec["base_price"],
+        "per_km_rate": spec["per_km_rate"]
+    }
+
 
 class TripCreate(BaseModel):
     state: Optional[str] = ""
     from_loc: Optional[str] = ""
     to_loc: Optional[str] = ""
     date: Optional[str] = ""
-    vehicle: Optional[str] = ""
+    vehicle: Optional[str] = "Mini Truck"
     owner: Optional[str] = ""
     verified: Optional[bool] = True
     pct: Optional[int] = 0

@@ -14,12 +14,16 @@ import {
   Search,
   X,
   Send,
-  ShieldCheck
+  ShieldCheck,
+  ArrowLeft,
+  Info,
+  Volume2,
+  VolumeX
 } from 'lucide-react'
 
 import { useLang } from './lib'
-import { TTSButton } from './tts'
-import { AuthModal } from './AuthModal'
+import { TTSButton, speakText, stopSpeech } from './tts'
+import { AuthModal, AUTH_ROLE_TEXTS, GOOGLE_CLIENT_ID } from './AuthModal'
 
 import {
   Btn,
@@ -181,15 +185,6 @@ export function Home() {
           {/* 3. FIXED FOREGROUND TEXT & BUTTONS LAYER */}
           <div className="absolute inset-0 z-20 flex items-center px-6 sm:px-12 md:px-16 pointer-events-none">
             <div className="max-w-xl text-left pointer-events-auto text-white">
-              <div className="flex items-center gap-3 mb-4 flex-wrap">
-                <span className="inline-block font-mono text-[11px] px-2.5 py-1 rounded-full bg-green-deep/60 text-[#E4C878] border border-gold-light/20 tracking-wider uppercase font-semibold">
-                  {t('hero.kicker', 'Smart Goods Transportation')}
-                </span>
-                <TTSButton
-                  textToRead={`Safar-Saathi. ${t('hero.sub', 'Find available vehicle space and move your goods easily without booking an entire vehicle.')}`}
-                />
-              </div>
-
               <h1 className="font-display font-extrabold text-3xl sm:text-5xl text-white drop-shadow-md leading-tight">
                 Safar-Saathi
                 <br />
@@ -655,6 +650,11 @@ export function FindVehicles() {
 
   const handleLogout = () => {
     localStorage.removeItem("access_token");
+    localStorage.removeItem("login_intent");
+    localStorage.removeItem("role");
+    localStorage.removeItem("user_type");
+    sessionStorage.clear();
+    stopSpeech();
     navigate('/login');
   };
 
@@ -1779,6 +1779,7 @@ export function FindVehicles() {
                                 window.speechSynthesis.cancel();
                                 const u = new SpeechSynthesisUtterance(text);
                                 u.lang = isHindi ? 'hi-IN' : 'en-IN';
+                                u.rate = 1.0;
                                 window.speechSynthesis.speak(u);
                               }
                             }}
@@ -2550,6 +2551,11 @@ export function OfferTrip() {
 
   const handleLogout = () => {
     localStorage.removeItem("access_token");
+    localStorage.removeItem("login_intent");
+    localStorage.removeItem("role");
+    localStorage.removeItem("user_type");
+    sessionStorage.clear();
+    stopSpeech();
     navigate('/login');
   };
 
@@ -3926,104 +3932,298 @@ export function OfferTrip() {
 }
 
 export function LoginPage() {
-  const { t } = useLang()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [loading, setLoading] = useState(false)
-  const [loginError, setLoginError] = useState(location.state?.error || '')
+  const { lang, t } = useLang();
+  const navigate = useNavigate();
+  const location = useLocation();
 
+  const [intent, setIntent] = useState(location.state?.intent || localStorage.getItem('login_intent') || 'find');
+  const [loading, setLoading] = useState(false);
+  const [roleError, setRoleError] = useState(location.state?.error ? { type: 'initial', message: location.state.error } : null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const localizedText = AUTH_ROLE_TEXTS[lang] || AUTH_ROLE_TEXTS.hi || AUTH_ROLE_TEXTS.en;
+
+  // Clear stale session on arriving at /login to prevent abrupt cached auto-login loops
   useEffect(() => {
-    setLoginError(location.state?.error || '')
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("role");
+    localStorage.removeItem("user_type");
     if (location.state?.intent) {
-      localStorage.setItem('login_intent', location.state.intent)
+      setIntent(location.state.intent);
+      localStorage.setItem('login_intent', location.state.intent);
     }
-  }, [location.state])
+    if (location.state?.error) {
+      setRoleError({ type: 'initial', message: location.state.error });
+    }
+  }, [location.state]);
+
+  const handleToggleVoice = () => {
+    if (isSpeaking) {
+      stopSpeech();
+      setIsSpeaking(false);
+    } else {
+      const textToNarrate = roleError
+        ? roleError.message
+        : `${localizedText.title}. ${intent === 'offer' ? localizedText.driver_title : localizedText.sender_title}. ${localizedText.role_notice_body}`;
+
+      setIsSpeaking(true);
+      speakText(textToNarrate, lang, () => {
+        setIsSpeaking(false);
+      });
+    }
+  };
 
   const handleGoogleSuccess = async (credentialResponse) => {
-    setLoading(true)
-    setLoginError('')
-    try {
+    setLoading(true);
+    setRoleError(null);
 
+    try {
       const res = await fetch("http://127.0.0.1:8000/auth/google-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           google_token: credentialResponse.credential
         })
-      })
+      });
 
-      const data = await res.json()
+      const data = await res.json();
 
       if (res.ok) {
-        const intent = location.state?.intent || localStorage.getItem('login_intent')
-
         if (!data.is_profile_complete) {
-          localStorage.setItem("access_token", data.access_token)
-          navigate('/complete-profile')
-          return
+          localStorage.setItem("access_token", data.access_token);
+          localStorage.setItem("login_intent", intent);
+          navigate('/complete-profile');
+          return;
         }
 
-        // Strict intent-based login checks
+        // Check for Intent vs Role Mismatch
         if (intent === 'find' && data.user_type === 'driver') {
-          localStorage.removeItem("access_token")
-          setLoginError('This account belongs to Offer a Trip (Driver). Please use a Sender account for Find a Vehicle.')
-          return
+          localStorage.removeItem("access_token");
+          const errorMsg = localizedText.sender_mismatch;
+          setRoleError({
+            type: 'driver_on_sender',
+            message: errorMsg,
+            token: data.access_token
+          });
+          speakText(errorMsg, lang);
+          return;
         }
 
         if (intent === 'offer' && data.user_type !== 'driver') {
-          localStorage.removeItem("access_token")
-          setLoginError('This account belongs to Find a Vehicle (Sender). Please use a Driver account for Offer a Trip.')
-          return
+          localStorage.removeItem("access_token");
+          const errorMsg = localizedText.driver_mismatch;
+          setRoleError({
+            type: 'sender_on_driver',
+            message: errorMsg,
+            token: data.access_token
+          });
+          speakText(errorMsg, lang);
+          return;
         }
 
-        localStorage.removeItem('login_intent')
-        localStorage.setItem("access_token", data.access_token)
+        localStorage.removeItem('login_intent');
+        localStorage.setItem("access_token", data.access_token);
 
         if (data.user_type === 'driver') {
-          navigate('/offer')
+          navigate('/offer');
         } else {
-          navigate('/find')
+          navigate('/find');
         }
       } else {
-        setLoginError(data.detail || "Google authentication failed on backend.")
+        const detail = data.detail || "Google authentication failed on backend.";
+        setRoleError({ type: 'general', message: detail });
+        speakText(detail, lang);
       }
     } catch (err) {
-      console.error("Backend error:", err)
-      setLoginError("Could not connect to FastAPI backend.")
+      console.error("Auth error:", err);
+      const netErr = "Could not connect to FastAPI server. Ensure backend is running.";
+      setRoleError({ type: 'network', message: netErr });
+      speakText(netErr, lang);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <GoogleOAuthProvider clientId="985266026061-a7hpfspuv6hc17pc72camb1gig9vucqq.apps.googleusercontent.com">
-      <div className="min-h-screen bg-cream flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-paper p-8 rounded-2xl shadow-lg border border-gold/30 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <h2 className="text-2xl font-display font-bold text-green-deep">{t('auth.signin_title', 'Sign in to Safar-Saathi')}</h2>
-            <TTSButton textToRead={`${t('auth.signin_title', 'Sign in to Safar-Saathi')}. ${t('auth.choose_google', 'Choose any Google account to sign in.')}`} size={14} />
-          </div>
-          <p className="text-green-soft mb-4 text-sm">{t('auth.choose_google', 'Choose any Google account to sign in.')}</p>
+    <div className="min-h-[85vh] bg-cream flex items-center justify-center px-4 py-8 relative">
+      <div className="relative w-full max-w-lg bg-paper/95 backdrop-blur-xl border border-gold/40 rounded-3xl p-6 sm:p-9 shadow-2xl overflow-hidden">
+        {/* TOP ACCENT DECORATION */}
+        <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-soil via-gold to-green-deep"></div>
 
-          {loginError && (
-            <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {loginError}
+        {/* HEADER BAR WITH BACK TO HOME & VOICE */}
+        <div className="flex items-center justify-between mb-5 pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              stopSpeech();
+              navigate('/');
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/70 text-green-deep border border-gold/30 hover:bg-white hover:border-gold/60 transition cursor-pointer shadow-2xs"
+          >
+            <ArrowLeft size={14} />
+            <span>{t('nav.home', 'Home')}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleToggleVoice}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition cursor-pointer ${
+              isSpeaking
+                ? 'bg-green-700 text-white border-green-500 animate-pulse shadow-sm'
+                : 'bg-gold/15 text-green-deep border-gold/40 hover:bg-gold/30'
+            }`}
+            title="Listen to Instructions"
+          >
+            {isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            <span>{isSpeaking ? "Stop Voice" : "Listen Aloud"}</span>
+          </button>
+        </div>
+
+        {/* ROLE SELECTOR TABS */}
+        <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 rounded-2xl bg-green-deep/5 border border-gold/30">
+          <button
+            type="button"
+            onClick={() => {
+              setIntent('find');
+              setRoleError(null);
+              localStorage.setItem('login_intent', 'find');
+            }}
+            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              intent === 'find'
+                ? 'bg-green-deep text-cream shadow-md scale-[1.02]'
+                : 'text-green-soft hover:text-green-deep hover:bg-white/50'
+            }`}
+          >
+            <Package size={16} className={intent === 'find' ? 'text-gold-light' : 'text-soil'} />
+            <span>{t('nav.find', 'Find a Vehicle')}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIntent('offer');
+              setRoleError(null);
+              localStorage.setItem('login_intent', 'offer');
+            }}
+            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              intent === 'offer'
+                ? 'bg-green-deep text-cream shadow-md scale-[1.02]'
+                : 'text-green-soft hover:text-green-deep hover:bg-white/50'
+            }`}
+          >
+            <Truck size={16} className={intent === 'offer' ? 'text-gold-light' : 'text-soil'} />
+            <span>{t('nav.offer', 'Offer a Trip')}</span>
+          </button>
+        </div>
+
+        {/* ROLE ICON & HEADER */}
+        <div className="text-center mb-5">
+          <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-tr from-green-deep/10 to-gold/20 border border-gold/30 flex items-center justify-center text-3xl shadow-inner">
+            {intent === 'offer' ? <Truck className="text-green-deep" size={32} /> : <Package className="text-soil" size={32} />}
+          </div>
+
+          <span className="inline-block px-3.5 py-1 rounded-full text-xs font-bold font-mono uppercase tracking-wider bg-green-deep/10 text-green-deep mb-2">
+            {intent === 'offer' ? localizedText.driver_title : localizedText.sender_title}
+          </span>
+
+          <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-green-deep">
+            {localizedText.title}
+          </h2>
+          <p className="text-xs sm:text-sm text-green-soft mt-1.5">
+            {localizedText.subtitle}
+          </p>
+        </div>
+
+        {/* FRIENDLY ROLE INFO BANNER */}
+        <div className="mb-5 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-left">
+          <div className="flex items-start gap-2.5">
+            <Info className="text-amber-700 shrink-0 mt-0.5" size={18} />
+            <div className="text-xs text-amber-950">
+              <p className="font-bold text-amber-900">{localizedText.role_notice_title}</p>
+              <p className="mt-0.5 leading-relaxed text-[11.5px] text-amber-900/90">
+                {localizedText.role_notice_body}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* DYNAMIC ROLE MISMATCH / ERROR BANNER */}
+        {roleError && (
+          <div className="mb-5 p-4 rounded-2xl bg-blue-50 border border-blue-200 text-left animate-[fadeIn_0.2s_ease]">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheck className="text-blue-600 shrink-0 mt-0.5" size={18} />
+              <div className="text-xs text-blue-900 space-y-2.5">
+                <p className="font-medium leading-relaxed text-[12px]">
+                  {roleError.message}
+                </p>
+
+                {roleError.type === 'driver_on_sender' && roleError.token && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem("access_token", roleError.token);
+                      navigate('/offer');
+                    }}
+                    className="px-3.5 py-1.5 bg-green-deep text-cream rounded-xl text-xs font-semibold hover:bg-green transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Truck size={14} /> {localizedText.go_driver} →
+                  </button>
+                )}
+
+                {roleError.type === 'sender_on_driver' && roleError.token && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem("access_token", roleError.token);
+                      navigate('/find');
+                    }}
+                    className="px-3.5 py-1.5 bg-soil text-cream rounded-xl text-xs font-semibold hover:bg-soil-light transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Package size={14} /> {localizedText.go_sender} →
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* GOOGLE SIGN IN BUTTON */}
+        <div className="flex flex-col items-center justify-center my-3">
+          <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+            <div className="transform hover:scale-102 transition-transform shadow-xs rounded-full">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => {
+                  const failMsg = "Google Sign In Failed. Please check popups or try again.";
+                  setRoleError({ type: 'fail', message: failMsg });
+                  speakText(failMsg, lang);
+                }}
+                useOneTap={false}
+                prompt="select_account"
+                theme="outline"
+                shape="pill"
+                size="large"
+                text="continue_with"
+                width="280"
+              />
+            </div>
+          </GoogleOAuthProvider>
+
+          {loading && (
+            <div className="flex items-center gap-2 mt-4 text-xs text-green-soft font-medium animate-pulse">
+              <div className="w-4 h-4 border-2 border-green-deep border-t-transparent rounded-full animate-spin"></div>
+              <span>{localizedText.logging_in}</span>
             </div>
           )}
-
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => alert('Google Sign In Failed')}
-              useOneTap={false}
-              prompt="select_account"
-            />
-          </div>
-          {loading && <p className="mt-4 text-sm text-green-soft">Logging in...</p>}
         </div>
+
+        {/* FOOTER PRIVACY NOTICE */}
+        <p className="text-[11px] text-green-soft text-center mt-5">
+          🛡️ Verified by Government Digital Logistics Infrastructure
+        </p>
       </div>
-    </GoogleOAuthProvider>
-  )
+    </div>
+  );
 }
 
 export function ProfileSetupPage() {

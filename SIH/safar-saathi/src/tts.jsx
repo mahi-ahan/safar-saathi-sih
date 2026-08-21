@@ -141,7 +141,7 @@ export function speakText(text, langId = null, onEndCallback = null) {
     if (voice) {
       utterance.voice = voice;
     }
-    utterance.rate = 0.95;
+    utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
     utterance.onend = () => {

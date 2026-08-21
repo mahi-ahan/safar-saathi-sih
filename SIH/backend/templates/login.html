@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Krishi-Anna Login</title>
+    <title>Safar-Saathi Login</title>
 
     <style>
 
@@ -15,8 +15,8 @@
 
         body {
             margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f3f7f2;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #FDFBF7;
 
             display: flex;
             justify-content: center;
@@ -26,15 +26,27 @@
         }
 
         .login-container {
-            width: 400px;
-            background: white;
+            width: 440px;
+            background: #FFFFFF;
 
-            padding: 35px;
+            padding: 40px;
 
-            border-radius: 15px;
+            border-radius: 24px;
+            border: 1px solid rgba(212, 160, 23, 0.35);
 
             box-shadow:
-                0 10px 30px rgba(0, 0, 0, 0.1);
+                0 20px 40px rgba(27, 67, 50, 0.12);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .top-accent {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: linear-gradient(to right, #8B5E34, #D4A017, #1B4332);
         }
 
         .logo {
@@ -44,11 +56,14 @@
 
         .logo h1 {
             margin: 0;
-            color: #2e7d32;
+            color: #1B4332;
+            font-size: 26px;
         }
 
         .logo p {
-            color: #666;
+            color: #407153;
+            font-size: 13px;
+            margin-top: 4px;
         }
 
         label {
@@ -56,19 +71,29 @@
             margin-top: 15px;
             margin-bottom: 6px;
 
-            font-weight: bold;
+            font-weight: 600;
+            color: #1B4332;
+            font-size: 13px;
         }
 
         input,
         select {
             width: 100%;
 
-            padding: 12px;
+            padding: 12px 14px;
 
-            border: 1px solid #ccc;
-            border-radius: 8px;
+            border: 1px solid #D4A017;
+            border-radius: 12px;
 
-            font-size: 15px;
+            font-size: 14px;
+            outline: none;
+            background: #FAFAF8;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: #1B4332;
+            background: #FFFFFF;
         }
 
         button {
@@ -79,25 +104,28 @@
             padding: 13px;
 
             border: none;
-            border-radius: 8px;
+            border-radius: 12px;
 
-            background: #2e7d32;
-            color: white;
+            background: #1B4332;
+            color: #FDFBF7;
 
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
 
             cursor: pointer;
+            transition: background 0.2s ease;
         }
 
         button:hover {
-            background: #1b5e20;
+            background: #2D6A4F;
         }
 
         #message {
             text-align: center;
             margin-top: 15px;
-            color: red;
+            color: #C0392B;
+            font-size: 13px;
+            font-weight: 500;
         }
 
     </style>
@@ -106,13 +134,14 @@
 <body>
 
     <div class="login-container">
+        <div class="top-accent"></div>
 
         <div class="logo">
 
-            <h1>🌾 Krishi-Anna</h1>
+            <h1>📦 Safar-Saathi</h1>
 
             <p>
-                Shared Harvest Transport Platform
+                Shared Goods Transport & Logistics Platform
             </p>
 
         </div>

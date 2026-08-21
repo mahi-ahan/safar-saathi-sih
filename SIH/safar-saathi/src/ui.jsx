@@ -423,7 +423,7 @@ export function AiPriceGuardrail({
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(voiceMessage);
         utterance.lang = isHindi ? 'hi-IN' : 'en-IN';
-        utterance.rate = 0.95;
+        utterance.rate = 1.0;
         try {
           window.speechSynthesis.speak(utterance);
         } catch (e) {
@@ -566,6 +566,7 @@ export function AiPriceGuardrail({
                   window.speechSynthesis.cancel();
                   const u = new SpeechSynthesisUtterance(voiceMsg);
                   u.lang = isHindi ? 'hi-IN' : 'en-IN';
+                  u.rate = 1.0;
                   window.speechSynthesis.speak(u);
                 }
               }}
@@ -617,7 +618,7 @@ export const safeSpeakText = (text, langCode = 'en') => {
       gu: 'gu-IN', ur: 'ur-IN', bho: 'hi-IN'
     };
     utterance.lang = langMap[langCode] || 'en-IN';
-    utterance.rate = 0.95;
+    utterance.rate = 1.0;
     window.speechSynthesis.speak(utterance);
   } catch (err) {
     console.warn('Speech synthesis notice:', err);

@@ -5,9 +5,9 @@ import { useLang } from './lib';
 import { speakText, stopSpeech } from './tts';
 import { useNavigate } from 'react-router-dom';
 
-const GOOGLE_CLIENT_ID = "985266026061-a7hpfspuv6hc17pc72camb1gig9vucqq.apps.googleusercontent.com";
+export const GOOGLE_CLIENT_ID = "985266026061-a7hpfspuv6hc17pc72camb1gig9vucqq.apps.googleusercontent.com";
 
-const AUTH_ROLE_TEXTS = {
+export const AUTH_ROLE_TEXTS = {
   en: {
     title: "Sign in to Safar-Saathi",
     subtitle: "Fast, secure single-click sign in with your Google account.",

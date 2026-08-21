@@ -17,6 +17,7 @@ from routers import requests
 from routers import users
 from routers import drivers
 from routers import admins
+from routers import pricing
 
 
 # =========================================================
@@ -376,4 +377,9 @@ app.include_router(
 # Admin
 app.include_router(
     admins.router
+)
+
+# AI Pricing & Market Validation
+app.include_router(
+    pricing.router
 )

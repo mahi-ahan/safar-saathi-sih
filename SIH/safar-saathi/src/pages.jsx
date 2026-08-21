@@ -36,6 +36,11 @@ import {
   haversineDistance,
   isPassengerOnRoute,
   calculateRouteAwarePrice,
+  calculateStrictFare,
+  getOsrmDistanceKm,
+  AiPriceGuardrail,
+  PtlUserPricingCard,
+  ComponentErrorBoundary,
   distanceToSegmentKm
 } from './ui'
 
@@ -1488,7 +1493,7 @@ export function FindVehicles() {
                                 ? Math.max(5, Math.round(haversineDistance(r.pickupCoords.lat, r.pickupCoords.lng, r.deliveryCoords.lat, r.deliveryCoords.lng) * 1.25))
                                 : 0;
 
-                              const estimatedFare = hasCoords ? calculateRouteAwarePrice(segDist, trip, 20) : null;
+                              const estimatedFare = hasCoords ? calculateRouteAwarePrice(segDist, { ...trip, weight: weightNum }, 20) : null;
 
                               return (
                                 <div className="space-y-2.5">
@@ -1513,65 +1518,22 @@ export function FindVehicles() {
                                     </div>
                                   )}
 
-                                  {/* TRANSPARENT PRICING & POOLING BREAKDOWN */}
+                                  {/* AI-FIRST USER PARTIAL LOAD COST DISTRIBUTION & FULL-PRICE RULE */}
                                   {weightNum > 0 && (
-                                    <div className="rounded-2xl bg-gold/15 border border-gold/35 p-3 text-xs space-y-2.5 shadow-xs">
-                                      {/* 1. UPFRONT MAXIMUM SOLO ESTIMATE CEILING */}
-                                      <div className="flex items-start justify-between gap-3 pb-2 border-b border-gold/20">
-                                        <div>
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="text-sm">🛡️</span>
-                                            <span className="font-bold text-green-deep text-xs">{t('pricing.max_solo', 'Maximum Estimated Solo Fare:')}</span>
-                                          </div>
-                                          <p className="text-[10.5px] text-green-soft mt-0.5">
-                                            {t('pricing.max_solo_sub', 'Absolute worst-case ceiling if no other cargo shares this vehicle.')}
-                                          </p>
-                                        </div>
-                                        <div className="text-right">
-                                          <span className="font-display font-bold text-base text-soil">
-                                            ₹{maxSoloFare.toLocaleString('en-IN')}
-                                          </span>
-                                          <span className="block text-[10px] text-gray-500 font-mono">{t('pricing.max_ceiling', 'Max Solo Ceiling')}</span>
-                                        </div>
-                                      </div>
-
-                                      {/* 2. DYNAMIC SHARED-LOAD ON-ROUTE SEGMENT FARE */}
-                                      {hasCoords ? (
-                                        <div className="bg-white/80 rounded-xl p-2.5 border border-green-300 space-y-1">
-                                          <div className="flex items-center justify-between text-green-deep font-semibold">
-                                            <span className="flex items-center gap-1 text-green-800">
-                                              <span>💚</span>
-                                              <span>{t('pricing.calc_segment', 'Your Calculated Segment Fare:')}</span>
-                                            </span>
-                                            <span className="font-bold font-display text-lg text-green-deep">
-                                              ₹{estimatedFare.toLocaleString('en-IN')}
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center justify-between text-[11px] text-green-soft">
-                                            <span>{t('pricing.travel_seg', 'Travel Segment')}: {segDist} km (incl. ₹20 service fee)</span>
-                                            <span>{t('pricing.workload', 'Workload')}: {weightNum * segDist} kg·km</span>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="bg-white/70 rounded-xl p-2 border border-gold/20 text-[11px] text-green-soft flex items-center justify-between">
-                                          <span>📍 {t('pricing.base_rate', 'Base Rate')}: <strong>₹{baseRatePerKg.toFixed(1)}/kg</strong></span>
-                                          <span className="text-[10.5px] text-soil font-medium">{t('pricing.select_loc_prompt', 'Select pickup & delivery below for exact route fare')}</span>
-                                        </div>
-                                      )}
-
-                                      {/* 3. SHARED POOLING ADVANTAGE BANNER */}
-                                      <div className="rounded-xl bg-green-50 p-2.5 border border-green-200 text-[11px] text-green-900 flex items-start gap-2">
-                                        <span className="text-sm shrink-0">⚡</span>
-                                        <div>
-                                          <p className="font-bold text-green-900">
-                                            {t('pricing.pooling_active', 'Shared-Load Automatic Discount Active:')}
-                                          </p>
-                                          <p className="text-[10.5px] text-green-800 mt-0.5 leading-relaxed">
-                                            {t('pricing.pooling_desc', 'This price will automatically drop further as more co-sharing partners join this vehicle. Total cost is distributed fairly by exact Ton-Km weight × distance.')}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
+                                    <ComponentErrorBoundary>
+                                      <PtlUserPricingCard
+                                        trip={trip}
+                                        pickupLoc={r.pickup_place || trip.from}
+                                        deliveryLoc={r.delivery_place || trip.to}
+                                        pickupCoords={r.pickupCoords}
+                                        deliveryCoords={r.deliveryCoords}
+                                        weightKg={weightNum}
+                                        activeLang={typeof localStorage !== 'undefined' ? localStorage.getItem('ss_lang') || 'en' : 'en'}
+                                        onPriceCalculated={(calculatedPrice, isShared, breakdown) => {
+                                          // Callback hook for calculated price
+                                        }}
+                                      />
+                                    </ComponentErrorBoundary>
                                   )}
                                 </div>
                               );
@@ -1801,9 +1763,31 @@ export function FindVehicles() {
                             ₹{(req.per_person_share || 0).toLocaleString('en-IN')}
                           </span>
                         </div>
-                        <p className="text-[10.5px] text-green-soft mt-0.5">
-                          Workload: {req.kg_km || ((req.goods_weight_kg || req.kg || 0) * (req.distance_km || 150))} kg·km ({req.share_pct || 100}% of load pool)
-                        </p>
+                        <div className="flex items-center justify-between mt-1 text-[10.5px] text-green-soft">
+                          <span>
+                            Workload: {req.kg_km || ((req.goods_weight_kg || req.kg || 0) * (req.distance_km || 150))} kg·km ({req.share_pct || 100}% of pool)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                                const currentLang = localStorage.getItem('ss_lang') || 'en';
+                                const isHindi = currentLang === 'hi' || currentLang === 'bho';
+                                const text = isHindi
+                                  ? `आपके ${req.distance_km || 150} किलोमीटर सफर और ${req.goods_weight_kg || req.kg} किलोग्राम भार के लिए आपका हिस्सा ₹${(req.per_person_share || 0).toLocaleString('en-IN')} है।`
+                                  : `Your calculated share is ₹${(req.per_person_share || 0).toLocaleString('en-IN')} for ${req.distance_km || 150} kilometers and ${req.goods_weight_kg || req.kg} kilograms.`;
+                                window.speechSynthesis.cancel();
+                                const u = new SpeechSynthesisUtterance(text);
+                                u.lang = isHindi ? 'hi-IN' : 'en-IN';
+                                window.speechSynthesis.speak(u);
+                              }
+                            }}
+                            className="text-soil hover:text-green-deep flex items-center gap-1 font-semibold cursor-pointer bg-white/60 px-2 py-0.5 rounded-md border border-gold/20 hover:bg-white"
+                          >
+                            <span>🔊</span>
+                            <span>Hear Fare</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* RATING DISPLAY IF COMPLETED */}
@@ -3619,6 +3603,26 @@ export function OfferTrip() {
               <p className="text-[11px] text-green-800 bg-white/70 rounded-lg p-2 border border-green-200">
                 ⚡ <strong>{t('card.ton_km_split', 'Ton-Km Fair Split')}:</strong> The backend automatically splits this ₹{o.price || '0'} among passengers based on their individual weight (kg) × distance (km).
               </p>
+
+              {/* AI DYNAMIC PRICING & MARKET VALIDATION GUARDRAIL */}
+              <AiPriceGuardrail
+                origin={o.from}
+                destination={o.to}
+                fromCoords={o.fromCoords}
+                toCoords={o.toCoords}
+                vehicleModel={o.vehicle}
+                goodsWeightKg={o.total}
+                customPrice={o.price}
+                activeLang={typeof localStorage !== 'undefined' ? localStorage.getItem('ss_lang') || 'en' : 'en'}
+                onApplyPrice={priceVal => {
+                  setO(prev => ({
+                    ...prev,
+                    price: String(priceVal),
+                    totalDriverAmount: String(priceVal)
+                  }));
+                  notify(`✔ Applied AI Fair Market Rate: ₹${Number(priceVal).toLocaleString('en-IN')}`);
+                }}
+              />
             </div>
 
             {/* PICKUP */}

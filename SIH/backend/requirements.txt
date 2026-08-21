@@ -10,3 +10,4 @@ pydantic
 google-auth-oauthlib
 psycopg2
 python-multipart
+google-genai

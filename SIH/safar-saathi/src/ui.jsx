@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { X } from 'lucide-react'
 import L from 'leaflet'
@@ -198,16 +198,814 @@ export function isPointAlongRoute(pointCoords, originCoords, destCoords, thresho
   return isPassengerOnRoute(pointCoords, [originCoords, destCoords], thresholdKm);
 }
 
-export function calculateRouteAwarePrice(passengerDistKm, trip, serviceFee = 20.0) {
-  let basePricePerKm = 12.0;
-  if (trip && trip.distance_km && trip.distance_km > 0 && trip.total_driver_amount && trip.total_driver_amount > 0) {
-    basePricePerKm = Number(trip.total_driver_amount) / Number(trip.distance_km);
-  } else if (trip && (trip.price_per_kg || trip.pricePerKg) && (trip.price_per_kg > 0 || trip.pricePerKg > 0)) {
-    basePricePerKm = Number(trip.price_per_kg || trip.pricePerKg);
+/* =========================================================
+   OSRM PUBLIC ROUTER & DISTANCE HELPERS
+========================================================= */
+
+/**
+ * Free OSRM Public Router integration for accurate road-based distance (km)
+ * Supports coordinate objects ({ lat, lng }), arrays ([lat, lng]), with graceful Haversine fallback.
+ */
+export async function getOsrmDistanceKm(start, end) {
+  const startLat = Number(start?.lat ?? start?.[0]);
+  const startLng = Number(start?.lng ?? start?.[1]);
+  const endLat = Number(end?.lat ?? end?.[0]);
+  const endLng = Number(end?.lng ?? end?.[1]);
+
+  if (!startLat || !startLng || !endLat || !endLng) {
+    return 0;
   }
 
-  const price = Math.round((basePricePerKm * passengerDistKm) + serviceFee);
-  return Math.max(0, price);
+  // OSRM routing format: lng,lat;lng,lat
+  const coordinates = `${startLng},${startLat};${endLng},${endLat}`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=false&alternatives=false`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`OSRM HTTP ${response.status}`);
+    const data = await response.json();
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const distanceMeters = data.routes[0].distance;
+      return Math.round((distanceMeters / 1000) * 10) / 10;
+    }
+    throw new Error('No OSRM route found');
+  } catch (err) {
+    // Fallback to geodesic Haversine distance with 1.25x road factor
+    const haversineDist = haversineDistance(startLat, startLng, endLat, endLng);
+    return Math.max(5, Math.round(haversineDist * 1.25 * 10) / 10);
+  }
+}
+
+/* =========================================================
+   TRANSPARENT LINEAR PRICING ALGORITHM
+========================================================= */
+
+export const PRICING_CONFIG = {
+  DEFAULT_BASE_RATE: 60000,    // Fixed Base Rate in ₹
+  PRICE_PER_KM: 15.0,          // ₹ per road kilometer
+  WEIGHT_RATE_PER_KG: 1.5,     // ₹ per kg surcharge
+  MARKET_CEILING: 85000,       // Logical market ceiling in ₹
+  MAX_ALLOWED_PRICE: 95000,    // Strict maximum price ceiling
+};
+
+/**
+ * Strict Linear Fare Calculation:
+ * Final Price = (Base Rate) + (Distance_km * Price_per_km) + (Weight_Surcharge)
+ * Includes market ceiling protection and volume discount logic to avoid > 1 Lakh ballooning.
+ *
+ * @param {number} distance - Distance in km
+ * @param {number} weight - Weight in kg
+ * @param {number} [basePrice=60000] - Fixed Base Rate in ₹
+ * @param {Object} [options] - Additional parameters (pricePerKm, weightRate, ceiling, maxPrice)
+ */
+export function calculateStrictFare(
+  distance = 0,
+  weight = 0,
+  basePrice = PRICING_CONFIG.DEFAULT_BASE_RATE,
+  options = {}
+) {
+  const dist = Math.max(0, Number(distance) || 0);
+  const wt = Math.max(0, Number(weight) || 0);
+  const baseRate = Math.max(0, Number(basePrice) || PRICING_CONFIG.DEFAULT_BASE_RATE);
+
+  const pricePerKm = options.pricePerKm ?? PRICING_CONFIG.PRICE_PER_KM;
+  const weightRate = options.weightRate ?? PRICING_CONFIG.WEIGHT_RATE_PER_KG;
+  const ceiling = options.marketCeiling ?? PRICING_CONFIG.MARKET_CEILING;
+  const maxPrice = options.maxAllowedPrice ?? PRICING_CONFIG.MAX_ALLOWED_PRICE;
+
+  // Linear calculation
+  const distanceCost = Math.round(dist * pricePerKm);
+  const weightSurcharge = Math.round(wt * weightRate);
+  const rawSubtotal = baseRate + distanceCost + weightSurcharge;
+
+  // Market ceiling validation and progressive relief discount
+  let discountApplied = 0;
+  let finalPrice = rawSubtotal;
+
+  if (rawSubtotal > ceiling) {
+    const excess = rawSubtotal - ceiling;
+    discountApplied = Math.round(excess * 0.60);
+    finalPrice = rawSubtotal - discountApplied;
+  }
+
+  finalPrice = Math.min(finalPrice, maxPrice);
+
+  return {
+    finalPrice: Math.round(finalPrice),
+    breakdown: {
+      baseRate,
+      distanceCost,
+      weightSurcharge,
+      rawSubtotal,
+      discountApplied
+    }
+  };
+}
+
+/**
+ * Clean route-aware price calculation (compatible with passenger distance & trip objects)
+ */
+export function calculateRouteAwarePrice(passengerDistKm, tripOrWeight, serviceFeeOrBasePrice = 20.0) {
+  const dist = Math.max(0, Number(passengerDistKm) || 0);
+
+  // If trip object is passed
+  if (tripOrWeight && typeof tripOrWeight === 'object') {
+    const trip = tripOrWeight;
+    const tripCap = trip.totalKg || trip.total_kg || 1000;
+    const weight = Number(trip.weight || 0);
+    const baseRate = Number(trip.total_driver_amount || trip.totalDriverAmount) || PRICING_CONFIG.DEFAULT_BASE_RATE;
+    
+    // Calculate using linear fare function
+    const { finalPrice } = calculateStrictFare(dist, weight, baseRate);
+    return finalPrice;
+  }
+
+  // If passed directly as (distance, weight, basePrice)
+  const weight = Number(tripOrWeight || 0);
+  const basePrice = Number(serviceFeeOrBasePrice) > 500 ? Number(serviceFeeOrBasePrice) : PRICING_CONFIG.DEFAULT_BASE_RATE;
+  const { finalPrice } = calculateStrictFare(dist, weight, basePrice);
+  return finalPrice;
+}
+
+/**
+ * AI-First Dynamic Pricing & Market Validation Component
+ * Connects Leaflet/OSM route data with backend Gemini AI Pricing Engine,
+ * provides live fair market pricing ranges, and speaks voice warnings on exorbitant rates.
+ */
+export function AiPriceGuardrail({
+  origin,
+  destination,
+  fromCoords,
+  toCoords,
+  vehicleModel = 'Mini Truck',
+  goodsWeightKg = 0,
+  customPrice = '',
+  onApplyPrice,
+  activeLang = 'en'
+}) {
+  const [loading, setLoading] = useState(false);
+  const [pricingData, setPricingData] = useState(null);
+  const [roadDist, setRoadDist] = useState(0);
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const lastSpokenPriceRef = useRef(null);
+
+  // 1. Fetch OSRM distance and AI pricing from backend
+  useEffect(() => {
+    if (!origin || !destination || origin.trim().length < 2 || destination.trim().length < 2) {
+      setPricingData(null);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchPricing = async () => {
+      setLoading(true);
+      try {
+        let distKm = 0;
+        if (fromCoords && toCoords) {
+          distKm = await getOsrmDistanceKm(fromCoords, toCoords);
+        }
+        if (!distKm || distKm <= 0) {
+          distKm = 150; // default baseline distance
+        }
+        if (isMounted) setRoadDist(distKm);
+
+        const res = await fetch("http://localhost:8000/api/calculate-fare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origin: origin,
+            destination: destination,
+            distance_km: distKm,
+            vehicle_model: vehicleModel || 'Mini Truck',
+            goods_weight_kg: goodsWeightKg ? Number(goodsWeightKg) : null,
+            custom_price: customPrice ? Number(customPrice) : null
+          })
+        });
+
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          setPricingData(data);
+        }
+      } catch (err) {
+        console.warn('AI Pricing fetch notice:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    const timer = setTimeout(fetchPricing, 500);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [origin, destination, fromCoords, toCoords, vehicleModel, goodsWeightKg]);
+
+  // 2. Evaluate price exorbitance & trigger Voice Warning via window.speechSynthesis
+  const enteredNum = Number(customPrice || 0);
+  const fairMax = pricingData?.fairMaxPrice || 0;
+  const fairMin = pricingData?.fairMinPrice || 0;
+  const isExorbitant = fairMax > 0 && enteredNum > (fairMax * 1.25 || fairMax + 5000);
+  const excessPct = fairMax > 0 && enteredNum > fairMax ? Math.round(((enteredNum - fairMax) / fairMax) * 100) : 0;
+
+  useEffect(() => {
+    if (!isExorbitant || enteredNum <= 0 || !fairMax) return;
+    if (lastSpokenPriceRef.current === enteredNum) return;
+
+    const timer = setTimeout(() => {
+      lastSpokenPriceRef.current = enteredNum;
+      
+      const isHindi = activeLang === 'hi' || activeLang === 'bho' || (typeof localStorage !== 'undefined' && localStorage.getItem('ss_lang') === 'hi');
+      const voiceMessage = isHindi
+        ? `सावधान: आपका दर्ज किया गया किराया ₹${enteredNum.toLocaleString('en-IN')} बाज़ार दर ₹${fairMin.toLocaleString('en-IN')} से ₹${fairMax.toLocaleString('en-IN')} से ${excessPct}% अधिक है। तेज़ी से बुकिंग पाने के लिए उचित किराया रखें।`
+        : `Warning: Your entered price of ₹${enteredNum.toLocaleString('en-IN')} is ${excessPct}% higher than the fair market ceiling of ₹${fairMax.toLocaleString('en-IN')}. Please consider setting a competitive rate to receive fast bookings.`;
+
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(voiceMessage);
+        utterance.lang = isHindi ? 'hi-IN' : 'en-IN';
+        utterance.rate = 0.95;
+        try {
+          window.speechSynthesis.speak(utterance);
+        } catch (e) {
+          console.warn('Speech error:', e);
+        }
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [enteredNum, isExorbitant, fairMax, fairMin, excessPct, activeLang]);
+
+  if (!origin || !destination) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3 pt-1">
+      {/* LOADING STATE */}
+      {loading && (
+        <div className="rounded-2xl bg-indigo-50/80 border border-indigo-200 p-3.5 flex items-center gap-3 animate-pulse text-xs text-indigo-900">
+          <span className="text-lg animate-spin">✨</span>
+          <div>
+            <p className="font-bold">Consulting Gemini AI Logistics Pricing Officer...</p>
+            <p className="text-[11px] text-indigo-700">Analyzing real-time diesel rates, tolls, and {vehicleModel} specs</p>
+          </div>
+        </div>
+      )}
+
+      {/* AI FAIR PRICE ASSESSMENT CARD */}
+      {!loading && pricingData && (
+        <div className="rounded-2xl bg-linear-to-br from-emerald-50 to-teal-50/70 border border-emerald-300/80 p-4 text-xs space-y-3 shadow-xs">
+          <div className="flex items-start justify-between gap-2 border-b border-emerald-200/80 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-base">
+                {pricingData.source === 'gemini_ai' ? '🤖' : pricingData.source === 'database_cache_fallback' ? '🏛️' : '⚙️'}
+              </span>
+              <div>
+                <span className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                  <span>
+                    {pricingData.source === 'gemini_ai' ? 'Gemini AI Logistics Assessment' : 'Historical Market Rate Assessment'}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded-full text-[9.5px] font-mono uppercase bg-emerald-200/90 text-emerald-900 font-bold">
+                    {pricingData.source === 'gemini_ai' ? 'Live AI' : 'Cached DB'}
+                  </span>
+                </span>
+                <p className="text-[10.5px] text-emerald-800 mt-0.5">
+                  Road Distance: <strong>{roadDist} km</strong> · Model: <strong>{vehicleModel}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <span className="block font-bold text-sm text-emerald-950 font-display">
+                ₹{pricingData.fairMinPrice?.toLocaleString('en-IN')} – ₹{pricingData.fairMaxPrice?.toLocaleString('en-IN')}
+              </span>
+              <span className="text-[10px] text-emerald-700 font-mono">Fair Market Range</span>
+            </div>
+          </div>
+
+          {/* ACTION BUTTON & TOGGLE BREAKDOWN */}
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={() => setShowBreakdown(!showBreakdown)}
+              className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 underline cursor-pointer flex items-center gap-1"
+            >
+              <span>{showBreakdown ? '▼ Hide' : '▶ View'} Cost Breakdown</span>
+            </button>
+
+            {onApplyPrice && (
+              <button
+                type="button"
+                onClick={() => onApplyPrice(pricingData.fairMaxPrice || pricingData.recommendedPrice)}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-xs cursor-pointer transition active:scale-95"
+              >
+                Apply Fair Rate (₹{pricingData.fairMaxPrice?.toLocaleString('en-IN')})
+              </button>
+            )}
+          </div>
+
+          {/* DETAILED COST BREAKDOWN ACCORDION */}
+          {showBreakdown && pricingData.breakdown && (
+            <div className="bg-white/90 rounded-xl p-3 border border-emerald-200 space-y-1.5 text-[11px] text-emerald-900 mt-2">
+              <div className="grid grid-cols-2 gap-2 pb-1.5 border-b border-emerald-100 font-mono">
+                {pricingData.breakdown.fuelCost !== undefined && (
+                  <div>⛽ Fuel: <strong>₹{pricingData.breakdown.fuelCost}</strong></div>
+                )}
+                {pricingData.breakdown.tollEstimate !== undefined && (
+                  <div>🛣️ Tolls: <strong>₹{pricingData.breakdown.tollEstimate}</strong></div>
+                )}
+                {pricingData.breakdown.driverAllowance !== undefined && (
+                  <div>👨‍✈️ Driver Allowance: <strong>₹{pricingData.breakdown.driverAllowance}</strong></div>
+                )}
+                {pricingData.breakdown.vehicleMaintenance !== undefined && (
+                  <div>🔧 Maintenance: <strong>₹{pricingData.breakdown.vehicleMaintenance}</strong></div>
+                )}
+              </div>
+              {pricingData.breakdown.notes && (
+                <p className="text-[10.5px] text-emerald-800 italic pt-1">
+                  ℹ️ {pricingData.breakdown.notes}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* EXORBITANT PRICE WARNING & SPEECH SYNTHESIS BANNER */}
+      {isExorbitant && (
+        <div className="rounded-2xl bg-linear-to-r from-red-50 to-amber-50 border-2 border-red-400 p-4 text-xs space-y-2.5 shadow-md animate-bounce-short">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl mt-0.5">⚠️</span>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-red-950 text-sm">
+                  Uncompetitive / Exorbitant Price Warning
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-red-200 text-red-950 text-[10px] font-mono font-bold">
+                  +{excessPct}% Above Market
+                </span>
+              </div>
+              <p className="text-[11.5px] text-red-900 mt-1 leading-relaxed">
+                Your entered fare of <strong>₹{enteredNum.toLocaleString('en-IN')}</strong> is significantly higher than prevailing fair market rates (<strong>₹{fairMin.toLocaleString('en-IN')} – ₹{fairMax.toLocaleString('en-IN')}</strong>).
+              </p>
+              <p className="text-[11px] text-red-800 mt-0.5">
+                Cargo shippers compare rates instantly and may reject uncompetitive trips.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1 border-t border-red-200">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                  const isHindi = activeLang === 'hi' || activeLang === 'bho';
+                  const voiceMsg = isHindi
+                    ? `सावधान: आपका दर्ज किया गया किराया ₹${enteredNum} बाज़ार दर से ${excessPct}% अधिक है।`
+                    : `Warning: Your entered price of ₹${enteredNum} is ${excessPct}% higher than fair market rate.`;
+                  window.speechSynthesis.cancel();
+                  const u = new SpeechSynthesisUtterance(voiceMsg);
+                  u.lang = isHindi ? 'hi-IN' : 'en-IN';
+                  window.speechSynthesis.speak(u);
+                }
+              }}
+              className="text-[11px] text-red-800 hover:text-red-950 font-semibold flex items-center gap-1 cursor-pointer"
+            >
+              <span>🔊</span>
+              <span>Replay Voice Alert</span>
+            </button>
+
+            {onApplyPrice && (
+              <button
+                type="button"
+                onClick={() => onApplyPrice(fairMax)}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition active:scale-95"
+              >
+                Set to Competitive Cap (₹{fairMax.toLocaleString('en-IN')})
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================
+   ROBUST SAFE UTILITIES & ERROR BOUNDARY
+========================================================= */
+
+export const formatInr = (val, fallback = '0') => {
+  const num = Number(val);
+  if (isNaN(num) || num === null || num === undefined) return fallback;
+  try {
+    return Math.round(num).toLocaleString('en-IN');
+  } catch {
+    return String(Math.round(num));
+  }
+};
+
+export const safeSpeakText = (text, langCode = 'en') => {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    if (!text || typeof text !== 'string') return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    const langMap = {
+      en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN', bn: 'bn-IN', te: 'te-IN',
+      ta: 'ta-IN', kn: 'kn-IN', ml: 'ml-IN', or: 'or-IN', pa: 'pa-IN',
+      gu: 'gu-IN', ur: 'ur-IN', bho: 'hi-IN'
+    };
+    utterance.lang = langMap[langCode] || 'en-IN';
+    utterance.rate = 0.95;
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.warn('Speech synthesis notice:', err);
+  }
+};
+
+export class ComponentErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Component Error Intercepted by Boundary:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.fallback) return this.props.fallback;
+      return (
+        <div className="rounded-xl p-3 bg-amber-50 border border-amber-300 text-xs text-amber-900 space-y-1 my-2">
+          <p className="font-bold flex items-center gap-1.5">
+            <span>🛡️</span>
+            <span>Standard Price Protection Active</span>
+          </p>
+          <p className="text-[11px] text-amber-800">
+            Standard pricing is active. You can proceed with your cargo booking normally.
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * AI-First User PTL Partial Load Cost Distribution Card
+ * Implements:
+ * 1. The Full-Price Rule (Unshared Solo Booking = Full vehicle price)
+ * 2. The Distribution Rule (Shared PTL = Proportional distribution based strictly on user sub-route pickup-to-destination distance)
+ * 3. Multilingual Voice Announcements matching website language via window.speechSynthesis
+ * 4. 100% Crash-Proof Defensive Math & Built-in Error Boundary Protection
+ */
+export function PtlUserPricingCard({
+  trip,
+  pickupLoc = '',
+  deliveryLoc = '',
+  pickupCoords = null,
+  deliveryCoords = null,
+  weightKg = 0,
+  activeLang = 'en',
+  onPriceCalculated
+}) {
+  return (
+    <ComponentErrorBoundary>
+      <PtlUserPricingCardInternal
+        trip={trip}
+        pickupLoc={pickupLoc}
+        deliveryLoc={deliveryLoc}
+        pickupCoords={pickupCoords}
+        deliveryCoords={deliveryCoords}
+        weightKg={weightKg}
+        activeLang={activeLang}
+        onPriceCalculated={onPriceCalculated}
+      />
+    </ComponentErrorBoundary>
+  );
+}
+
+function PtlUserPricingCardInternal({
+  trip,
+  pickupLoc = '',
+  deliveryLoc = '',
+  pickupCoords = null,
+  deliveryCoords = null,
+  weightKg = 0,
+  activeLang = 'en',
+  onPriceCalculated
+}) {
+  const [loading, setLoading] = useState(false);
+  const [ptlData, setPtlData] = useState(null);
+  const [segmentDist, setSegmentDist] = useState(0);
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const lastAnnouncedKeyRef = useRef('');
+  const callbackRef = useRef(onPriceCalculated);
+  callbackRef.current = onPriceCalculated;
+
+  const rawWeight = Number(weightKg);
+  const weightNum = isNaN(rawWeight) || rawWeight <= 0 ? 0 : rawWeight;
+  const tripTotalFare = Number(trip?.total_driver_amount || trip?.totalDriverAmount || (trip?.pricePerKg * (trip?.totalKg || 1000)) || 3000);
+
+  useEffect(() => {
+    if (weightNum <= 0) {
+      setPtlData(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    const computePtlFare = async () => {
+      setLoading(true);
+      try {
+        let distKm = 0;
+        if (pickupCoords?.lat && deliveryCoords?.lat) {
+          try {
+            distKm = await getOsrmDistanceKm(pickupCoords, deliveryCoords);
+          } catch (osrmErr) {
+            distKm = Math.max(5, Math.round(haversineDistance(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng) * 1.25));
+          }
+        }
+        if (!distKm || distKm <= 0) {
+          distKm = Number(trip?.distance_km) || 150;
+        }
+        if (isMounted) setSegmentDist(distKm);
+
+        // Map other co-sharers from trip.partners if present
+        const otherSharers = Array.isArray(trip?.partners) && trip.partners.length > 0
+          ? trip.partners.map((p, idx) => ({
+              id: String(p?.id || idx),
+              farmer_name: p?.farmer_name || p?.farmer || `Co-sharer ${idx + 1}`,
+              pickup_loc: p?.pickup_place || p?.from || trip?.from || 'Origin',
+              delivery_loc: p?.delivery_place || p?.to || trip?.to || 'Destination',
+              segment_distance_km: Number(p?.distance_km || p?.distance || distKm) || distKm,
+              goods_weight_kg: Number(p?.goods_weight_kg || p?.kg || 100) || 100
+            }))
+          : [];
+
+        try {
+          const res = await fetch("http://localhost:8000/api/calculate-ptl-fare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              trip_id: trip?.id || null,
+              total_driver_amount: tripTotalFare,
+              total_vehicle_capacity_kg: Number(trip?.totalKg || trip?.total_kg || 1000) || 1000,
+              driver_full_distance_km: Number(trip?.distance_km || 150) || 150,
+              user_pickup_loc: String(pickupLoc || trip?.from || 'Pickup Location'),
+              user_delivery_loc: String(deliveryLoc || trip?.to || 'Delivery Location'),
+              user_segment_distance_km: distKm,
+              user_weight_kg: weightNum,
+              other_sharers: otherSharers
+            })
+          });
+
+          if (res.ok && isMounted) {
+            const data = await res.json();
+            if (data && typeof data.user_final_price === 'number') {
+              setPtlData(data);
+              if (callbackRef.current) {
+                callbackRef.current(data.user_final_price, data.is_shared, data.breakdown);
+              }
+              return;
+            }
+          }
+        } catch (apiErr) {
+          console.warn('Backend PTL API notice (using instant client math fallback):', apiErr);
+        }
+
+        // Instant Deterministic Client-Side Fallback if server unreachable
+        if (isMounted) {
+          const isShared = otherSharers.length > 0;
+          let userPrice = tripTotalFare;
+          let savings = 0;
+          let sharePct = 100;
+          const userWorkload = weightNum * distKm;
+          
+          if (isShared) {
+            const otherWorkload = otherSharers.reduce((acc, s) => acc + (s.goods_weight_kg * s.segment_distance_km), 0);
+            const totalWorkload = Math.max(1, userWorkload + otherWorkload);
+            sharePct = Math.round((userWorkload / totalWorkload) * 1000) / 10;
+            userPrice = Math.max(50, Math.round((userWorkload / totalWorkload) * tripTotalFare));
+            savings = Math.max(0, tripTotalFare - userPrice);
+          }
+
+          const fallbackData = {
+            is_shared: isShared,
+            sharers_count: otherSharers.length + 1,
+            user_final_price: userPrice,
+            total_vehicle_price: tripTotalFare,
+            pricing_rule_applied: isShared ? "AI_PTL_SEGMENT_DISTRIBUTED" : "UNSHARED_FULL_PRICE",
+            source: "client_fallback",
+            breakdown: {
+              userSegmentKm: distKm,
+              userWeightKg: weightNum,
+              userWorkloadKgKm: userWorkload,
+              workloadSharePct: sharePct,
+              explanation: isShared
+                ? `Calculated on your ${distKm} km sub-route distance (${sharePct}% workload share).`
+                : "Solo booking: Full vehicle base fare applies."
+            },
+            voice_announcement_text: {
+              en: isShared
+                ? `Shared partial load fare confirmed: Your distributed share is ₹${formatInr(userPrice)}, saving you ₹${formatInr(savings)}.`
+                : `Solo booking rate: Full vehicle load price is ₹${formatInr(tripTotalFare)}.`,
+              hi: isShared
+                ? `साझा आंशिक लोड किराया पुष्ट: आपकी ${distKm} किमी यात्रा पर आपका हिस्सा ₹${formatInr(userPrice)} है, जिससे ₹${formatInr(savings)} की बचत हुई।`
+                : `एकल बुकिंग दर: कुल वाहन लोड किराया ₹${formatInr(tripTotalFare)} है।`
+            }
+          };
+
+          setPtlData(fallbackData);
+          if (callbackRef.current) {
+            callbackRef.current(userPrice, isShared, fallbackData.breakdown);
+          }
+        }
+      } catch (err) {
+        console.warn('PTL Price calculation caught notice:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    const timer = setTimeout(computePtlFare, 250);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [trip?.id, tripTotalFare, pickupLoc, deliveryLoc, pickupCoords?.lat, pickupCoords?.lng, deliveryCoords?.lat, deliveryCoords?.lng, weightNum]);
+
+  // Voice Announcement helper
+  const triggerVoiceAnnouncement = useCallback((force = false) => {
+    if (!ptlData) return;
+    const currentLangKey = String(activeLang || (typeof localStorage !== 'undefined' ? localStorage.getItem('ss_lang') : 'en') || 'en');
+    const speechText = ptlData?.voice_announcement_text?.[currentLangKey] || ptlData?.voice_announcement_text?.['en'] || `Your calculated fare is rupees ${formatInr(ptlData?.user_final_price)}`;
+    const announcementKey = `${ptlData?.user_final_price}_${ptlData?.is_shared}_${currentLangKey}`;
+
+    if (!force && lastAnnouncedKeyRef.current === announcementKey) return;
+    lastAnnouncedKeyRef.current = announcementKey;
+
+    safeSpeakText(speechText, currentLangKey);
+  }, [ptlData, activeLang]);
+
+  if (weightNum <= 0) return null;
+
+  const currentLangLabel = String(activeLang || 'EN').toUpperCase();
+  const userFinalPrice = Number(ptlData?.user_final_price) || 0;
+  const totalVehiclePrice = Number(ptlData?.total_vehicle_price) || tripTotalFare;
+  const savingsAmount = Math.max(0, totalVehiclePrice - userFinalPrice);
+  const isShared = Boolean(ptlData?.is_shared);
+
+  return (
+    <div className="space-y-3 pt-1">
+      {loading && (
+        <div className="rounded-2xl bg-gold/15 border border-gold/40 p-3 flex items-center gap-3 animate-pulse text-xs text-soil">
+          <span className="text-lg animate-spin">✨</span>
+          <div>
+            <p className="font-bold">Calculating sub-route partial load distribution with Gemini AI...</p>
+            <p className="text-[11px] text-green-soft">Evaluating pickup-to-destination distance ({segmentDist || 0} km) & active sharers</p>
+          </div>
+        </div>
+      )}
+
+      {!loading && ptlData && (
+        <div className={`rounded-2xl border p-4 text-xs space-y-3 shadow-xs ${
+          isShared
+            ? 'bg-linear-to-br from-green-50/90 to-emerald-50/70 border-green-300'
+            : 'bg-linear-to-br from-amber-50/80 to-cream border-gold/40'
+        }`}>
+          {/* HEADER */}
+          <div className="flex items-start justify-between gap-2 border-b pb-2.5 border-black/10">
+            <div className="flex items-center gap-2">
+              <span className="text-base">
+                {isShared ? '⚡' : '🛡️'}
+              </span>
+              <div>
+                <span className="font-bold text-green-deep text-xs flex items-center gap-1.5">
+                  <span>
+                    {isShared
+                      ? 'Shared-Load (PTL) Sub-Route Distribution'
+                      : 'Full Vehicle Base Fare (Unshared Solo Booking)'}
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9.5px] font-mono uppercase font-bold ${
+                    isShared ? 'bg-green-200 text-green-950' : 'bg-amber-200 text-amber-950'
+                  }`}>
+                    {isShared ? `${ptlData?.sharers_count || 1} Sharers Active` : '100% Reserved'}
+                  </span>
+                </span>
+                <p className="text-[10.5px] text-green-soft mt-0.5">
+                  Your Sub-Route Distance: <strong>{segmentDist || 0} km</strong> · Cargo: <strong>{weightNum} kg</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <span className="block font-bold text-lg text-soil font-display">
+                ₹{formatInr(userFinalPrice)}
+              </span>
+              <span className="text-[10px] text-gray-500 font-mono">
+                {isShared ? 'Your Sub-Route Share' : 'Full Vehicle Base Price'}
+              </span>
+            </div>
+          </div>
+
+          {/* SHARED LOAD STATUS & WORKLOAD SUMMARY */}
+          {isShared ? (
+            <div className="bg-white/80 rounded-xl p-2.5 border border-green-200 space-y-1">
+              <div className="flex items-center justify-between text-green-deep font-semibold">
+                <span className="flex items-center gap-1 text-green-800">
+                  <span>💚</span>
+                  <span>AI Sub-Route Ton-Km Distributed Fairly</span>
+                </span>
+                <span className="text-emerald-700 font-bold">
+                  Saved ₹{formatInr(savingsAmount)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-green-soft font-mono">
+                <span>Your Segment: {segmentDist || 0} km ({weightNum} kg)</span>
+                <span>Workload: {weightNum * (segmentDist || 0)} kg·km</span>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white/80 rounded-xl p-2.5 border border-gold/30 text-[11px] text-soil space-y-1">
+              <p className="font-semibold text-green-deep">
+                📍 Solo Booking Rule: Full vehicle base fare of ₹{formatInr(totalVehiclePrice)} applies.
+              </p>
+              <p className="text-[10.5px] text-green-soft leading-relaxed">
+                As soon as other cargo senders book space along your transit route, this price will automatically decrease proportionally based on your exact {segmentDist || 0} km sub-route distance!
+              </p>
+            </div>
+          )}
+
+          {/* FOOTER ACTIONS: AUDIO ANNOUNCEMENT & BREAKDOWN */}
+          <div className="flex items-center justify-between pt-1 border-t border-black/5">
+            <button
+              type="button"
+              onClick={() => triggerVoiceAnnouncement(true)}
+              className="text-[11px] font-semibold text-green-deep hover:text-green-800 flex items-center gap-1.5 cursor-pointer bg-white/70 px-2.5 py-1 rounded-lg border border-gold/20 hover:bg-white transition"
+            >
+              <span>🔊</span>
+              <span>Listen in {currentLangLabel}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowBreakdown(!showBreakdown)}
+              className="text-[11px] font-semibold text-soil hover:underline cursor-pointer"
+            >
+              {showBreakdown ? '▼ Hide Breakdown' : '▶ View Distribution Math'}
+            </button>
+          </div>
+
+          {/* MATHEMATICAL BREAKDOWN DRAWER */}
+          {showBreakdown && ptlData?.breakdown && (
+            <div className="bg-white/95 rounded-xl p-3 border border-gold/30 space-y-1.5 text-[11px] text-green-deep mt-2">
+              <p className="font-bold text-soil border-b border-gold/20 pb-1">
+                📐 Mathematical Sub-Route Ton-Km Distribution:
+              </p>
+              <div className="space-y-1 text-[10.5px] font-mono">
+                <div className="flex justify-between">
+                  <span>Your Sub-Route Distance:</span>
+                  <strong>{segmentDist || 0} km</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Your Cargo Weight:</span>
+                  <strong>{weightNum} kg</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Your Workload (kg·km):</span>
+                  <strong>{weightNum * (segmentDist || 0)} kg·km</strong>
+                </div>
+                {ptlData?.breakdown?.totalWorkloadKgKm != null && (
+                  <div className="flex justify-between">
+                    <span>Total Vehicle Load Workload:</span>
+                    <strong>{formatInr(ptlData.breakdown.totalWorkloadKgKm)} kg·km</strong>
+                  </div>
+                )}
+                {ptlData?.breakdown?.workloadSharePct != null && (
+                  <div className="flex justify-between text-emerald-800">
+                    <span>Your Proportional Workload Share:</span>
+                    <strong>{ptlData.breakdown.workloadSharePct}%</strong>
+                  </div>
+                )}
+              </div>
+              {ptlData?.breakdown?.explanation && (
+                <p className="text-[10px] text-gray-600 italic pt-1 border-t border-gray-100 mt-1">
+                  ℹ️ {ptlData.breakdown.explanation}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* =========================================================

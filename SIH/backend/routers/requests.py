@@ -61,11 +61,11 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
             req.per_person_share = share
             db.commit()
         else:
-            share = calculate_route_aware_price(dist, trip=trip, service_fee=20.0)
+            share = calculate_route_aware_price(dist, trip=trip, service_fee=20.0, weight_kg=weight)
             req.per_person_share = share
             db.commit()
     else:
-        share = calculate_route_aware_price(dist, trip=None, service_fee=20.0)
+        share = calculate_route_aware_price(dist, trip=None, service_fee=20.0, weight_kg=weight)
 
     share_pct = round((req.kg_km / total_kg_km * 100), 1) if total_kg_km > 0 else 100.0
 
@@ -163,7 +163,7 @@ def create_request(
         trip_default_dist = trip.distance_km if (trip and trip.distance_km and trip.distance_km > 0) else 150.0
         dist = req.distance_km if (req.distance_km and req.distance_km > 0) else trip_default_dist
 
-    initial_share = calculate_route_aware_price(dist, trip=trip, service_fee=20.0)
+    initial_share = calculate_route_aware_price(dist, trip=trip, service_fee=20.0, weight_kg=weight)
 
     db_req = models.RequestModel(
         id=req.id,

@@ -190,3 +190,63 @@ class UserProfileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ==================================================
+# AI PRICING & MARKET VALIDATION SCHEMAS
+# ==================================================
+
+class CalculateFareRequest(BaseModel):
+    origin: str
+    destination: str
+    distance_km: float
+    vehicle_model: Optional[str] = "Mini Truck"
+    goods_weight_kg: Optional[float] = None
+    custom_price: Optional[float] = None
+
+
+class CalculateFareResponse(BaseModel):
+    fairMinPrice: float
+    fairMaxPrice: float
+    recommendedPrice: float
+    source: str
+    breakdown: dict
+    isExorbitant: bool = False
+    warningMessage: Optional[str] = None
+
+
+# ==================================================
+# USER PTL PARTIAL LOAD COST DISTRIBUTION SCHEMAS
+# ==================================================
+
+class PtlSharerInfo(BaseModel):
+    id: Optional[str] = None
+    farmer_name: Optional[str] = "Co-sharing Partner"
+    pickup_loc: Optional[str] = ""
+    delivery_loc: Optional[str] = ""
+    segment_distance_km: float = 150.0
+    goods_weight_kg: float = 100.0
+
+
+class CalculatePtlFareRequest(BaseModel):
+    trip_id: Optional[int] = None
+    total_driver_amount: float
+    total_vehicle_capacity_kg: Optional[float] = 1000.0
+    driver_full_distance_km: Optional[float] = 150.0
+    user_pickup_loc: str
+    user_delivery_loc: str
+    user_segment_distance_km: float
+    user_weight_kg: float
+    other_sharers: Optional[list[PtlSharerInfo]] = []
+
+
+class CalculatePtlFareResponse(BaseModel):
+    is_shared: bool
+    sharers_count: int
+    user_final_price: float
+    total_vehicle_price: float
+    pricing_rule_applied: str
+    source: str
+    breakdown: dict
+    voice_announcement_text: dict
+    warning: Optional[str] = None

@@ -59,6 +59,37 @@ class RequestModel(Base):
   feedback = Column(String, nullable=True)
 
 
+class RoutePricingCache(Base):
+    __tablename__ = "route_pricing_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    origin = Column(String, index=True)
+    destination = Column(String, index=True)
+    distance_km = Column(Float, default=0.0)
+    vehicle_model = Column(String, index=True)
+    fair_min_price = Column(Float, default=0.0)
+    fair_max_price = Column(Float, default=0.0)
+    breakdown_json = Column(String, nullable=True)
+    created_at = Column(String, nullable=True)
+
+
+class PtlCostDistributionCache(Base):
+    __tablename__ = "ptl_cost_distribution_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, index=True, nullable=True)
+    is_shared = Column(Boolean, default=False)
+    sharers_count = Column(Integer, default=1)
+    user_pickup_loc = Column(String, nullable=True)
+    user_delivery_loc = Column(String, nullable=True)
+    user_segment_distance_km = Column(Float, default=0.0)
+    user_weight_kg = Column(Float, default=0.0)
+    total_vehicle_price = Column(Float, default=0.0)
+    user_final_price = Column(Float, default=0.0)
+    distribution_details_json = Column(String, nullable=True)
+    created_at = Column(String, nullable=True)
+
+
 
   
   

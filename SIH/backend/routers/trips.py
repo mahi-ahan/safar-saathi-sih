@@ -114,20 +114,45 @@ def is_passenger_on_route(passenger_coords: tuple[float, float], driver_route_co
     return min_dist <= threshold_km
 
 
-def calculate_route_aware_price(passenger_dist_km: float, trip: models.TripModel | None = None, service_fee: float = 20.0) -> float:
+def calculate_strict_fare(
+    distance_km: float = 0.0,
+    weight_kg: float = 0.0,
+    base_price: float = 60000.0,
+    price_per_km: float = 15.0,
+    weight_rate: float = 1.5,
+    market_ceiling: float = 85000.0,
+    max_price: float = 95000.0
+) -> float:
     """
-    Calculates cost based on the actual on-route distance segment:
-    Formula: (Base Price per KM * Passenger Distance) + Service Fee
+    Strict Linear Fare Calculation:
+    Final Price = (Base Rate) + (Distance_km * Price_per_km) + (Weight_Surcharge)
     """
-    if trip and trip.distance_km and trip.distance_km > 0 and trip.total_driver_amount and trip.total_driver_amount > 0:
-        base_price_per_km = float(trip.total_driver_amount) / float(trip.distance_km)
-    elif trip and trip.price_per_kg and trip.price_per_kg > 0:
-        base_price_per_km = float(trip.price_per_kg)
-    else:
-        base_price_per_km = 12.0  # default base price per km
+    dist = max(0.0, float(distance_km or 0.0))
+    weight = max(0.0, float(weight_kg or 0.0))
+    base_rate = max(0.0, float(base_price or 60000.0))
 
-    price = round((base_price_per_km * passenger_dist_km) + service_fee, 2)
-    return max(0.0, price)
+    distance_cost = dist * price_per_km
+    weight_surcharge = weight * weight_rate
+    raw_subtotal = base_rate + distance_cost + weight_surcharge
+
+    final_price = raw_subtotal
+    if raw_subtotal > market_ceiling:
+        excess = raw_subtotal - market_ceiling
+        discount_applied = excess * 0.60
+        final_price = raw_subtotal - discount_applied
+
+    final_price = min(final_price, max_price)
+    return round(max(0.0, final_price), 2)
+
+
+def calculate_route_aware_price(passenger_dist_km: float, trip: models.TripModel | None = None, service_fee: float = 20.0, weight_kg: float = 0.0) -> float:
+    """
+    Calculates cost using strict linear pricing and market ceiling protection.
+    """
+    dist = max(0.0, float(passenger_dist_km or 0.0))
+    weight = max(0.0, float(weight_kg or 0.0))
+    base_rate = float(trip.total_driver_amount) if (trip and trip.total_driver_amount and trip.total_driver_amount > 0) else 60000.0
+    return calculate_strict_fare(distance_km=dist, weight_kg=weight, base_price=base_rate)
 
 
 def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):

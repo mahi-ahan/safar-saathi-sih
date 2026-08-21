@@ -20,7 +20,9 @@ export const LANGS = [
   { id: 'ta', label: 'தமிழ்', voice: 'ta-IN' },
   { id: 'kn', label: 'ಕನ್ನಡ', voice: 'kn-IN' },
   { id: 'ml', label: 'മലയാളം', voice: 'ml-IN' },
-  { id: 'or', label: 'ଓଡ଼ିଆ', voice: 'or-IN' }
+  { id: 'or', label: 'ଓଡ଼ିଆ', voice: 'or-IN' },
+  { id: 'pa', label: 'ਪੰਜਾਬੀ', voice: 'pa-IN' },
+  { id: 'gu', label: 'ગુજરાતી', voice: 'gu-IN' }
 ]
 
 
@@ -29,1225 +31,1303 @@ export const LANGS = [
 ========================================================= */
 
 const EN = {
-
   /* ---------- GLOBAL ---------- */
-
-  gov:
-    'Smart Digital Goods Transportation Platform',
-
-  tagline:
-    'Shared goods transportation',
-
-  'nav.home':
-    'Home',
-
-  'nav.find':
-    'Find a Vehicle',
-
-  'nav.offer':
-    'Offer a Trip',
-
+  gov: 'Smart Digital Goods Transportation Platform',
+  tagline: 'Shared goods transportation',
+  'nav.home': 'Home',
+  'nav.find': 'Find a Vehicle',
+  'nav.offer': 'Offer a Trip',
+  nav_logout: 'Logout',
+  nav_offer_trip: 'Driver & Logistics Dashboard',
 
   /* ---------- HOME ---------- */
-
-  'hero.kicker':
-    'Smart Goods Transportation',
-
-  'hero.sub':
-    'Find available vehicle space and move your goods easily without booking an entire vehicle.',
-
-  'hero.sub2':
-    'Send goods · Share space · Save money',
-
-  'cta.find':
-    'Find a Vehicle',
-
-  'cta.offer':
-    'Offer a Trip',
-
-  'footer.note':
-    'A smart platform that connects people who need to transport goods with vehicles that have available space.',
-
-  'village.title':
-    'Move Goods. Share Space.',
-
-  'village.desc':
-    'Connect with vehicles already travelling on your route and transport goods more efficiently.',
-
-  'how.title':
-    'How it works',
-
-  'how.sub':
-    'Simple, fast and convenient',
-
-  'how.step1.title':
-    '1. Offer or find a trip',
-
-  'how.step1.desc':
-    'Vehicle owners publish their route, travel date and available cargo space.',
-
-  'how.step2.title':
-    '2. Request space',
-
-  'how.step2.desc':
-    'People can search for suitable vehicles and request space for their goods.',
-
-  'how.step3.title':
-    '3. Confirm the goods',
-
-  'how.step3.desc':
-    'Enter the goods category, quantity and pickup details before sending your request.',
-
-  'how.step4.title':
-    '4. Complete delivery',
-
-  'how.step4.desc':
-    'The trip is completed after the goods reach their destination.',
-
+  'hero.kicker': 'Smart Goods Transportation',
+  'hero.sub': 'Find available vehicle space and move your goods easily without booking an entire vehicle.',
+  'hero.sub2': 'Send goods · Offer space · Share the journey',
+  'cta.find': 'Find a Vehicle',
+  'cta.offer': 'Offer a Trip',
+  'footer.note': 'A smart platform that connects people who need to transport goods with vehicles that have available space.',
+  'village.title': 'Move Goods. Share Space.',
+  'village.desc': 'Connect with vehicles already travelling on your route and transport goods more efficiently.',
+  'how.title': 'How It Works',
+  'how.sub': 'Simple transport in 4 steps',
+  'how.step1.title': '1. Search Route',
+  'how.step1.desc': 'Vehicle owners publish their route, travel date and available cargo space.',
+  'how.step2.title': '2. Request space',
+  'how.step2.desc': 'People can search for suitable vehicles and request space for their goods.',
+  'how.step3.title': '3. Confirm the goods',
+  'how.step3.desc': 'Enter the goods category, quantity and pickup details before sending your request.',
+  'how.step4.title': '4. Complete delivery',
+  'how.step4.desc': 'The trip is completed after the goods reach their destination.',
 
   /* ---------- VEHICLES ---------- */
-
-  'vehicle.pickup':
-    'Pickup',
-
-  'vehicle.miniTruck':
-    'Mini truck',
-
-  'vehicle.truck':
-    'Truck',
-
-  'vehicle.tractor':
-    'Tractor-trolley',
-
+  'vehicle.pickup': 'Pickup',
+  'vehicle.miniTruck': 'Mini truck',
+  'vehicle.truck': 'Truck',
+  'vehicle.tractor': 'Tractor-trolley',
 
   /* ---------- FIND VEHICLES ---------- */
-
-  'find.title':
-    'Find a Vehicle',
-
-  'find.subtitle':
-    'Search available vehicles travelling on your route.',
-
-  'find.searchLocation':
-    'Search pickup location, city or route',
-
-  'find.searchPlaceholder':
-    'Search location...',
-
-  'find.allStates':
-    'All states',
-
-  'find.allVehicles':
-    'All vehicles',
-
-  'find.sortFree':
-    'Most free space',
-
-  'find.sortDate':
-    'Earliest date',
-
-  'find.verifiedOnly':
-    'Verified owners only',
-
-  'find.pickupPoint':
-    'Pickup point',
-
-  'find.verifiedOwner':
-    'Verified owner',
-
-  'find.verificationPending':
-    'Verification pending',
-
-  'find.loadTaken':
-    'Space booked',
-
-  'find.stillFree':
-    'Still free',
-
-  'find.pickupLocation':
-    'Pickup location',
-
-  'find.requestSpace':
-    'Request Space',
-
-  'find.requestSent':
-    'Request sent to',
-
-  'find.noVehicles':
-    'No vehicles match your search or filters.',
-
-  'find.mapHint':
-    'Select a pickup location to view the vehicle on the map.',
-
+  'find.title': 'Find a Vehicle (Sender Dashboard)',
+  'find.subtitle': 'Browse available cargo space, calculate fair Ton-Km fares, and track shipments live.',
+  'find.searchLocation': 'Search pickup location, city or route',
+  'find.searchPlaceholder': 'Search by pickup location, origin city, destination, or route in India...',
+  'find.allStates': 'All States',
+  'find.allVehicles': 'All Vehicle Types',
+  'find.sortFree': 'Most Free Space (kg)',
+  'find.sortDate': 'Earliest Date',
+  'find.verifiedOnly': '🛡️ Verified Only',
+  'find.pickupPoint': 'Pickup point',
+  'find.verifiedOwner': 'Verified owner',
+  'find.verificationPending': 'Verification pending',
+  'find.loadTaken': 'Space booked',
+  'find.stillFree': 'Still free',
+  'find.pickupLocation': 'Pickup location',
+  'find.requestSpace': 'Request Space',
+  'find.requestSent': 'Request sent to',
+  'find.noVehicles': 'No vehicles match your search or filters.',
+  'find.mapHint': 'Select a pickup location to view the vehicle on the map.',
 
   /* ---------- GOODS REQUEST ---------- */
-
-  'request.title':
-    'Request Vehicle Space',
-
-  'request.subtitle':
-    'Enter your goods details and send a request to the vehicle owner.',
-
-  'request.goodsCategory':
-    'Goods Category',
-
-  'request.selectCategory':
-    'Select goods category',
-
-  'request.general':
-    'General Goods',
-
-  'request.electronics':
-    'Electronics',
-
-  'request.furniture':
-    'Furniture',
-
-  'request.food':
-    'Food & Groceries',
-
-  'request.clothing':
-    'Clothing & Textiles',
-
-  'request.construction':
-    'Construction Materials',
-
-  'request.machinery':
-    'Machinery & Equipment',
-
-  'request.other':
-    'Other',
-
-  'request.goodsDescription':
-    'Goods Description',
-
-  'request.descriptionPlaceholder':
-    'Example: 3 boxes of household सामान',
-
-  'request.weight':
-    'Approximate Weight',
-
-  'request.weightPlaceholder':
-    'Example: 120',
-
-  'request.pickup':
-    'Pickup Location',
-
-  'request.pickupPlaceholder':
-    'Enter pickup location',
-
-  'request.drop':
-    'Delivery Location',
-
-  'request.dropPlaceholder':
-    'Enter delivery location',
-
-  'request.contact':
-    'Contact Number',
-
-  'request.contactPlaceholder':
-    'Enter mobile number',
-
-  'request.tripDetails':
-    'Trip Details',
-
-  'request.send':
-    'Send Request',
-
-  'request.cancel':
-    'Cancel',
-
-  'request.sent':
-    'Your request has been sent successfully.',
-
-  'request.required':
-    'Please fill all required details.',
-
+  'request.title': 'Request Vehicle Space',
+  'request.subtitle': 'Enter your goods details and send a request to the vehicle owner.',
+  'request.goodsCategory': 'Goods Category',
+  'request.selectCategory': 'Select goods category',
+  'request.general': 'General Goods',
+  'request.electronics': 'Electronics',
+  'request.furniture': 'Furniture',
+  'request.food': 'Food & Groceries',
+  'request.clothing': 'Clothing & Textiles',
+  'request.construction': 'Construction Materials',
+  'request.machinery': 'Machinery & Equipment',
+  'request.other': 'Other',
+  'request.goodsDescription': 'Goods Description',
+  'request.descriptionPlaceholder': 'Example: 3 boxes of household goods',
+  'request.weight': 'Approximate Weight',
+  'request.weightPlaceholder': 'Example: 120',
+  'request.pickup': 'Pickup Location',
+  'request.pickupPlaceholder': 'Enter pickup location',
+  'request.drop': 'Delivery Location',
+  'request.dropPlaceholder': 'Enter delivery location',
+  'request.contact': 'Contact Number',
+  'request.contactPlaceholder': 'Enter mobile number',
+  'request.tripDetails': 'Trip Details',
+  'request.send': 'Send Request',
+  'request.cancel': 'Cancel',
+  'request.sent': 'Your request has been sent successfully.',
+  'request.required': 'Please fill all required details.',
 
   /* ---------- OFFER TRIP ---------- */
-
-  'offer.title':
-    'Offer a Trip',
-
-  'offer.subtitle':
-    'Share the available space in your vehicle with people who need to transport goods.',
-
-  'offer.from':
-    'From',
-
-  'offer.to':
-    'To',
-
-  'offer.travelDate':
-    'Date of Travel',
-
-  'offer.vehicleType':
-    'Vehicle Type',
-
-  'offer.shareableCapacity':
-    'Available Capacity',
-
-  'offer.of':
-    'of',
-
-  'offer.total':
-    'total',
-
-  'offer.fareRule':
-    'Pricing Rule',
-
-  'offer.flatFare':
-    'Fixed price per booking',
-
-  'offer.thirdFare':
-    'Share the journey cost',
-
-  'offer.voluntary':
-    'Free / voluntary',
-
-  'offer.journeyCost':
-    'Estimated journey cost ₹',
-
-  'offer.pickupInstructions':
-    'Pickup Instructions',
-
-  'offer.ownerVerification':
-    'Owner Verification',
-
-  'offer.aadhaar':
-    'Identity Proof',
-
-  'offer.license':
-    'Driving Licence',
-
-  'offer.upload':
-    'Upload (<2MB)',
-
-  'offer.uploadDocuments':
-    'Please upload identity proof and driving licence first',
-
-  'offer.tripPublished':
-    'Trip published successfully',
-
-  'offer.publish':
-    'Publish Trip',
-
-  'offer.livePreview':
-    'Live Preview',
-
-  'offer.date':
-    'Date',
-
-  'offer.freeSpace':
-    'Free space',
-
-  'offer.goodsAccepted':
-    'Goods accepted',
-
-  'offer.allGoods':
-    'General goods',
-
-  'offer.ownerCollect':
-    'Estimated earnings',
-
-  'offer.bookingsJoining':
-    'Bookings joining',
-
-  'offer.perBooking':
-    'per booking',
-
-  'offer.freeUntil':
-    'Free until more bookings are added',
-
+  'offer.title': 'Offer a Trip',
+  'offer.subtitle': 'Share the available space in your vehicle with people who need to transport goods.',
+  'offer.from': 'From',
+  'offer.to': 'To',
+  'offer.travelDate': 'Date of Travel',
+  'offer.vehicleType': 'Vehicle Type',
+  'offer.shareableCapacity': 'Available Capacity',
+  'offer.of': 'of',
+  'offer.total': 'total',
+  'offer.fareRule': 'Pricing Rule',
+  'offer.flatFare': 'Fixed price per booking',
+  'offer.thirdFare': 'Share the journey cost',
+  'offer.voluntary': 'Free / voluntary',
+  'offer.journeyCost': 'Estimated journey cost ₹',
+  'offer.pickupInstructions': 'Pickup Instructions',
+  'offer.ownerVerification': 'Owner Verification',
+  'offer.aadhaar': 'Identity Proof',
+  'offer.license': 'Driving Licence',
+  'offer.upload': 'Upload (<2MB)',
+  'offer.uploadDocuments': 'Please upload identity proof and driving licence first',
+  'offer.tripPublished': 'Trip published successfully',
+  'offer.publish': 'Publish Trip',
+  'offer.livePreview': 'Live Preview',
+  'offer.date': 'Date',
+  'offer.freeSpace': 'Free space',
+  'offer.goodsAccepted': 'Goods accepted',
+  'offer.allGoods': 'General goods',
+  'offer.ownerCollect': 'Estimated earnings',
+  'offer.bookingsJoining': 'Bookings joining',
+  'offer.perBooking': 'per booking',
+  'offer.freeUntil': 'Free until more bookings are added',
 
   /* ---------- DRIVER / DELIVERY ---------- */
+  'driver.deliveryStatus': 'Delivery Status',
+  'driver.markArrived': 'Mark Arrived at Destination',
+  'driver.destinationReached': 'Destination reached',
+  'driver.captureGoods': 'Capture delivery proof',
+  'driver.capture': 'Capture photo (<2MB)',
+  'driver.completeDelivery': 'Complete Delivery',
+  'driver.deliveryCompleted': 'Delivery completed successfully',
+  'driver.deliveryDoneSMS': 'Delivery completed and confirmation sent',
+  'driver.earnings': 'Earnings',
 
-  'driver.deliveryStatus':
-    'Delivery Status',
+  /* ---------- TTS & GLOBAL UI ---------- */
+  'tts.read': 'Listen',
+  'tts.stop': 'Stop',
+  'tts.read_aloud': 'Read Aloud',
+  'tts.stop_audio': 'Stop Audio',
 
-  'driver.markArrived':
-    'Mark Arrived at Destination',
+  /* ---------- DASHBOARD TABS & METRICS ---------- */
+  'tab.explore': 'Explore Available Vehicles',
+  'tab.my_bookings': 'My Bookings & Shipments',
+  'tab.map': 'Live Map Radar',
+  'tab.profile': 'Sender Profile',
+  'tab.driver_trips': 'My Published Trips',
+  'tab.driver_requests': 'Incoming Requests',
+  'tab.driver_publish': 'Offer New Trip',
+  'tab.driver_profile': 'Driver Profile & ID',
 
-  'driver.destinationReached':
-    'Destination reached',
+  'metric.active_trucks': 'Available Trucks',
+  'metric.my_bookings': 'My Cargo Bookings',
+  'metric.live_transit': 'Live In-Transit',
+  'metric.verified_drivers': 'Verified Transporters',
+  'metric.pending_requests': 'Pending Requests',
+  'metric.active_trips': 'Active Published Trips',
+  'metric.completed_trips': 'Completed Deliveries',
+  'metric.revenue_potential': 'Total Load Potential',
 
-  'driver.captureGoods':
-    'Capture delivery proof',
+  /* ---------- VEHICLE CARDS & CAPACITY SLOTS ---------- */
+  'card.capacity_slots': 'Capacity Slots',
+  'card.slots_booked': 'slots booked',
+  'card.space_free': 'space free',
+  'card.full': 'Full Capacity',
+  'card.co_sharing': 'Co-Sharing Partners',
+  'card.first_partner': 'Be the first partner! Next bookings will discount your trip.',
+  'card.total_fare': 'Total Vehicle Load Fare',
+  'card.ton_km_split': 'Ton-Km Fair Split',
+  'card.fair_pricing_note': 'Fair pricing: You pay strictly for your cargo weight (kg) × travel distance (km).',
+  'card.pickup_loc': 'Pickup Location',
+  'card.view_map': 'View on Map',
+  'card.request_space': 'Request Cargo Space',
+  'card.close_form': 'Close Booking Form',
+  'card.track_live': 'Track Live',
+  'card.live_badge': 'LIVE IN-TRANSIT',
+  'card.verified': 'Verified Driver',
+  'card.unverified': 'Unverified',
+  'card.your_booking': 'Your Booking:',
+  'card.cancel_booking': 'Cancel Booking',
+  'card.confirm_delivery': 'Confirm Delivery & Rate',
 
-  'driver.capture':
-    'Capture photo (<2MB)',
+  /* ---------- PRICING & POOLING BREAKDOWN ---------- */
+  'pricing.max_solo': 'Maximum Estimated Solo Fare:',
+  'pricing.max_solo_sub': 'Absolute worst-case ceiling if no other cargo shares this vehicle.',
+  'pricing.max_ceiling': 'Max Solo Ceiling',
+  'pricing.calc_segment': 'Your Calculated Segment Fare:',
+  'pricing.travel_seg': 'Travel Segment',
+  'pricing.workload': 'Workload',
+  'pricing.base_rate': 'Base Rate',
+  'pricing.select_loc_prompt': 'Select pickup & delivery below for exact route fare',
+  'pricing.pooling_active': 'Shared-Load Automatic Discount Active:',
+  'pricing.pooling_desc': 'This price will automatically drop further as more co-sharing partners join this vehicle. Total cost is distributed fairly by exact Ton-Km weight × distance.',
+  'corridor.valid': 'Route Corridor Validated (Start, destination, or valid intermediate stop)',
+  'corridor.invalid': 'Route Mismatch: Selected location is outside the vehicle\'s transit corridor',
+  'corridor.valid_stop': 'Valid Stop',
+  'corridor.off_route': 'Off-Route',
 
-  'driver.completeDelivery':
-    'Complete Delivery',
+  /* ---------- BOOKING FORM INPUTS ---------- */
+  'form.goods_category': 'Goods Category',
+  'form.select_category': 'Select goods category',
+  'form.goods_weight': 'Goods Weight (kg)',
+  'form.pickup_loc': 'Your Pickup Location',
+  'form.pickup_placeholder': 'Search pickup city/hub...',
+  'form.delivery_loc': 'Delivery Location',
+  'form.delivery_placeholder': 'Search delivery city/hub...',
+  'form.description': 'Description (Optional)',
+  'form.desc_placeholder': 'Special handling requirements, fragile goods...',
+  'form.submit_booking': 'Submit Cargo Booking',
 
-  'driver.deliveryCompleted':
-    'Delivery completed successfully',
+  /* ---------- DRIVER DASHBOARD ---------- */
+  'driver.publish_title': 'Publish a New Vehicle Trip',
+  'driver.from': 'Starting City / Hub',
+  'driver.to': 'Destination City',
+  'driver.date': 'Travel Date',
+  'driver.vehicle': 'Vehicle Type',
+  'driver.total_kg': 'Vehicle Cargo Capacity',
+  'driver.price': 'Total Desired Vehicle Load Fare (₹)',
+  'driver.pickup_landmark': 'Pickup Instructions / Location Details',
+  'driver.btn_publish': 'Publish Trip Load',
+  'driver.btn_publishing': 'Publishing Trip...',
+  'driver.start_trip': 'Start Trip & Broadcast GPS',
+  'driver.complete_ride': 'Confirm Delivery & Complete Ride',
+  'driver.cancel_trip': 'Cancel Trip',
 
-  'driver.deliveryDoneSMS':
-    'Delivery completed and confirmation sent',
-
-  'driver.earnings':
-    'Earnings'
+  /* ---------- AUTH & PROFILE ---------- */
+  'auth.signin_title': 'Sign in to Safar-Saathi',
+  'auth.choose_google': 'Choose any Google account to sign in.',
+  'profile.setup_title': 'Complete Your Safar-Saathi Profile',
+  'profile.role_prompt': 'Please provide your details to continue.',
+  'profile.sender_role': 'Sender Active',
+  'profile.driver_role': 'Driver Operations Hub',
+  'profile.full_name': 'Full Name',
+  'profile.gender': 'Gender',
+  'profile.phone': 'Phone Number',
+  'profile.aadhaar': 'Aadhaar Card Document / Image [Redacted]',
+  'profile.license': 'Driving License Document / Image',
+  'profile.submit_btn': 'Complete Setup & Proceed'
 }
 
 
 /* =========================================================
-   TRANSLATIONS
+   TRANSLATIONS FOR ALL APP LANGUAGES
 ========================================================= */
 
 const T = {
-
   en: EN,
 
-
   /* ================= HINDI ================= */
-
   hi: {
     ...EN,
-
-    gov:
-      'स्मार्ट डिजिटल सामान परिवहन प्लेटफ़ॉर्म',
-
-    tagline:
-      'साझा सामान परिवहन',
-
-    'nav.home':
-      'होम',
-
-    'nav.find':
-      'वाहन खोजें',
-
-    'nav.offer':
-      'यात्रा दें',
-
-    'hero.kicker':
-      'स्मार्ट सामान परिवहन',
-
-    'hero.sub':
-      'पूरे वाहन को बुक किए बिना उपलब्ध जगह खोजें और अपना सामान आसानी से भेजें।',
-
-    'hero.sub2':
-      'सामान भेजें · जगह साझा करें · पैसे बचाएँ',
-
-    'cta.find':
-      'वाहन खोजें',
-
-    'cta.offer':
-      'यात्रा दें',
-
-    'footer.note':
-      'एक स्मार्ट प्लेटफ़ॉर्म जो सामान भेजने वाले लोगों को खाली जगह वाले वाहनों से जोड़ता है।',
-
-    'village.title':
-      'सामान भेजें। जगह साझा करें।',
-
-    'village.desc':
-      'आपके मार्ग पर पहले से यात्रा कर रहे वाहनों से जुड़ें और अपना सामान आसानी से भेजें।',
-
-    'how.title':
-      'यह कैसे काम करता है',
-
-    'how.sub':
-      'सरल, तेज और सुविधाजनक',
-
-    'how.step1.title':
-      '1. यात्रा दें या खोजें',
-
-    'how.step1.desc':
-      'वाहन मालिक अपना मार्ग, यात्रा की तारीख और उपलब्ध जगह साझा करता है।',
-
-    'how.step2.title':
-      '2. जगह का अनुरोध करें',
-
-    'how.step2.desc':
-      'उपयोगकर्ता अपने सामान के लिए सही वाहन खोजकर जगह का अनुरोध कर सकते हैं।',
-
-    'how.step3.title':
-      '3. सामान की जानकारी दें',
-
-    'how.step3.desc':
-      'सामान की श्रेणी, वजन और पिकअप की जानकारी भरें।',
-
-    'how.step4.title':
-      '4. डिलीवरी पूरी करें',
-
-    'how.step4.desc':
-      'सामान गंतव्य तक पहुँचने के बाद यात्रा पूरी होती है।',
-
-    'find.title':
-      'वाहन खोजें',
-
-    'find.subtitle':
-      'अपने मार्ग पर जाने वाले उपलब्ध वाहन खोजें।',
-
-    'find.searchLocation':
-      'पिकअप स्थान, शहर या मार्ग खोजें',
-
-    'find.searchPlaceholder':
-      'स्थान खोजें...',
-
-    'find.allStates':
-      'सभी राज्य',
-
-    'find.allVehicles':
-      'सभी वाहन',
-
-    'find.sortFree':
-      'सबसे अधिक खाली जगह',
-
-    'find.sortDate':
-      'सबसे पहले की तारीख',
-
-    'find.verifiedOnly':
-      'केवल सत्यापित मालिक',
-
-    'find.pickupPoint':
-      'पिकअप स्थान',
-
-    'find.verifiedOwner':
-      'सत्यापित मालिक',
-
-    'find.verificationPending':
-      'सत्यापन लंबित',
-
-    'find.loadTaken':
-      'बुक की गई जगह',
-
-    'find.stillFree':
-      'अभी खाली',
-
-    'find.pickupLocation':
-      'पिकअप स्थान',
-
-    'find.requestSpace':
-      'जगह का अनुरोध करें',
-
-    'find.noVehicles':
-      'आपकी खोज या फ़िल्टर के अनुसार कोई वाहन नहीं मिला।',
-
-    'request.title':
-      'वाहन में जगह का अनुरोध करें',
-
-    'request.subtitle':
-      'अपने सामान की जानकारी भरें और वाहन मालिक को अनुरोध भेजें।',
-
-    'request.goodsCategory':
-      'सामान की श्रेणी',
-
-    'request.selectCategory':
-      'सामान की श्रेणी चुनें',
-
-    'request.general':
-      'सामान्य सामान',
-
-    'request.electronics':
-      'इलेक्ट्रॉनिक्स',
-
-    'request.furniture':
-      'फर्नीचर',
-
-    'request.food':
-      'खाद्य और किराना',
-
-    'request.clothing':
-      'कपड़े और टेक्सटाइल',
-
-    'request.construction':
-      'निर्माण सामग्री',
-
-    'request.machinery':
-      'मशीनरी और उपकरण',
-
-    'request.other':
-      'अन्य',
-
-    'request.goodsDescription':
-      'सामान का विवरण',
-
-    'request.weight':
-      'अनुमानित वजन',
-
-    'request.pickup':
-      'पिकअप स्थान',
-
-    'request.drop':
-      'डिलीवरी स्थान',
-
-    'request.contact':
-      'मोबाइल नंबर',
-
-    'request.tripDetails':
-      'यात्रा की जानकारी',
-
-    'request.send':
-      'अनुरोध भेजें',
-
-    'request.cancel':
-      'रद्द करें',
-
-    'request.sent':
-      'आपका अनुरोध सफलतापूर्वक भेज दिया गया है।',
-
-    'request.required':
-      'कृपया सभी आवश्यक जानकारी भरें।',
-
-    'offer.title':
-      'यात्रा दें',
-
-    'offer.subtitle':
-      'अपने वाहन की खाली जगह उन लोगों के साथ साझा करें जिन्हें सामान भेजना है।',
-
-    'offer.from':
-      'कहाँ से',
-
-    'offer.to':
-      'कहाँ तक',
-
-    'offer.travelDate':
-      'यात्रा की तारीख',
-
-    'offer.vehicleType':
-      'वाहन का प्रकार',
-
-    'offer.shareableCapacity':
-      'उपलब्ध क्षमता',
-
-    'offer.fareRule':
-      'कीमत नियम',
-
-    'offer.flatFare':
-      'प्रति बुकिंग निश्चित कीमत',
-
-    'offer.thirdFare':
-      'यात्रा की लागत साझा करें',
-
-    'offer.voluntary':
-      'निःशुल्क / स्वैच्छिक',
-
-    'offer.journeyCost':
-      'अनुमानित यात्रा लागत ₹',
-
-    'offer.pickupInstructions':
-      'पिकअप निर्देश',
-
-    'offer.ownerVerification':
-      'मालिक सत्यापन',
-
-    'offer.aadhaar':
-      'पहचान प्रमाण',
-
-    'offer.license':
-      'ड्राइविंग लाइसेंस',
-
-    'offer.uploadDocuments':
-      'कृपया पहले पहचान प्रमाण और ड्राइविंग लाइसेंस अपलोड करें',
-
-    'offer.tripPublished':
-      'यात्रा सफलतापूर्वक प्रकाशित हो गई',
-
-    'offer.publish':
-      'यात्रा प्रकाशित करें',
-
-    'offer.livePreview':
-      'लाइव पूर्वावलोकन',
-
-    'offer.freeSpace':
-      'खाली जगह',
-
-    'offer.goodsAccepted':
-      'स्वीकार्य सामान',
-
-    'offer.allGoods':
-      'सामान्य सामान',
-
-    'offer.ownerCollect':
-      'अनुमानित कमाई',
-
-    'offer.bookingsJoining':
-      'बुकिंग',
-
-    'offer.perBooking':
-      'प्रति बुकिंग'
+    gov: 'स्मार्ट डिजिटल सामान परिवहन प्लेटफ़ॉर्म',
+    tagline: 'साझा सामान परिवहन',
+    'nav.home': 'होम',
+    'nav.find': 'वाहन खोजें',
+    'nav.offer': 'यात्रा दें',
+    nav_logout: 'लॉग आउट',
+    nav_offer_trip: 'ड्राइवर एवं लॉजिस्टिक्स डैशबोर्ड',
+    'hero.kicker': 'स्मार्ट सामान परिवहन',
+    'hero.sub': 'पूरे वाहन को बुक किए बिना उपलब्ध जगह खोजें और अपना सामान आसानी से भेजें।',
+    'hero.sub2': 'सामान भेजें · जगह साझा करें · पैसे बचाएँ',
+    'cta.find': 'वाहन खोजें',
+    'cta.offer': 'यात्रा दें',
+    'how.title': 'यह कैसे काम करता है',
+    'how.sub': '4 आसान चरणों में परिवहन',
+    'how.step1.title': '1. रूट खोजें',
+    'how.step1.desc': 'वाहन मालिक अपना मार्ग, यात्रा तिथि और उपलब्ध जगह प्रकाशित करते हैं।',
+    'how.step2.title': '2. जगह का अनुरोध करें',
+    'how.step2.desc': 'उपयुक्त वाहन खोजें और अपने सामान के लिए जगह बुक करें।',
+    'how.step3.title': '3. सामान की पुष्टि करें',
+    'how.step3.desc': 'सामान की श्रेणी, वजन और पिकअप विवरण दर्ज करें।',
+    'how.step4.title': '4. डिलीवरी पूरी करें',
+    'how.step4.desc': 'सामान गंतव्य पर पहुँचने पर डिलीवरी की पुष्टि करें।',
+    'tts.read': 'बोलकर सुनें',
+    'tts.stop': 'आवाज़ बंद',
+    'tts.read_aloud': 'पूरा बोलकर सुनाएं',
+    'tts.stop_audio': 'आवाज़ बंद करें',
+    'tab.explore': 'उपलब्ध गाड़ियां देखें',
+    'tab.my_bookings': 'मेरी बुकिंग एवं पार्सल',
+    'tab.map': 'लाइव मैप रडार',
+    'tab.profile': 'उपभोक्ता प्रोफाइल',
+    'tab.driver_trips': 'मेरी प्रकाशित यात्राएं',
+    'tab.driver_requests': 'आने वाले अनुरोध',
+    'tab.driver_publish': 'नई यात्रा दर्ज करें',
+    'tab.driver_profile': 'चालक प्रोफाइल व आईडी',
+    'metric.active_trucks': 'उपलब्ध वाहन',
+    'metric.my_bookings': 'मेरी कार्गो बुकिंग',
+    'metric.live_transit': 'रास्ते में लाइव',
+    'metric.verified_drivers': 'सत्यापित ट्रांसपोर्टर',
+    'metric.pending_requests': 'लंबित अनुरोध',
+    'metric.active_trips': 'सक्रिय यात्राएं',
+    'metric.completed_trips': 'पूर्ण डिलीवरी',
+    'metric.revenue_potential': 'कुल संभावित आमदनी',
+    'card.capacity_slots': 'क्षमता स्लॉट',
+    'card.slots_booked': 'स्लॉट बुक',
+    'card.space_free': 'जगह खाली',
+    'card.full': 'पूरी क्षमता भरी',
+    'card.co_sharing': 'साझा करने वाले साथी',
+    'card.first_partner': 'पहले साथी बनें! नए बुकिंग से आपका किराया कम होगा।',
+    'card.total_fare': 'गाड़ी का कुल लोड किराया',
+    'card.ton_km_split': 'टन-किमी निष्पक्ष विभाजन',
+    'card.fair_pricing_note': 'उचित मूल्य: आप केवल अपने सामान के वजन (किलो) × दूरी (किमी) का भुगतान करते हैं।',
+    'card.pickup_loc': 'पिकअप स्थान',
+    'card.view_map': 'मैप पर देखें',
+    'card.request_space': 'माल लोड स्पेस बुक करें',
+    'card.close_form': 'फॉर्म बंद करें',
+    'card.track_live': 'लाइव ट्रैक करें',
+    'card.live_badge': 'लाइव रास्ते में है',
+    'card.verified': 'सत्यापित चालक',
+    'card.unverified': 'असत्यापित',
+    'card.your_booking': 'आपकी बुकिंग:',
+    'card.cancel_booking': 'बुकिंग रद्द करें',
+    'card.confirm_delivery': 'डिलीवरी पुष्टि करें व रेटिंग दें',
+    'pricing.max_solo': 'अधिकतम अनुमानित सोलो किराया:',
+    'pricing.max_solo_sub': 'यदि कोई अन्य साथी नहीं जुड़ता है तो यह आपकी अधिकतम सीमा होगी।',
+    'pricing.max_ceiling': 'अधिकतम सीमा',
+    'pricing.calc_segment': 'रूट अनुसार आपका किराया:',
+    'pricing.travel_seg': 'यात्रा दूरी',
+    'pricing.workload': 'कार्यभार',
+    'pricing.base_rate': 'बेस दर',
+    'pricing.select_loc_prompt': 'सटीक किराया देखने के लिए नीचे पिकअप और ड्रॉप स्थान चुनें',
+    'pricing.pooling_active': 'साझा लोड स्वचालित छूट सक्रिय:',
+    'pricing.pooling_desc': 'जैसे-जैसे इस मार्ग पर अन्य व्यापारी सामान लोड करेंगे, यह किराया अपने आप कम हो जाएगा।',
+    'corridor.valid': 'रूट कॉरिडोर मान्य है (प्रारंभ, गंतव्य या मध्यवर्ती स्टॉप)',
+    'corridor.invalid': 'रूट बेमेल: चुना गया स्थान वाहन के मार्ग से बाहर है',
+    'corridor.valid_stop': 'मान्य स्टॉप',
+    'corridor.off_route': 'मार्ग से बाहर',
+    'form.goods_category': 'सामान की श्रेणी',
+    'form.select_category': 'श्रेणी चुनें',
+    'form.goods_weight': 'सामान का वजन (किलो)',
+    'form.pickup_loc': 'आपका पिकअप स्थान',
+    'form.pickup_placeholder': 'पिकअप शहर या मंडी खोजें...',
+    'form.delivery_loc': 'डिलीवरी का स्थान',
+    'form.delivery_placeholder': 'गंतव्य शहर या मंडी खोजें...',
+    'form.description': 'विवरण (वैकल्पिक)',
+    'form.desc_placeholder': 'विशेष निर्देश, नाजुक सामान...',
+    'form.submit_booking': 'बुकिंग सबमिट करें',
+    'driver.publish_title': 'नई यात्रा लोड दर्ज करें',
+    'driver.from': 'प्रारंभिक शहर / मंडी',
+    'driver.to': 'गंतव्य शहर / मंडी',
+    'driver.date': 'प्रस्थान तिथि',
+    'driver.vehicle': 'वाहन का प्रकार',
+    'driver.total_kg': 'कुल वाहन क्षमता (किलो)',
+    'driver.price': 'कुल यात्रा लोड राशि (₹)',
+    'driver.pickup_landmark': 'सटीक पिकअप स्थान या लैंडमार्क',
+    'driver.btn_publish': 'यात्रा लोड प्रकाशित करें',
+    'driver.btn_publishing': 'प्रकाशित हो रहा है...',
+    'driver.start_trip': 'यात्रा शुरू करें और GPS ऑन करें',
+    'driver.complete_ride': 'डिलीवरी पुष्टि करें और यात्रा समाप्त करें',
+    'driver.cancel_trip': 'यात्रा रद्द करें',
+    'auth.signin_title': 'सफ़र-साथी में साइन इन करें',
+    'auth.choose_google': 'साइन इन करने के लिए कोई भी Google खाता चुनें।',
+    'profile.setup_title': 'अपनी सफ़र-साथी प्रोफ़ाइल पूरी करें',
+    'profile.role_prompt': 'कृपया आगे बढ़ने के लिए अपना विवरण भरें।',
+    'profile.sender_role': 'उपभोक्ता सक्रिय',
+    'profile.driver_role': 'चालक ऑपरेशन्स हब',
+    'profile.full_name': 'पूरा नाम',
+    'profile.gender': 'लिंग',
+    'profile.phone': 'फ़ोन नंबर',
+    'profile.aadhaar': 'आधार कार्ड दस्तावेज़ [संशोधित]',
+    'profile.license': 'ड्राइविंग लाइसेंस दस्तावेज़',
+    'profile.submit_btn': 'प्रोफ़ाइल पूरी करें और आगे बढ़ें'
   },
-
 
   /* ================= BHOJPURI ================= */
-
   bho: {
     ...EN,
-
-    'nav.home':
-      'होम',
-
-    'nav.find':
-      'वाहन खोजीं',
-
-    'nav.offer':
-      'यात्रा दीं',
-
-    'cta.find':
-      'वाहन खोजीं',
-
-    'cta.offer':
-      'यात्रा दीं',
-
-    'hero.sub':
-      'पूरा गाड़ी बुक कइले बिना खाली जगह खोजीं आ आपन सामान आसानी से भेजीं।',
-
-    'find.title':
-      'वाहन खोजीं',
-
-    'find.requestSpace':
-      'जगह माँगीं',
-
-    'request.title':
-      'गाड़ी में जगह माँगीं',
-
-    'request.goodsCategory':
-      'सामान के श्रेणी',
-
-    'request.send':
-      'अनुरोध भेजीं',
-
-    'offer.title':
-      'यात्रा दीं',
-
-    'offer.publish':
-      'यात्रा प्रकाशित करीं'
+    gov: 'स्मार्ट डिजिटल सामान ढुलाई मंच',
+    tagline: 'साझा सामान ढुलाई',
+    'nav.home': 'होम',
+    'nav.find': 'गाड़ी खोजीं',
+    'nav.offer': 'यात्रा दीं',
+    nav_logout: 'लॉग आउट',
+    nav_offer_trip: 'ड्राइवर डैशबोर्ड',
+    'hero.kicker': 'स्मार्ट सामान परिवहन',
+    'hero.sub': 'पूरा गाड़ी बुक कइले बिना खाली जगह खोजीं आ आपन सामान आसानी से भेजीं।',
+    'hero.sub2': 'सामान भेजीं · जगह बाँटीं · पइसा बचाईं',
+    'cta.find': 'गाड़ी खोजीं',
+    'cta.offer': 'यात्रा दीं',
+    'how.title': 'ई कइसे काम करेला',
+    'how.sub': '4 आसान कदम में सामान पहुँचाईं',
+    'how.step1.title': '1. रूट खोजीं',
+    'how.step1.desc': 'गाड़ी मालिक आपन रूट आ खाली जगह प्रकाशित करेलें।',
+    'how.step2.title': '2. जगह के अरजी दीं',
+    'how.step2.desc': 'गाड़ी चुन के आपन सामान खातिर जगह बुक करीं।',
+    'how.step3.title': '3. सामान के जाँच करीं',
+    'how.step3.desc': 'सामान के वजन आ जगह के विवरण भरीं।',
+    'how.step4.title': '4. डिलीवरी पूरा करीं',
+    'how.step4.desc': 'सामान पहुँचला पर पुष्टि करीं।',
+    'tts.read': 'सुनीं',
+    'tts.stop': 'रोकीं',
+    'tts.read_aloud': 'पूरा बोल के सुनाईं',
+    'tts.stop_audio': 'आवाज़ बंद करीं',
+    'tab.explore': 'गाड़ी खोजीं',
+    'tab.my_bookings': 'हमार बुकिंग',
+    'tab.map': 'लाइव मैप रडार',
+    'tab.profile': 'उपभोक्ता प्रोफाइल',
+    'tab.driver_trips': 'हमार प्रकाशित ट्रिप',
+    'tab.driver_requests': 'आवल अनुरोध',
+    'tab.driver_publish': 'नया ट्रिप डालीं',
+    'tab.driver_profile': 'ड्राइवर प्रोफाइल',
+    'metric.active_trucks': 'उपलब्ध गाड़ियाँ',
+    'metric.my_bookings': 'हमार बुकिंग',
+    'metric.live_transit': 'लाइव रस्ता में',
+    'metric.verified_drivers': 'सत्यापित ड्राइवर',
+    'card.capacity_slots': 'क्षमता स्लॉट',
+    'card.slots_booked': 'स्लॉट भरल बा',
+    'card.space_free': 'जगह खाली बा',
+    'card.full': 'पूरा भर गइल',
+    'card.co_sharing': 'साझा करे वाला साथी',
+    'card.first_partner': 'पहिला साथी बनीं! अगिला बुकिंग से किराया कम होई।',
+    'card.total_fare': 'गाड़ी के कुल किराया',
+    'card.ton_km_split': 'टन-किमी सही बँटवारा',
+    'card.fair_pricing_note': 'सही दर: रउआ खाली सामान के वजन (किलो) × दूरी (किमी) के किराया देब।',
+    'card.pickup_loc': 'पिकअप जगह',
+    'card.view_map': 'मैप पर देखीं',
+    'card.request_space': 'जगह खातिर अरजी दीं',
+    'card.close_form': 'फॉर्म बंद करीं',
+    'card.track_live': 'लाइव देखीं',
+    'card.live_badge': 'लाइव रस्ता में बा',
+    'card.verified': 'सत्यापित ड्राइवर',
+    'card.unverified': 'असत्यापित',
+    'pricing.max_solo': 'अधिकतम अनुमानित किराया:',
+    'pricing.calc_segment': 'रूट अनुसार रउआ किराया:',
+    'pricing.base_rate': 'बेस दर',
+    'form.goods_category': 'सामान के प्रकार',
+    'form.select_category': 'सामान चुनीं',
+    'form.goods_weight': 'सामान के वजन (किलो)',
+    'form.pickup_loc': 'पिकअप जगह',
+    'form.delivery_loc': 'डिलीवरी जगह',
+    'form.submit_booking': 'बुकिंग भेजीं',
+    'driver.publish_title': 'नया ट्रिप लोड दर्ज करीं',
+    'driver.from': 'शुरुआती शहर / मंडी',
+    'driver.to': 'पहुंचे वाला शहर',
+    'driver.date': 'तारीख',
+    'driver.vehicle': 'गाड़ी के प्रकार',
+    'driver.btn_publish': 'ट्रिप प्रकाशित करीं',
+    'driver.start_trip': 'ट्रिप शुरू करीं आ GPS ऑन करीं',
+    'driver.complete_ride': 'डिलीवरी पुष्टि करीं',
+    'driver.cancel_trip': 'ट्रिप रद्द करीं',
+    'profile.setup_title': 'प्रोफाइल पूरा करीं',
+    'profile.submit_btn': 'सेव करीं आ आगे बढ़ीं'
   },
-
 
   /* ================= MARATHI ================= */
-
   mr: {
     ...EN,
-
-    'nav.home':
-      'मुख्यपृष्ठ',
-
-    'nav.find':
-      'वाहन शोधा',
-
-    'nav.offer':
-      'प्रवास द्या',
-
-    'cta.find':
-      'वाहन शोधा',
-
-    'cta.offer':
-      'प्रवास द्या',
-
-    'find.title':
-      'वाहन शोधा',
-
-    'find.requestSpace':
-      'जागेची विनंती करा',
-
-    'request.title':
-      'वाहनामध्ये जागेची विनंती करा',
-
-    'request.goodsCategory':
-      'मालाचा प्रकार',
-
-    'request.send':
-      'विनंती पाठवा',
-
-    'offer.title':
-      'प्रवास द्या',
-
-    'offer.publish':
-      'प्रवास प्रकाशित करा'
+    gov: 'स्मार्ट डिजिटल मालवाहतूक व्यासपीठ',
+    tagline: 'सामायिक मालवाहतूक व वाहतूक',
+    'nav.home': 'मुख्यपृष्ठ',
+    'nav.find': 'वाहन शोधा',
+    'nav.offer': 'प्रवास नोंदवा',
+    nav_logout: 'लॉग आउट',
+    nav_offer_trip: 'चालक व वाहतूक डॅशबोर्ड',
+    'hero.kicker': 'स्मार्ट मालवाहतूक',
+    'hero.sub': 'पूर्ण वाहन भाड्याने न घेता उपलब्ध जागा शोधा आणि आपला माल सहजपणे पाठवा.',
+    'hero.sub2': 'माल पाठवा · जागा सामायिक करा · पैसे वाचवा',
+    'cta.find': 'वाहन शोधा',
+    'cta.offer': 'प्रवास नोंदवा',
+    'how.title': 'हे कसे कार्य करते',
+    'how.sub': '4 सोप्या टप्प्यांत वाहतूक',
+    'how.step1.title': '1. मार्ग शोधा',
+    'how.step1.desc': 'वाहन मालक आपला मार्ग, प्रवासाची तारीख आणि उपलब्ध जागा प्रकाशित करतात.',
+    'how.step2.title': '2. जागेची विनंती करा',
+    'how.step2.desc': 'योग्य वाहन निवडा आणि आपल्या मालासाठी जागा आरक्षित करा.',
+    'how.step3.title': '3. मालाची माहिती द्या',
+    'how.step3.desc': 'मालाचा प्रकार, वजन आणि पिकअप ठिकाण नोंदवा.',
+    'how.step4.title': '4. डिलिव्हरी पूर्ण करा',
+    'how.step4.desc': 'माल पोहचल्यावर डिलिव्हरीची पुष्टी करा.',
+    'tts.read': 'ऐका',
+    'tts.stop': 'थांबवा',
+    'tts.read_aloud': 'संपूर्ण मजकूर ऐका',
+    'tts.stop_audio': 'आवाज बंद करा',
+    'tab.explore': 'उपलब्ध वाहने शोधा',
+    'tab.my_bookings': 'माझे बुकिंग व पार्सल',
+    'tab.map': 'थेट नकाशा रडार',
+    'tab.profile': 'वापरकर्ता प्रोफाइल',
+    'tab.driver_trips': 'माझ्या प्रकाशित फेऱ्या',
+    'tab.driver_requests': 'आलेले विनंती अर्ज',
+    'tab.driver_publish': 'नवीन फेरी नोंदवा',
+    'tab.driver_profile': 'चालक प्रोफाइल व ओळखपत्र',
+    'metric.active_trucks': 'उपलब्ध वाहने',
+    'metric.my_bookings': 'माझे बुकिंग',
+    'metric.live_transit': 'मार्गावर थेट सुरू',
+    'metric.verified_drivers': 'सत्यापित चालक',
+    'card.capacity_slots': 'क्षमता स्लॉट',
+    'card.slots_booked': 'स्लॉट आरक्षित',
+    'card.space_free': 'जागा शिल्लक',
+    'card.full': 'पूर्ण भरले',
+    'card.co_sharing': 'सह-भागीदार',
+    'card.first_partner': 'पहिले भागीदार बना! पुढील बुकिंगमुळे आपले भाडे अजून कमी होईल.',
+    'card.total_fare': 'वाहनाचे एकूण भाडे',
+    'card.ton_km_split': 'टन-किमी न्याय्य वाटप',
+    'card.fair_pricing_note': 'रास्त दर: तुम्ही केवळ मालाचे वजन (किलो) × अंतर (किमी) यानुसार पैसे देता.',
+    'card.pickup_loc': 'पिकअप ठिकाण',
+    'card.view_map': 'नकाशावर पहा',
+    'card.request_space': 'जागा आरक्षित करा',
+    'card.close_form': 'फॉर्म बंद करा',
+    'card.track_live': 'थेट ट्रॅक करा',
+    'card.live_badge': 'थेट मार्गावर आहे',
+    'card.verified': 'सत्यापित चालक',
+    'card.unverified': 'असत्यापित',
+    'pricing.max_solo': 'कमाल अंदाजे सोलो भाडे:',
+    'pricing.calc_segment': 'मार्गानुसार आपले भाडे:',
+    'pricing.base_rate': 'मूळ दर',
+    'pricing.pooling_active': 'सामायिक लोड स्वयंचलित सवलत सक्रिय:',
+    'pricing.pooling_desc': 'इतर ग्राहक जोडले गेल्यास हे भाडे आणखी कमी होईल.',
+    'corridor.valid': 'मार्ग कॉरिडॉर वैध आहे',
+    'corridor.invalid': 'मार्ग विसंगती: निवडलेले ठिकाण वाहनाच्या मार्गाबाहेर आहे',
+    'form.goods_category': 'मालाचा प्रकार',
+    'form.select_category': 'श्रेणी निवडा',
+    'form.goods_weight': 'मालाचे वजन (किलो)',
+    'form.pickup_loc': 'पिकअप ठिकाण',
+    'form.pickup_placeholder': 'पिकअप शहर किंवा बाजारपेठ शोधा...',
+    'form.delivery_loc': 'डिलिव्हरी ठिकाण',
+    'form.delivery_placeholder': 'गंतव्य शहर शोधा...',
+    'form.submit_booking': 'बुकिंग पाठवा',
+    'driver.publish_title': 'नवीन प्रवास लोड नोंदवा',
+    'driver.from': 'प्रारंभिक शहर / बाजारपेठ',
+    'driver.to': 'गंतव्य शहर',
+    'driver.date': 'प्रवासाची तारीख',
+    'driver.vehicle': 'वाहनाचा प्रकार',
+    'driver.total_kg': 'एकूण वाहन क्षमता (किलो)',
+    'driver.price': 'एकूण प्रवास लोड रक्कम (₹)',
+    'driver.btn_publish': 'फेरी प्रकाशित करा',
+    'driver.start_trip': 'प्रवास सुरू करा व GPS सुरू करा',
+    'driver.complete_ride': 'डिलिव्हरी पूर्ण करा',
+    'driver.cancel_trip': 'फेरी रद्द करा',
+    'profile.setup_title': 'आपली प्रोफाइल पूर्ण करा',
+    'profile.submit_btn': 'माहिती जतन करा व पुढे जा'
   },
-
 
   /* ================= BENGALI ================= */
-
   bn: {
     ...EN,
-
-    'nav.home':
-      'হোম',
-
-    'nav.find':
-      'গাড়ি খুঁজুন',
-
-    'nav.offer':
-      'যাত্রা অফার করুন',
-
-    'cta.find':
-      'গাড়ি খুঁজুন',
-
-    'cta.offer':
-      'যাত্রা অফার করুন',
-
-    'find.title':
-      'গাড়ি খুঁজুন',
-
-    'find.requestSpace':
-      'জায়গা অনুরোধ করুন',
-
-    'request.title':
-      'গাড়িতে জায়গার অনুরোধ করুন',
-
-    'request.goodsCategory':
-      'পণ্যের বিভাগ',
-
-    'request.send':
-      'অনুরোধ পাঠান',
-
-    'offer.title':
-      'যাত্রা অফার করুন',
-
-    'offer.publish':
-      'যাত্রা প্রকাশ করুন'
+    gov: 'স্মার্ট ডিজিটাল পণ্য পরিবহন প্ল্যাটফর্ম',
+    tagline: 'অংশীদারিত্বে পণ্য পরিবহন ও লজিস্টিকস',
+    'nav.home': 'হোম',
+    'nav.find': 'গাড়ি খুঁজুন',
+    'nav.offer': 'ট্রিপ পোস্ট করুন',
+    nav_logout: 'লগআউট',
+    nav_offer_trip: 'ড্রাইভার ও পরিবহন ড্যাশবোর্ড',
+    'hero.kicker': 'স্মার্ট পণ্য পরিবহন',
+    'hero.sub': 'সম্পূর্ণ গাড়ি বুক না করে উপলব্ধ খালি জায়গা খুঁজুন এবং সহজে মালপত্র পরিবহন করুন।',
+    'hero.sub2': 'পণ্য পাঠান · জায়গা ভাগ করুন · অর্থ সাশ্রয় করুন',
+    'cta.find': 'গাড়ি খুঁজুন',
+    'cta.offer': 'ট্রিপ পোস্ট করুন',
+    'how.title': 'এটি কীভাবে কাজ করে',
+    'how.sub': 'সহজ ৪টি ধাপে পণ্য পরিবহন',
+    'how.step1.title': '১. রুট খুঁজুন',
+    'how.step1.desc': 'গাড়ির মালিকরা তাদের রুট, যাত্রার তারিখ এবং খালি জায়গা প্রকাশ করেন।',
+    'how.step2.title': '২. জায়গা বুক করুন',
+    'how.step2.desc': 'উপযুক্ত গাড়ি বেছে নিন এবং আপনার পণ্যের জন্য জায়গা অনুরোধ করুন।',
+    'how.step3.title': '৩. পণ্যের বিবরণ দিন',
+    'how.step3.desc': 'পণ্যের ধরন, ওজন এবং পিকআপের স্থান লিখুন।',
+    'how.step4.title': '৪. ডেলিভারি সম্পন্ন করুন',
+    'how.step4.desc': 'পণ্য গন্তব্যে পৌঁছানোর পর ডেলিভারি নিশ্চিত করুন।',
+    'tts.read': 'শুনুন',
+    'tts.stop': 'থামুন',
+    'tts.read_aloud': 'সম্পূর্ণ বিবরণ শুনুন',
+    'tts.stop_audio': 'শব্দ বন্ধ করুন',
+    'tab.explore': 'উপলব্ধ গাড়ি খুঁজুন',
+    'tab.my_bookings': 'আমার বুকিং ও পার্সেল',
+    'tab.map': 'লাইভ ম্যাপ রাডার',
+    'tab.profile': 'ব্যবহারকারীর প্রোফাইল',
+    'tab.driver_trips': 'আমার প্রকাশিত ট্রিপ',
+    'tab.driver_requests': 'আগত অনুরোধসমূহ',
+    'tab.driver_publish': 'নতুন ট্রিপ পোস্ট করুন',
+    'tab.driver_profile': 'ড্রাইভার প্রোফাইল ও আইডি',
+    'metric.active_trucks': 'উপলব্ধ গাড়ি',
+    'metric.my_bookings': 'আমার বুকিং',
+    'metric.live_transit': 'রাস্তায় লাইভ চলমান',
+    'metric.verified_drivers': 'যাচাইকৃত ড্রাইভার',
+    'card.capacity_slots': 'ধারণক্ষমতা স্লট',
+    'card.slots_booked': 'স্লট বুক হয়েছে',
+    'card.space_free': 'জায়গা খালি আছে',
+    'card.full': 'সম্পূর্ণ পূর্ণ',
+    'card.co_sharing': 'সহ-অংশীদার',
+    'card.first_partner': 'প্রথম পার্টনার হোন! পরবর্তী বুকিংয়ে আপনার ভাড়া আরও কমবে।',
+    'card.total_fare': 'গাড়ির মোট লোড ভাড়া',
+    'card.ton_km_split': 'টন-কিমি ন্যায্য বিভাজন',
+    'card.fair_pricing_note': 'ন্যায্য মূল্য: আপনি কেবলমাত্র পণ্যের ওজন (কেজি) × দূরত্ব (কিমি) অনুসারে অর্থ প্রদান করবেন।',
+    'card.pickup_loc': 'পিকআপের স্থান',
+    'card.view_map': 'ম্যাপে দেখুন',
+    'card.request_space': 'জায়গা বুক করুন',
+    'card.close_form': 'ফর্ম বন্ধ করুন',
+    'card.track_live': 'লাইভ ট্র্যাক করুন',
+    'card.live_badge': 'লাইভ চলছে',
+    'card.verified': 'যাচাইকৃত ড্রাইভার',
+    'card.unverified': 'অযাচাইকৃত',
+    'pricing.max_solo': 'সর্বোচ্চ আনুমানিক একক ভাড়া:',
+    'pricing.calc_segment': 'রুট অনুযায়ী আপনার ভাড়া:',
+    'pricing.base_rate': 'মূল হার',
+    'pricing.pooling_active': 'শেয়ার্ড-লোড স্বয়ংক্রিয় ডিসকাউন্ট সক্রিয়:',
+    'pricing.pooling_desc': 'অন্যান্য ব্যবসায়ী যুক্ত হলে এই ভাড়া স্বয়ংক্রিয়ভাবে আরও কমবে।',
+    'form.goods_category': 'পণ্যের বিভাগ',
+    'form.select_category': 'বিভাগ বেছে নিন',
+    'form.goods_weight': 'পণ্যের ওজন (কেজি)',
+    'form.pickup_loc': 'আপনার পিকআপের স্থান',
+    'form.pickup_placeholder': 'পিকআপের শহর বা বাজার খুঁজুন...',
+    'form.delivery_loc': 'ডেলিভারির স্থান',
+    'form.delivery_placeholder': 'গন্তব্য শহর খুঁজুন...',
+    'form.submit_booking': 'বুকিং জমা দিন',
+    'driver.publish_title': 'নতুন ট্রিপ পোস্ট করুন',
+    'driver.from': 'শুরুর শহর / হাব',
+    'driver.to': 'গন্তব্য শহর',
+    'driver.date': 'যাত্রার তারিখ',
+    'driver.vehicle': 'গাড়ির ধরন',
+    'driver.total_kg': 'মোট ধারণক্ষমতা (কেজি)',
+    'driver.price': 'মোট ট্রিপ লোড ভাড়া (₹)',
+    'driver.btn_publish': 'ট্রিপ প্রকাশ করুন',
+    'driver.start_trip': 'ট্রিপ শুরু করুন ও GPS চালু করুন',
+    'driver.complete_ride': 'ডেলিভারি নিশ্চিত করুন',
+    'driver.cancel_trip': 'ট্রিপ বাতিল করুন',
+    'profile.setup_title': 'আপনার প্রোফাইল সম্পন্ন করুন',
+    'profile.submit_btn': 'সংরক্ষণ করুন ও এগিয়ে যান'
   },
-
 
   /* ================= URDU ================= */
-
   ur: {
     ...EN,
-
-    'nav.home':
-      'ہوم',
-
-    'nav.find':
-      'گاڑی تلاش کریں',
-
-    'nav.offer':
-      'سفر پیش کریں',
-
-    'cta.find':
-      'گاڑی تلاش کریں',
-
-    'cta.offer':
-      'سفر پیش کریں',
-
-    'find.title':
-      'گاڑی تلاش کریں',
-
-    'find.requestSpace':
-      'جگہ کی درخواست',
-
-    'request.title':
-      'گاڑی میں جگہ کی درخواست',
-
-    'request.goodsCategory':
-      'سامان کی قسم',
-
-    'request.send':
-      'درخواست بھیجیں',
-
-    'offer.title':
-      'سفر پیش کریں',
-
-    'offer.publish':
-      'سفر شائع کریں'
+    gov: 'اسمارٹ ڈیجیٹل گڈز ٹرانسپورٹ پلیٹ فارم',
+    tagline: 'مشترکہ سامان کی ترسیل',
+    'nav.home': 'ہوم',
+    'nav.find': 'گاڑی تلاش کریں',
+    'nav.offer': 'سفر پیش کریں',
+    nav_logout: 'لاگ آؤٹ',
+    nav_offer_trip: 'ڈرائیور ڈیش بورڈ',
+    'hero.kicker': 'اسمارٹ مال برداری',
+    'hero.sub': 'پوری گاڑی بک کیے بغیر خالی جگہ تلاش کریں اور اپنا سامان آسانی سے بھیجیں۔',
+    'hero.sub2': 'سامان بھیجیں · جگہ بانٹیں · پیسے بچائیں',
+    'cta.find': 'گاڑی تلاش کریں',
+    'cta.offer': 'سفر پیش کریں',
+    'how.title': 'یہ کیسے کام کرتا ہے',
+    'how.sub': '4 آسان مراحل میں سامان کی ترسیل',
+    'how.step1.title': '1. راستہ تلاش کریں',
+    'how.step1.desc': 'گاڑی کے مالک اپنا راستہ اور دستیاب جگہ پوسٹ کرتے ہیں۔',
+    'how.step2.title': '2. جگہ کی درخواست کریں',
+    'how.step2.desc': 'مناسب گاڑی منتخب کریں اور سامان کی جگہ بک کریں۔',
+    'how.step3.title': '3. سامان کی تفصیل درج کریں',
+    'how.step3.desc': 'سامان کی قسم، وزن اور پک اپ کی تفصیلات بھریں۔',
+    'how.step4.title': '4. ترسیل مکمل کریں',
+    'how.step4.desc': 'سامان پہنچنے پر ترسیل کی تصدیق کریں۔',
+    'tts.read': 'سنیں',
+    'tts.stop': 'روکیں',
+    'tts.read_aloud': 'مکمل تفصیل سنیں',
+    'tts.stop_audio': 'آواز بند کریں',
+    'tab.explore': 'دستیاب گاڑیاں',
+    'tab.my_bookings': 'میری بکنگز',
+    'tab.map': 'لائیو میپ ریڈار',
+    'tab.profile': 'پروفائل',
+    'tab.driver_trips': 'میرے شائع کردہ سفر',
+    'tab.driver_requests': 'موصولہ درخواستیں',
+    'tab.driver_publish': 'نیا سفر درج کریں',
+    'tab.driver_profile': 'ڈرائیور پروفائل',
+    'metric.active_trucks': 'دستیاب گاڑیاں',
+    'metric.my_bookings': 'میری بکنگز',
+    'metric.live_transit': 'راستے میں لائیو',
+    'metric.verified_drivers': 'تصدیق شدہ ڈرائیورز',
+    'card.capacity_slots': 'گنجائش کے سلاٹس',
+    'card.slots_booked': 'سلاٹس بک ہو گئے',
+    'card.space_free': 'جگہ خالی ہے',
+    'card.full': 'مکمل بھرا ہوا',
+    'card.co_sharing': 'شریک پارٹنرز',
+    'card.first_partner': 'پہلے پارٹنر بنیں! مزید بکنگ سے کرایہ کم ہوگا۔',
+    'card.total_fare': 'گاڑی کا کل کرایہ',
+    'card.ton_km_split': 'ٹن-کلومیٹر منصفانہ تقسیم',
+    'card.fair_pricing_note': 'منصفانہ قیمت: آپ صرف اپنے سامان کے وزن (کلو) × فاصلے (کلومیٹر) کا کرایہ ادا کرتے ہیں۔',
+    'card.pickup_loc': 'پک اپ کا مقام',
+    'card.view_map': 'نقشے پر دیکھیں',
+    'card.request_space': 'جگہ کی درخواست کریں',
+    'card.close_form': 'فارم بند کریں',
+    'card.track_live': 'لائیو ٹریک کریں',
+    'card.live_badge': 'لائیو جاری ہے',
+    'card.verified': 'تصدیق شدہ ڈرائیور',
+    'card.unverified': 'غیر تصدیق شدہ',
+    'pricing.max_solo': 'زیادہ سے زیادہ متوقع کرایہ:',
+    'pricing.calc_segment': 'راستے کے مطابق آپ کا کرایہ:',
+    'pricing.base_rate': 'بنیادی شرح',
+    'pricing.pooling_active': 'شیئرڈ لوڈ ڈسکاؤنٹ فعال:',
+    'pricing.pooling_desc': 'دیگر پارٹنرز کے شامل ہونے سے یہ کرایہ خود بخود کم ہو جائے گا۔',
+    'form.goods_category': 'سامان کی قسم',
+    'form.select_category': 'قسم منتخب کریں',
+    'form.goods_weight': 'سامان کا وزن (کلوگرام)',
+    'form.pickup_loc': 'آپ کا پک اپ مقام',
+    'form.delivery_loc': 'ڈلیوری کا مقام',
+    'form.submit_booking': 'بکنگ جمع کرائیں',
+    'driver.publish_title': 'نیا سفر درج کریں',
+    'driver.from': 'شروعاتی شہر',
+    'driver.to': 'منزل کا شہر',
+    'driver.date': 'سفر کی تاریخ',
+    'driver.vehicle': 'گاڑی کی قسم',
+    'driver.btn_publish': 'سفر شائع کریں',
+    'driver.start_trip': 'سفر شروع کریں اور GPS آن کریں',
+    'driver.complete_ride': 'ترسیل مکمل کریں',
+    'driver.cancel_trip': 'سفر منسوخ کریں',
+    'profile.setup_title': 'اپنی پروفائل مکمل کریں',
+    'profile.submit_btn': 'محفوظ کریں اور آگے بڑھیں'
   },
-
 
   /* ================= TELUGU ================= */
-
   te: {
     ...EN,
-
-    'nav.home':
-      'హోమ్',
-
-    'nav.find':
-      'వాహనం వెతకండి',
-
-    'nav.offer':
-      'ప్రయాణాన్ని అందించండి',
-
-    'cta.find':
-      'వాహనం వెతకండి',
-
-    'cta.offer':
-      'ప్రయాణాన్ని అందించండి',
-
-    'find.title':
-      'వాహనం వెతకండి',
-
-    'request.title':
-      'వాహనంలో స్థలం కోరండి',
-
-    'request.goodsCategory':
-      'వస్తువుల వర్గం',
-
-    'request.send':
-      'అభ్యర్థన పంపండి',
-
-    'offer.title':
-      'ప్రయాణాన్ని అందించండి',
-
-    'offer.publish':
-      'ప్రయాణాన్ని ప్రచురించండి'
+    gov: 'స్మార్ట్ డిజిటల్ వస్తు రవాణా వేదిక',
+    tagline: 'సహకార వస్తు రవాణా మరియు లాజిస్టిక్స్',
+    'nav.home': 'హోమ్',
+    'nav.find': 'వాహనాన్ని శోధించండి',
+    'nav.offer': 'ట్రిప్ ఆఫర్ చేయండి',
+    nav_logout: 'లాగౌట్',
+    nav_offer_trip: 'డ్రైవర్ మరియు లాజిస్టిక్స్ డాష్‌బోర్డ్',
+    'hero.kicker': 'స్మార్ట్ వస్తు రవాణా',
+    'hero.sub': 'పూర్తి వాహనాన్ని బుక్ చేసుకోకుండానే అందుబాటులో ఉన్న స్థలాన్ని కనుగొని మీ సరుకును సులభంగా తరలించండి.',
+    'hero.sub2': 'సరుకు పంపండి · స్థలాన్ని పంచుకోండి · డబ్బు ఆదా చేయండి',
+    'cta.find': 'వాహనాన్ని శోధించండి',
+    'cta.offer': 'ట్రిప్ ఆఫర్ చేయండి',
+    'how.title': 'ఇది ఎలా పనిచేస్తుంది',
+    'how.sub': '4 సులభ దశల్లో సరుకు రవాణా',
+    'how.step1.title': '1. రూట్ శోధించండి',
+    'how.step1.desc': 'వాహన యజమానులు తమ మార్గం, ప్రయాణ తేదీ మరియు ఖాళీ స్థలాన్ని పోస్ట్ చేస్తారు.',
+    'how.step2.title': '2. స్థలం అభ్యర్థించండి',
+    'how.step2.desc': 'సరైన వాహనాన్ని ఎంచుకుని మీ సరుకు కోసం స్థలాన్ని బుక్ చేసుకోండి.',
+    'how.step3.title': '3. వస్తువుల వివరాలు నమోదు చేయండి',
+    'how.step3.desc': 'సరుకు వర్గం, బరువు మరియు పికప్ వివరాలను నమోదు చేయండి.',
+    'how.step4.title': '4. డెలివరీ పూర్తి చేయండి',
+    'how.step4.desc': 'సరుకు గమ్యస్థానానికి చేరిన తర్వాత డెలివరీని నిర్ధారించండి.',
+    'tts.read': 'వినండి',
+    'tts.stop': 'ఆపండి',
+    'tts.read_aloud': 'పూర్తి వివరాలు వినండి',
+    'tts.stop_audio': 'ఆడియో ఆపండి',
+    'tab.explore': 'అందుబాటులో ఉన్న వాహనాలు',
+    'tab.my_bookings': 'నా బుకింగ్స్',
+    'tab.map': 'లైవ్ మ్యాప్ రాడార్',
+    'tab.profile': 'వినియోగదారు ప్రొఫైల్',
+    'tab.driver_trips': 'నా ప్రచురిత ప్రయాణాలు',
+    'tab.driver_requests': 'వచ్చిన అభ్యర్థనలు',
+    'tab.driver_publish': 'కొత్త ప్రయాణాన్ని నమోదు చేయండి',
+    'tab.driver_profile': 'డ్రైవర్ ప్రొఫైల్ & ఐడి',
+    'metric.active_trucks': 'అందుబాటులో ఉన్న వాహనాలు',
+    'metric.my_bookings': 'నా బుకింగ్స్',
+    'metric.live_transit': 'లైవ్ ప్రయాణంలో ఉంది',
+    'metric.verified_drivers': 'ధృవీకరించబడిన డ్రైవర్లు',
+    'card.capacity_slots': 'సామర్థ్య స్లాట్‌లు',
+    'card.slots_booked': 'స్లాట్‌లు బుక్ అయ్యాయి',
+    'card.space_free': 'స్థలం ఖాళీగా ఉంది',
+    'card.full': 'పూర్తిగా నిండింది',
+    'card.co_sharing': 'సహ-భాగస్వాములు',
+    'card.first_partner': 'మొదటి భాగస్వామి అవ్వండి! తదుపరి బుకింగ్లతో మీ ఛార్జీ ఇంకా తగ్గుతుంది.',
+    'card.total_fare': 'వాహనం మొత్తం ఛార్జీ',
+    'card.ton_km_split': 'టన్-కిమీ న్యాయమైన విభజన',
+    'card.fair_pricing_note': 'సరసమైన ధర: మీరు కేవలం సరుకు బరువు (కిలో) × దూరం (కిమీ) కి మాత్రమే చెల్లిస్తారు.',
+    'card.pickup_loc': 'పికప్ స్థానం',
+    'card.view_map': 'మ్యాప్‌లో చూడండి',
+    'card.request_space': 'స్థలాన్ని బుక్ చేయండి',
+    'card.close_form': 'ఫారమ్ మూసివేయండి',
+    'card.track_live': 'లైవ్ ట్రాక్ చేయండి',
+    'card.live_badge': 'లైవ్ ప్రయాణంలో ఉంది',
+    'card.verified': 'ధృవీకరించబడిన డ్రైవర్',
+    'card.unverified': 'ధృవీకరించబడలేదు',
+    'pricing.max_solo': 'గరిష్ట అంచనా సోలో ఛార్జీ:',
+    'pricing.calc_segment': 'రూట్ ప్రకారం మీ ఛార్జీ:',
+    'pricing.base_rate': 'ప్రాథమిక రేటు',
+    'pricing.pooling_active': 'షేర్డ్ లోడ్ ఆటో తగ్గింపు సక్రియం:',
+    'pricing.pooling_desc': 'ఇతర వ్యాపారులు చేరినప్పుడు ఈ ఛార్జీ మరింత తగ్గుతుంది.',
+    'form.goods_category': 'సరుకు వర్గం',
+    'form.select_category': 'వర్గాన్ని ఎంచుకోండి',
+    'form.goods_weight': 'సరుకు బరువు (కిలోలు)',
+    'form.pickup_loc': 'మీ పికప్ స్థానం',
+    'form.delivery_loc': 'డెలివరీ స్థానం',
+    'form.submit_booking': 'బుకింగ్ సమర్పించండి',
+    'driver.publish_title': 'కొత్త ట్రిప్ నమోదు చేయండి',
+    'driver.from': 'ప్రారంభ నగరం / మార్కెట్',
+    'driver.to': 'గమ్యస్థాన నగరం',
+    'driver.date': 'ప్రయాణ తేదీ',
+    'driver.vehicle': 'వాహనం రకం',
+    'driver.total_kg': 'మొత్తం సామర్థ్యం (కిలోలు)',
+    'driver.price': 'మొత్తం ట్రిప్ ఛార్జీ (₹)',
+    'driver.btn_publish': 'ప్రయాణాన్ని ప్రచురించండి',
+    'driver.start_trip': 'ప్రయాణం ప్రారంభించండి & GPS ఆన్ చేయండి',
+    'driver.complete_ride': 'డెలివరీ నిర్ధారించండి',
+    'driver.cancel_trip': 'ప్రయాణాన్ని రద్దు చేయండి',
+    'profile.setup_title': 'మీ ప్రొఫైల్ పూర్తి చేయండి',
+    'profile.submit_btn': 'సేవ్ చేసి కొనసాగండి'
   },
-
 
   /* ================= TAMIL ================= */
-
   ta: {
     ...EN,
-
-    'nav.home':
-      'முகப்பு',
-
-    'nav.find':
-      'வாகனம் தேடுங்கள்',
-
-    'nav.offer':
-      'பயணத்தை வழங்குங்கள்',
-
-    'cta.find':
-      'வாகனம் தேடுங்கள்',
-
-    'cta.offer':
-      'பயணத்தை வழங்குங்கள்',
-
-    'find.title':
-      'வாகனம் தேடுங்கள்',
-
-    'request.title':
-      'வாகன இடம் கோரிக்கை',
-
-    'request.goodsCategory':
-      'பொருட்களின் வகை',
-
-    'request.send':
-      'கோரிக்கையை அனுப்புங்கள்',
-
-    'offer.title':
-      'பயணத்தை வழங்குங்கள்',
-
-    'offer.publish':
-      'பயணத்தை வெளியிடுங்கள்'
+    gov: 'ஸ்மார்ட் டிஜிட்டல் சரக்கு போக்குவரத்து தளம்',
+    tagline: 'பகிர்வு சரக்கு போக்குவரத்து மற்றும் தளவாடங்கள்',
+    'nav.home': 'முகப்பு',
+    'nav.find': 'வாகனம் தேடுங்கள்',
+    'nav.offer': 'பயணத்தை பதிவு செய்யுங்கள்',
+    nav_logout: 'வெளியேறு',
+    nav_offer_trip: 'ஓட்டுநர் & போக்குவரத்து டாஷ்போர்டு',
+    'hero.kicker': 'ஸ்மார்ட் சரக்கு போக்குவரத்து',
+    'hero.sub': 'முழு வாகனத்தையும் முன்பதிவு செய்யாமல் கிடைக்கும் இடத்தை கண்டுபிடித்து உங்கள் சரக்குகளை எளிதாக கொண்டு செல்லுங்கள்.',
+    'hero.sub2': 'சரக்கு அனுப்புங்கள் · இடத்தை பகிருங்கள் · பணத்தை சேமியுங்கள்',
+    'cta.find': 'வாகனம் தேடுங்கள்',
+    'cta.offer': 'பயணத்தை பதிவு செய்யுங்கள்',
+    'how.title': 'இது எவ்வாறு செயல்படுகிறது',
+    'how.sub': '4 எளிய படிகளில் சரக்கு போக்குவரத்து',
+    'how.step1.title': '1. வழியைத் தேடுங்கள்',
+    'how.step1.desc': 'வாகன உரிமையாளர்கள் தங்கள் வழித்தடம், பயண தேதி மற்றும் கிடைக்கும் இடத்தை வெளியிடுகிறார்கள்.',
+    'how.step2.title': '2. இடத்தை முன்பதிவு செய்யுங்கள்',
+    'how.step2.desc': 'பொருத்தமான வாகனத்தைத் தேர்ந்தெடுத்து உங்கள் சரக்குக்கு இடம் கோருங்கள்.',
+    'how.step3.title': '3. சரக்கு விவரங்களை உள்ளிடுங்கள்',
+    'how.step3.desc': 'பொருட்களின் வகை, எடை மற்றும் பிக்கப் விவரங்களை உள்ளிடவும்.',
+    'how.step4.title': '4. விநியோகத்தை முடிக்கவும்',
+    'how.step4.desc': 'பொருட்கள் சேர்ந்தவுடன் விநியோகத்தை உறுதிப்படுத்தவும்.',
+    'tts.read': 'கேளுங்கள்',
+    'tts.stop': 'நிறுத்து',
+    'tts.read_aloud': 'முழு விவரங்களையும் கேளுங்கள்',
+    'tts.stop_audio': 'ஒலியை நிறுத்து',
+    'tab.explore': 'கிடைக்கும் வாகனங்கள்',
+    'tab.my_bookings': 'எனது முன்பதிவுகள்',
+    'tab.map': 'லைவ் மேப் ரேடார்',
+    'tab.profile': 'பயனர் சுயவிவரம்',
+    'tab.driver_trips': 'எனது வெளியிட்ட பயணங்கள்',
+    'tab.driver_requests': 'வந்த கோரிக்கைகள்',
+    'tab.driver_publish': 'புதிய பயணத்தை பதிவிடவும்',
+    'tab.driver_profile': 'ஓட்டுநர் சுயவிவரம் & ஐடி',
+    'metric.active_trucks': 'கிடைக்கும் வாகனங்கள்',
+    'metric.my_bookings': 'எனது முன்பதிவுகள்',
+    'metric.live_transit': 'லைவ் பயணத்தில் உள்ளது',
+    'metric.verified_drivers': 'சரிபார்க்கப்பட்ட ஓட்டுநர்கள்',
+    'card.capacity_slots': 'கொள்ளளவு இடங்கள்',
+    'card.slots_booked': 'இடங்கள் முன்பதிவு செய்யப்பட்டன',
+    'card.space_free': 'இடம் காலியாக உள்ளது',
+    'card.full': 'முழுமையாக நிரம்பியது',
+    'card.co_sharing': 'இணை பங்குதாரர்கள்',
+    'card.first_partner': 'முதல் பங்குதாரராகுங்கள்! அடுத்த முன்பதிவுகளால் உங்கள் கட்டணம் குறையும்.',
+    'card.total_fare': 'வாகனத்தின் மொத்த கட்டணம்',
+    'card.ton_km_split': 'டன்-கிமீ நியாயமான பகிர்வு',
+    'card.fair_pricing_note': 'நியாயமான விலை: உங்கள் சரக்கின் எடை (கிலோ) × தூரத்திற்கு (கிமீ) மட்டுமே கட்டணம் செலுத்துவீர்கள்.',
+    'card.pickup_loc': 'பிக்கப் இடம்',
+    'card.view_map': 'வரைபடத்தில் காண்க',
+    'card.request_space': 'இடத்தை முன்பதிவு செய்',
+    'card.close_form': 'படிவத்தை மூடு',
+    'card.track_live': 'லைவ் டிராக்கிங்',
+    'card.live_badge': 'லைவ் பயணத்தில் உள்ளது',
+    'card.verified': 'சரிபார்க்கப்பட்ட ஓட்டுநர்',
+    'card.unverified': 'சரிபார்க்கப்படவில்லை',
+    'pricing.max_solo': 'அதிகபட்ச மதிப்பிடப்பட்ட கட்டணம்:',
+    'pricing.calc_segment': 'வழியின்படி உங்கள் கட்டணம்:',
+    'pricing.base_rate': 'அடிப்படை விகிதம்',
+    'pricing.pooling_active': 'பகிர்வு தள்ளுபடி செயலில் உள்ளது:',
+    'pricing.pooling_desc': 'மற்ற வணிகர்கள் சேரும்போது இந்த கட்டணம் தானாகவே குறையும்.',
+    'form.goods_category': 'சரக்கு வகை',
+    'form.select_category': 'வகையைத் தேர்ந்தெடுக்கவும்',
+    'form.goods_weight': 'சரக்கு எடை (கிலோ)',
+    'form.pickup_loc': 'உங்கள் பிக்கப் இடம்',
+    'form.delivery_loc': 'விநியோக இடம்',
+    'form.submit_booking': 'முன்பதிவை சமர்ப்பிக்கவும்',
+    'driver.publish_title': 'புதிய பயணத்தை பதிவிடவும்',
+    'driver.from': 'தொடக்க நகரம் / சந்தை',
+    'driver.to': 'சேருமிடம்',
+    'driver.date': 'பயண தேதி',
+    'driver.vehicle': 'வாகன வகை',
+    'driver.total_kg': 'மொத்த கொள்ளளவு (கிலோ)',
+    'driver.price': 'மொத்த பயண கட்டணம் (₹)',
+    'driver.btn_publish': 'பயணத்தை வெளியிடவும்',
+    'driver.start_trip': 'பயணத்தை தொடங்குங்கள் & GPS ஆன் செய்யவும்',
+    'driver.complete_ride': 'விநியோகத்தை உறுதிப்படுத்துங்கள்',
+    'driver.cancel_trip': 'பயணத்தை ரத்து செய்',
+    'profile.setup_title': 'சுயவிவரத்தை முடிக்கவும்',
+    'profile.submit_btn': 'சேமித்து தொடரவும்'
   },
-
 
   /* ================= KANNADA ================= */
-
   kn: {
     ...EN,
-
-    'nav.home':
-      'ಮುಖಪುಟ',
-
-    'nav.find':
-      'ವಾಹನ ಹುಡುಕಿ',
-
-    'nav.offer':
-      'ಪ್ರಯಾಣ ನೀಡಿ',
-
-    'cta.find':
-      'ವಾಹನ ಹುಡುಕಿ',
-
-    'cta.offer':
-      'ಪ್ರಯಾಣ ನೀಡಿ',
-
-    'find.title':
-      'ವಾಹನ ಹುಡುಕಿ',
-
-    'request.title':
-      'ವಾಹನದಲ್ಲಿ ಸ್ಥಳವನ್ನು ವಿನಂತಿಸಿ',
-
-    'request.goodsCategory':
-      'ಸರಕು ವರ್ಗ',
-
-    'request.send':
-      'ವಿನಂತಿ ಕಳುಹಿಸಿ',
-
-    'offer.title':
-      'ಪ್ರಯಾಣ ನೀಡಿ',
-
-    'offer.publish':
-      'ಪ್ರಯಾಣ ಪ್ರಕಟಿಸಿ'
+    gov: 'ಸ್ಮಾರ್ಟ್ ಡಿಜಿಟಲ್ ಸರಕು ಸಾರಿಗೆ ವೇದಿಕೆ',
+    tagline: 'ಹಂಚಿಕೆಯ ಸರಕು ಸಾರಿಗೆ ಮತ್ತು ಲಾಜಿಸ್ಟಿಕ್ಸ್',
+    'nav.home': 'ಮುಖಪುಟ',
+    'nav.find': 'ವಾಹನ ಹುಡುಕಿ',
+    'nav.offer': 'ಪ್ರಯಾಣ ನೀಡಿ',
+    nav_logout: 'ಲಾಗ್ ಔಟ್',
+    nav_offer_trip: 'ಚಾಲಕ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್',
+    'hero.kicker': 'ಸ್ಮಾರ್ಟ್ ಸರಕು ಸಾರಿಗೆ',
+    'hero.sub': 'ಸಂಪೂರ್ಣ ವಾಹನ ಬುಕ್ ಮಾಡದೆ ಲಭ್ಯವಿರುವ ಜಾಗವನ್ನು ಹುಡುಕಿ ನಿಮ್ಮ ಸರಕನ್ನು ಸುಲಭವಾಗಿ ಸಾಗಿಸಿ.',
+    'hero.sub2': 'ಸರಕು ಕಳುಹಿಸಿ · ಜಾಗ ಹಂಚಿಕೊಳ್ಳಿ · ಹಣ ಉಳಿಸಿ',
+    'cta.find': 'ವಾಹನ ಹುಡುಕಿ',
+    'cta.offer': 'ಪ್ರಯಾಣ ನೀಡಿ',
+    'how.title': 'ಇದು ಹೇಗೆ ಕಾರ್ಯನಿರ್ವಹಿಸುತ್ತದೆ',
+    'how.sub': '4 ಸುಲಭ ಹಂತಗಳಲ್ಲಿ ಸಾರಿಗೆ',
+    'how.step1.title': '1. ಮಾರ್ಗ ಹುಡುಕಿ',
+    'how.step1.desc': 'ವಾಹನ ಮಾಲೀಕರು ತಮ್ಮ ಮಾರ್ಗ, ಪ್ರಯಾಣ ದಿನಾಂಕ ಮತ್ತು ಖಾಲಿ ಜಾಗವನ್ನು ಪೋಸ್ಟ್ ಮಾಡುತ್ತಾರೆ.',
+    'how.step2.title': '2. ಜಾಗಕ್ಕಾಗಿ ವಿನಂತಿಸಿ',
+    'how.step2.desc': 'ಸೂಕ್ತ ವಾಹನವನ್ನು ಆಯ್ಕೆಮಾಡಿ ಮತ್ತು ನಿಮ್ಮ ಸರಕಿಗಾಗಿ ಜಾಗವನ್ನು ಬುಕ್ ಮಾಡಿ.',
+    'how.step3.title': '3. ಸರಕಿನ ವಿವರಗಳನ್ನು ನಮೂದಿಸಿ',
+    'how.step3.desc': 'ಸರಕಿನ ವರ್ಗ, ತೂಕ ಮತ್ತು ಪಿಕಪ್ ವಿವರಗಳನ್ನು ನಮೂದಿಸಿ.',
+    'how.step4.title': '4. ಡೆಲಿವರಿ ಪೂರ್ಣಗೊಳಿಸಿ',
+    'how.step4.desc': 'ಸರಕು ತಲುಪಿದ ನಂತರ ಡೆಲಿವರಿಯನ್ನು ದೃಢೀಕರಿಸಿ.',
+    'tts.read': 'ಕೇಳಿ',
+    'tts.stop': 'ನಿಲ್ಲಿಸಿ',
+    'tts.read_aloud': 'ಸಂಪೂರ್ಣ ವಿವರಗಳನ್ನು ಕೇಳಿ',
+    'tts.stop_audio': 'ಧ್ವನಿಯನ್ನು ನಿಲ್ಲಿಸಿ',
+    'tab.explore': 'ಲಭ್ಯವಿರುವ ವಾಹನಗಳು',
+    'tab.my_bookings': 'ನನ್ನ ಬುಕಿಂಗ್‌ಗಳು',
+    'tab.map': 'ಲೈವ್ ನಕ್ಷೆ ರಾಡಾರ್',
+    'tab.profile': 'ಬಳಕೆದಾರರ ಪ್ರೊಫೈಲ್',
+    'tab.driver_trips': 'ನನ್ನ ಪ್ರಕಟಿತ ಪ್ರಯಾಣಗಳು',
+    'tab.driver_requests': 'ಬಂದ ವಿನಂತಿಗಳು',
+    'tab.driver_publish': 'ಹೊಸ ಪ್ರಯಾಣ ನಮೂದಿಸಿ',
+    'tab.driver_profile': 'ಚಾಲಕ ಪ್ರೊಫೈಲ್',
+    'metric.active_trucks': 'ಲಭ್ಯವಿರುವ ವಾಹನಗಳು',
+    'metric.my_bookings': 'ನನ್ನ ಬುಕಿಂಗ್‌ಗಳು',
+    'metric.live_transit': 'ಲೈವ್ ಚಲನೆಯಲ್ಲಿದೆ',
+    'metric.verified_drivers': 'ದೃಢೀಕೃತ ಚಾಲಕರು',
+    'card.capacity_slots': 'ಸಾಮರ್ಥ್ಯ ಸ್ಲಾಟ್‌ಗಳು',
+    'card.slots_booked': 'ಸ್ಲಾಟ್‌ಗಳು ಭರ್ತಿಯಾಗಿವೆ',
+    'card.space_free': 'ಜಾಗ ಲಭ್ಯವಿದೆ',
+    'card.full': 'ಸಂಪೂರ್ಣ ಭರ್ತಿಯಾಗಿದೆ',
+    'card.co_sharing': 'ಸಹ-ಪಾಲುದಾರರು',
+    'card.first_partner': 'ಮೊದಲ ಪಾಲುದಾರರಾಗಿ! ಮುಂದಿನ ಬುಕಿಂಗ್‌ಗಳಿಂದ ನಿಮ್ಮ ದರ ಕಡಿಮೆಯಾಗುತ್ತದೆ.',
+    'card.total_fare': 'ವಾಹನದ ಒಟ್ಟು ಬಾಡಿಗೆ',
+    'card.ton_km_split': 'ಟನ್-ಕಿಮೀ ನ್ಯಾಯಯುತ ವಿಭಜನೆ',
+    'card.fair_pricing_note': 'ನ್ಯಾಯಯುತ ಬೆಲೆ: ನೀವು ಕೇವಲ ಸರಕಿನ ತೂಕ (ಕೆಜಿ) × ದೂರಕ್ಕೆ (ಕಿಮೀ) ಮಾತ್ರ ಪಾವತಿಸುತ್ತೀರಿ.',
+    'card.pickup_loc': 'ಪಿಕಪ್ ಸ್ಥಳ',
+    'card.view_map': 'ನಕ್ಷೆಯಲ್ಲಿ ನೋಡಿ',
+    'card.request_space': 'ಜಾಗ ಕಾಯ್ದಿರಿಸಿ',
+    'card.close_form': 'ಫಾರ್ಮ್ ಮುಚ್ಚಿ',
+    'card.track_live': 'ಲೈವ್ ಟ್ರ್ಯಾಕ್ ಮಾಡಿ',
+    'card.live_badge': 'ಲೈವ್ ಚಲನೆಯಲ್ಲಿದೆ',
+    'card.verified': 'ದೃಢೀಕೃತ ಚಾಲಕ',
+    'card.unverified': 'ದೃಢೀಕರಿಸಲಾಗಿಲ್ಲ',
+    'pricing.max_solo': 'ಗರಿಷ್ಠ ಅಂದಾಜು ಏಕವ್ಯಕ್ತಿ ದರ:',
+    'pricing.calc_segment': 'ಮಾರ್ಗದ ಪ್ರಕಾರ ನಿಮ್ಮ ದರ:',
+    'pricing.base_rate': 'ಮೂಲ ದರ',
+    'pricing.pooling_active': 'ಹಂಚಿಕೆ ರಿಯಾಯಿತಿ ಸಕ್ರಿಯವಾಗಿದೆ:',
+    'pricing.pooling_desc': 'ಇತರ ವ್ಯಾಪಾರಿಗಳು ಸೇರಿದಾಗ ಈ ದರವು ಸ್ವಯಂಚಾಲಿತವಾಗಿ ಕಡಿಮೆಯಾಗುತ್ತದೆ.',
+    'form.goods_category': 'ಸರಕಿನ ವರ್ಗ',
+    'form.select_category': 'ವರ್ಗವನ್ನು ಆಯ್ಕೆಮಾಡಿ',
+    'form.goods_weight': 'ಸರಕಿನ ತೂಕ (ಕೆಜಿ)',
+    'form.pickup_loc': 'ನಿಮ್ಮ ಪಿಕಪ್ ಸ್ಥಳ',
+    'form.delivery_loc': 'ಡೆಲಿವರಿ ಸ್ಥಳ',
+    'form.submit_booking': 'ಬುಕಿಂಗ್ ಸಲ್ಲಿಸಿ',
+    'driver.publish_title': 'ಹೊಸ ಪ್ರಯಾಣ ನಮೂದಿಸಿ',
+    'driver.from': 'ಪ್ರಾರಂಭದ ನಗರ / ಮಾರುಕಟ್ಟೆ',
+    'driver.to': 'ತಲುಪುವ ನಗರ',
+    'driver.date': 'ಪ್ರಯಾಣ ದಿನಾಂಕ',
+    'driver.vehicle': 'ವಾಹನದ ಪ್ರಕಾರ',
+    'driver.total_kg': 'ಒಟ್ಟು ಸಾಮರ್ಥ್ಯ (ಕೆಜಿ)',
+    'driver.price': 'ಒಟ್ಟು ಪ್ರಯಾಣ ದರ (₹)',
+    'driver.btn_publish': 'ಪ್ರಯಾಣ ಪ್ರಕಟಿಸಿ',
+    'driver.start_trip': 'ಪ್ರಯಾಣ ಪ್ರಾರಂಭಿಸಿ & GPS ಆನ್ ಮಾಡಿ',
+    'driver.complete_ride': 'ಡೆಲಿವರಿ ದೃಢೀಕರಿಸಿ',
+    'driver.cancel_trip': 'ಪ್ರಯಾಣ ರದ್ದುಮಾಡಿ',
+    'profile.setup_title': 'ಪ್ರೊಫೈಲ್ ಪೂರ್ಣಗೊಳಿಸಿ',
+    'profile.submit_btn': 'ಉಳಿಸಿ ಮತ್ತು ಮುಂದುವರಿಯಿರಿ'
   },
-
 
   /* ================= MALAYALAM ================= */
-
   ml: {
     ...EN,
-
-    'nav.home':
-      'ഹോം',
-
-    'nav.find':
-      'വാഹനം കണ്ടെത്തുക',
-
-    'nav.offer':
-      'യാത്ര നൽകുക',
-
-    'cta.find':
-      'വാഹനം കണ്ടെത്തുക',
-
-    'cta.offer':
-      'യാത്ര നൽകുക',
-
-    'find.title':
-      'വാഹനം കണ്ടെത്തുക',
-
-    'request.title':
-      'വാഹനത്തിൽ സ്ഥലം അഭ്യർത്ഥിക്കുക',
-
-    'request.goodsCategory':
-      'സാധനങ്ങളുടെ വിഭാഗം',
-
-    'request.send':
-      'അഭ്യർത്ഥന അയയ്ക്കുക',
-
-    'offer.title':
-      'യാത്ര നൽകുക',
-
-    'offer.publish':
-      'യാത്ര പ്രസിദ്ധീകരിക്കുക'
+    gov: 'സ്മാർട്ട് ഡിജിറ്റൽ ചരക്ക് ഗതാഗത പ്ലാറ്റ്‌ഫോം',
+    tagline: 'പങ്കാളിത്ത ചരക്ക് ഗതാഗത സേവനം',
+    'nav.home': 'ഹോം',
+    'nav.find': 'വാഹനം കണ്ടെത്തുക',
+    'nav.offer': 'യാത്ര വാഗ്ദാനം ചെയ്യുക',
+    nav_logout: 'ലോഗ് ഔട്ട്',
+    nav_offer_trip: 'ഡ്രൈവർ ഡാഷ്‌ബോർഡ്',
+    'hero.kicker': 'സ്മാർട്ട് ചരക്ക് ഗതാഗതം',
+    'hero.sub': 'മുഴുവൻ വാഹനവും ബുക്ക് ചെയ്യാതെ ലഭ്യമായ സ്ഥലം കണ്ടെത്തി സാധനങ്ങൾ എളുപ്പത്തിൽ കൊണ്ടുപോകൂ.',
+    'hero.sub2': 'സാധനങ്ങൾ അയക്കൂ · സ്ഥലം പങ്കിടൂ · പണം ലാഭിക്കൂ',
+    'cta.find': 'വാഹനം കണ്ടെത്തുക',
+    'cta.offer': 'യാത്ര വാഗ്ദാനം ചെയ്യുക',
+    'how.title': 'ഇത് എങ്ങനെ പ്രവർത്തിക്കുന്നു',
+    'how.sub': '4 ലളിതമായ ഘട്ടങ്ങളിലൂടെ ചരക്ക് നീക്കം',
+    'how.step1.title': '1. റൂട്ട് കണ്ടെത്തുക',
+    'how.step1.desc': 'വാഹന ഉടമകൾ അവരുടെ റൂട്ടും യാത്ര തീയതിയും ലഭ്യമായ സ്ഥലവും പോസ്റ്റ് ചെയ്യുന്നു.',
+    'how.step2.title': '2. സ്ഥലം ആവശ്യപ്പെടുക',
+    'how.step2.desc': 'അനുയോജ്യമായ വാഹനം തിരഞ്ഞെടുത്ത് സാധനങ്ങൾക്കായി സ്ഥലം ബുക്ക് ചെയ്യുക.',
+    'how.step3.title': '3. സാധനങ്ങളുടെ വിവരങ്ങൾ നൽകുക',
+    'how.step3.desc': 'ഇനം, ഭാരം, പിക്കപ്പ് വിവരങ്ങൾ എന്നിവ രേഖപ്പെടുത്തുക.',
+    'how.step4.title': '4. ഡെലിവറി പൂർത്തിയാക്കുക',
+    'how.step4.desc': 'സാധനങ്ങൾ ലക്ഷ്യസ്ഥാനത്ത് എത്തുമ്പോൾ ഡെലിവറി സ്ഥിരീകരിക്കുക.',
+    'tts.read': 'കേൾക്കൂ',
+    'tts.stop': 'നിർത്തൂ',
+    'tts.read_aloud': 'പൂർണ്ണ വിവരങ്ങൾ കേൾക്കൂ',
+    'tts.stop_audio': 'ശബ്ദം നിർത്തൂ',
+    'tab.explore': 'ലഭ്യമായ വാഹനങ്ങൾ',
+    'tab.my_bookings': 'എന്റെ ബുക്കിംഗുകൾ',
+    'tab.map': 'തത്സമയ മാപ്പ് റഡാർ',
+    'tab.profile': 'പ്രൊഫൈൽ',
+    'tab.driver_trips': 'എന്റെ ട്രിപ്പുകൾ',
+    'tab.driver_requests': 'വന്ന അഭ്യർത്ഥനകൾ',
+    'tab.driver_publish': 'പുതിയ ട്രിപ്പ് പോസ്റ്റ് ചെയ്യുക',
+    'tab.driver_profile': 'ഡ്രൈവർ പ്രൊഫൈൽ',
+    'metric.active_trucks': 'ലഭ്യമായ വാഹനങ്ങൾ',
+    'metric.my_bookings': 'എന്റെ ബുക്കിംഗുകൾ',
+    'metric.live_transit': 'തത്സമയം ഓടുന്നു',
+    'metric.verified_drivers': 'സ്ഥിരീകരിച്ച ഡ്രൈവർമാർ',
+    'card.capacity_slots': 'കപ്പാസിറ്റി സ്ലോട്ടുകൾ',
+    'card.slots_booked': 'സ്ലോട്ടുകൾ ബുക്ക് ചെയ്തു',
+    'card.space_free': 'സ്ഥലം ബാക്കിയുണ്ട്',
+    'card.full': 'പൂർണ്ണമായി നിറഞ്ഞു',
+    'card.co_sharing': 'സഹ-പങ്കാളികൾ',
+    'card.first_partner': 'ആദ്യ പങ്കാളിയാകൂ! അടുത്ത ബുക്കിംഗുകൾ വരുമ്പോൾ നിങ്ങളുടെ നിരക്ക് ഇനിയും കുറയും.',
+    'card.total_fare': 'വാഹനത്തിന്റെ ആകെ വാടക',
+    'card.ton_km_split': 'ടൺ-കിമീ ന്യായമായ വിഭജനം',
+    'card.fair_pricing_note': 'ന്യായമായ നിരക്ക്: നിങ്ങൾ സാധനങ്ങളുടെ ഭാരം (കിലോ) × ദൂരത്തിന് (കിമീ) മാത്രം പണം നൽകിയാൽ മതി.',
+    'card.pickup_loc': 'പിക്കപ്പ് സ്ഥലം',
+    'card.view_map': 'മാപ്പിൽ കാണുക',
+    'card.request_space': 'സ്ഥലം ബുക്ക് ചെയ്യുക',
+    'card.close_form': 'ഫോം അടയ്ക്കുക',
+    'card.track_live': 'തത്സമയം ട്രാക്ക് ചെയ്യുക',
+    'card.live_badge': 'തത്സമയം ഓടുന്നു',
+    'card.verified': 'സ്ഥിരീകരിച്ച ഡ്രൈവർ',
+    'card.unverified': 'സ്ഥിരീകരിച്ചിട്ടില്ല',
+    'pricing.max_solo': 'പരമാവധി കണക്കാക്കിയ നിരക്ക്:',
+    'pricing.calc_segment': 'റൂട്ട് പ്രകാരമുള്ള നിങ്ങളുടെ നിരക്ക്:',
+    'pricing.base_rate': 'അടിസ്ഥാന നിരക്ക്',
+    'pricing.pooling_active': 'പങ്കാളിത്ത ഡിസ്കൗണ്ട് സജീവം:',
+    'pricing.pooling_desc': 'മറ്റു വ്യാപാരികൾ ചേരുമ്പോൾ ഈ നിരക്ക് വീണ്ടും കുറയും.',
+    'form.goods_category': 'സാധനങ്ങളുടെ വിഭാഗം',
+    'form.select_category': 'വിഭാഗം തിരഞ്ഞെടുക്കുക',
+    'form.goods_weight': 'ഭാരം (കിലോഗ്രാം)',
+    'form.pickup_loc': 'നിങ്ങളുടെ പിക്കപ്പ് സ്ഥലം',
+    'form.delivery_loc': 'ഡെലിവറി സ്ഥലം',
+    'form.submit_booking': 'ബുക്കിംഗ് സമർപ്പിക്കുക',
+    'driver.publish_title': 'പുതിയ ട്രിപ്പ് നൽകുക',
+    'driver.from': 'തുടങ്ങുന്ന സ്ഥലം',
+    'driver.to': 'എത്തേണ്ട സ്ഥലം',
+    'driver.date': 'യാത്ര തീയതി',
+    'driver.vehicle': 'വാഹന ഇനം',
+    'driver.total_kg': 'ആകെ ശേഷി (കിലോ)',
+    'driver.price': 'ആകെ ട്രിപ്പ് വാടക (₹)',
+    'driver.btn_publish': 'ട്രിപ്പ് പോസ്റ്റ് ചെയ്യുക',
+    'driver.start_trip': 'യാത്ര ആരംഭിക്കുക & GPS ഓൺ ചെയ്യുക',
+    'driver.complete_ride': 'ഡെലിവറി പൂർത്തിയാക്കുക',
+    'driver.cancel_trip': 'ട്രിപ്പ് റദ്ദാക്കുക',
+    'profile.setup_title': 'പ്രൊഫൈൽ പൂർത്തിയാക്കുക',
+    'profile.submit_btn': 'സംരക്ഷിച്ചു മുന്നോട്ട് പോകൂ'
   },
 
-
   /* ================= ODIA ================= */
-
   or: {
     ...EN,
+    gov: 'ସ୍ମାର୍ଟ ଡିଜିଟାଲ୍ ସାମଗ୍ରୀ ପରିବହନ ପ୍ଲାଟଫର୍ମ',
+    tagline: 'ଅଂଶୀଦାର ସାମଗ୍ରୀ ପରିବହନ ଓ ଲଜିଷ୍ଟିକ୍ସ',
+    'nav.home': 'ମୁଖ୍ୟପୃଷ୍ଠା',
+    'nav.find': 'ଗାଡ଼ି ଖୋଜନ୍ତୁ',
+    'nav.offer': 'ଯାତ୍ରା ପ୍ରଦାନ କରନ୍ତୁ',
+    nav_logout: 'ଲଗ୍ ଆଉଟ୍',
+    nav_offer_trip: 'ଡ୍ରାଇଭର ଡ୍ୟାସବୋର୍ଡ',
+    'hero.kicker': 'ସ୍ମାର୍ଟ ସାମଗ୍ରୀ ପରିବହନ',
+    'hero.sub': 'ପୂରା ଗାଡ଼ି ବୁକ୍ ନକରି ଉପଲବ୍ଧ ସ୍ଥାନ ଖୋଜନ୍ତୁ ଏବଂ ନିଜର ସାମଗ୍ରୀ ସହଜରେ ପଠାନ୍ତୁ।',
+    'hero.sub2': 'ସାମଗ୍ରୀ ପଠାନ୍ତୁ · ସ୍ଥାନ ବାଣ୍ଟନ୍ତୁ · ଟଙ୍କା ବଞ୍ଚାନ୍ତୁ',
+    'cta.find': 'ଗାଡ଼ି ଖୋଜନ୍ତୁ',
+    'cta.offer': 'ଯାତ୍ରା ପ୍ରଦାନ କରନ୍ତୁ',
+    'how.title': 'ଏହା କିପରି କାମ କରେ',
+    'how.sub': '୪ଟି ସହଜ ପଦକ୍ଷେପରେ ପରିବହନ',
+    'how.step1.title': '୧. ରୁଟ୍ ଖୋଜନ୍ତୁ',
+    'how.step1.desc': 'ଗାଡ଼ି ମାଲିକମାନେ ନିଜର ମାର୍ଗ, ତାରିଖ ଏବଂ ଖାଲି ସ୍ଥାନ ପ୍ରକାଶ କରନ୍ତି।',
+    'how.step2.title': '୨. ସ୍ଥାନ ବୁକ୍ କରନ୍ତୁ',
+    'how.step2.desc': 'ଉପଯୁକ୍ତ ଗାଡ଼ି ବାଛନ୍ତୁ ଏବଂ ନିଜ ସାମଗ୍ରୀ ପାଇଁ ସ୍ଥାନ ଅନୁରୋଧ କରନ୍ତୁ।',
+    'how.step3.title': '୩. ସାମଗ୍ରୀ ବିବରଣୀ ଦିଅନ୍ତୁ',
+    'how.step3.desc': 'ସାମଗ୍ରୀର ଶ୍ରେଣୀ, ଓଜନ ଏବଂ ପିକଅପ୍ ସ୍ଥାନ ଲେଖନ୍ତୁ।',
+    'how.step4.title': '୪. ଡେଲିଭରୀ ସମ୍ପୂର୍ଣ୍ଣ କରନ୍ତୁ',
+    'how.step4.desc': 'ସାମଗ୍ରୀ ପହଞ୍ଚିବା ପରେ ଡେଲିଭରୀ ନିଶ୍ଚିତ କରନ୍ତୁ।',
+    'tts.read': 'ଶୁଣନ୍ତୁ',
+    'tts.stop': 'ବନ୍ଦ କରନ୍ତୁ',
+    'tts.read_aloud': 'ସମ୍ପୂର୍ଣ୍ଣ ବିବରଣୀ ଶୁଣନ୍ତୁ',
+    'tts.stop_audio': 'ଶବ୍ଦ ବନ୍ଦ କରନ୍ତୁ',
+    'tab.explore': 'ଉପଲବ୍ଧ ଗାଡ଼ି ଦେଖନ୍ତୁ',
+    'tab.my_bookings': 'ମୋର ବୁକିଂ',
+    'tab.map': 'ଲାଇଭ୍ ମ୍ୟାପ୍ ରାଡାର',
+    'tab.profile': 'ଉପଭୋକ୍ତା ପ୍ରୋଫାଇଲ୍',
+    'tab.driver_trips': 'ମୋର ପ୍ରକାଶିତ ଯାତ୍ରା',
+    'tab.driver_requests': 'ଆସିଥିବା ଅନୁରୋଧ',
+    'tab.driver_publish': 'ନୂଆ ଯାତ୍ରା ଯୋଡ଼ନ୍ତୁ',
+    'tab.driver_profile': 'ଡ୍ରାଇଭର ପ୍ରୋଫାଇଲ୍',
+    'metric.active_trucks': 'ଉପଲବ୍ଧ ଗାଡ଼ି',
+    'metric.my_bookings': 'ମୋର ବୁକିଂ',
+    'metric.live_transit': 'ଲାଇଭ୍ ରାସ୍ତାରେ ଅଛି',
+    'metric.verified_drivers': 'ଯାଞ୍ଚ ହୋଇଥିବା ଡ୍ରାଇଭର',
+    'card.capacity_slots': 'କ୍ଷମତା ସ୍ଲଟ୍',
+    'card.slots_booked': 'ସ୍ଲଟ୍ ବୁକ୍ ହୋଇଛି',
+    'card.space_free': 'ସ୍ଥାନ ଖାଲି ଅଛି',
+    'card.full': 'ସମ୍ପୂର୍ଣ୍ଣ ଭର୍ତ୍ତି',
+    'card.co_sharing': 'ସହ-ଅଂଶୀଦାର',
+    'card.first_partner': 'ପ୍ରଥମ ଅଂଶୀଦାର ହୁଅନ୍ତୁ! ପରବର୍ତ୍ତୀ ବୁକିଂରେ ଆପଣଙ୍କ ଭଡ଼ା ଆହୁରି କମିବ।',
+    'card.total_fare': 'ଗାଡ଼ିର ମୋଟ ଭଡ଼ା',
+    'card.ton_km_split': 'ଟନ୍-କିମି ନ୍ୟାୟଯୁକ୍ତ ବିଭାଜନ',
+    'card.fair_pricing_note': 'ଉଚିତ୍ ମୂଲ୍ୟ: ଆପଣ କେବଳ ସାମଗ୍ରୀର ଓଜନ (କିଗ୍ରା) × ଦୂରତା (କିମି) ପାଇଁ ଟଙ୍କା ଦିଅନ୍ତି।',
+    'card.pickup_loc': 'ପିକଅପ୍ ସ୍ଥାନ',
+    'card.view_map': 'ମ୍ୟାପରେ ଦେଖନ୍ତୁ',
+    'card.request_space': 'ସ୍ଥାନ ବୁକ୍ କରନ୍ତୁ',
+    'card.close_form': 'ଫର୍ମ ବନ୍ଦ କରନ୍ତୁ',
+    'card.track_live': 'ଲାଇଭ୍ ଟ୍ରାକ୍ କରନ୍ତୁ',
+    'card.live_badge': 'ଲାଇଭ୍ ଚାଲୁଅଛି',
+    'card.verified': 'ଯାଞ୍ଚ ହୋଇଥିବା ଡ୍ରାଇଭର',
+    'card.unverified': 'ଯାଞ୍ଚ ହୋଇନାହିଁ',
+    'pricing.max_solo': 'ସର୍ବାଧିକ ଅନୁମାନିତ ଏକକ ଭଡ଼ା:',
+    'pricing.calc_segment': 'ରୁଟ୍ ଅନୁଯାୟୀ ଆପଣଙ୍କ ଭଡ଼ା:',
+    'pricing.base_rate': 'ମୂଳ ଦର',
+    'pricing.pooling_active': 'ଅଂଶୀଦାର ରିହାତି ସକ୍ରିୟ:',
+    'pricing.pooling_desc': 'ଅନ୍ୟ ବ୍ୟବସାୟୀ ଯୋଡ଼ି ହେଲେ ଏହି ଭଡ଼ା ଆହୁରି କମିଯିବ।',
+    'form.goods_category': 'ସାମଗ୍ରୀ ଶ୍ରେଣୀ',
+    'form.select_category': 'ଶ୍ରେଣୀ ବାଛନ୍ତୁ',
+    'form.goods_weight': 'ସାମଗ୍ରୀର ଓଜନ (କିଗ୍ରା)',
+    'form.pickup_loc': 'ଆପଣଙ୍କ ପିକଅପ୍ ସ୍ଥାନ',
+    'form.delivery_loc': 'ଡେଲିଭରୀ ସ୍ଥାନ',
+    'form.submit_booking': 'ବୁକିଂ ଦାଖଲ କରନ୍ତୁ',
+    'driver.publish_title': 'ନୂଆ ଯାତ୍ରା ପୋଷ୍ଟ କରନ୍ତୁ',
+    'driver.from': 'ଆରମ୍ଭ ସହର / ମଣ୍ଡି',
+    'driver.to': 'ଗନ୍ତବ୍ୟ ସହର',
+    'driver.date': 'ଯାତ୍ରା ତାରିଖ',
+    'driver.vehicle': 'ଗାଡ଼ିର ପ୍ରକାର',
+    'driver.total_kg': 'ମୋଟ କ୍ଷମତା (କିଗ୍ରା)',
+    'driver.price': 'ମୋଟ ଯାତ୍ରା ଭଡ଼ା (₹)',
+    'driver.btn_publish': 'ଯାତ୍ରା ପ୍ରକାଶ କରନ୍ତୁ',
+    'driver.start_trip': 'ଯାତ୍ରା ଆରମ୍ଭ କରନ୍ତୁ & GPS ଚାଲୁ କରନ୍ତୁ',
+    'driver.complete_ride': 'ଡେଲିଭରୀ ସମ୍ପୂର୍ଣ୍ଣ କରନ୍ତୁ',
+    'driver.cancel_trip': 'ଯାତ୍ରା ବାତିଲ କରନ୍ତୁ',
+    'profile.setup_title': 'ପ୍ରୋଫାଇଲ୍ ସମ୍ପୂର୍ଣ୍ଣ କରନ୍ତୁ',
+    'profile.submit_btn': 'ସେଭ୍ କରି ଆଗକୁ ବଢ଼ନ୍ତୁ'
+  },
 
-    'nav.home':
-      'ହୋମ୍',
+  /* ================= PUNJABI ================= */
+  pa: {
+    ...EN,
+    gov: 'ਸਮਾਰਟ ਡਿਜੀਟਲ ਮਾਲ ਢੋਆ-ਢੁਆਈ ਪਲੇਟਫਾਰਮ',
+    tagline: 'ਸਾਂਝੀ ਮਾਲ ਢੋਆ-ਢੁਆਈ ਅਤੇ ਲੌਜਿਸਟਿਕਸ',
+    'nav.home': 'ਮੁੱਖ ਪੰਨਾ',
+    'nav.find': 'ਗੱਡੀ ਲੱਭੋ',
+    'nav.offer': 'ਸਫ਼ਰ ਦਰਜ ਕਰੋ',
+    nav_logout: 'ਲਾਗ ਆਉਟ',
+    nav_offer_trip: 'ਡਰਾਈਵਰ ਡੈਸ਼ਬੋਰਡ',
+    'hero.kicker': 'ਸਮਾਰਟ ਮਾਲ ਢੋਆ-ਢੁਆਈ',
+    'hero.sub': 'ਪੂਰੀ ਗੱਡੀ ਬੁੱਕ ਕੀਤੇ ਬਿਨਾਂ ਖਾਲੀ ਥਾਂ ਲੱਭੋ ਅਤੇ ਆਪਣਾ ਮਾਲ ਅਸਾਨੀ ਨਾਲ ਭੇਜੋ।',
+    'hero.sub2': 'ਮਾਲ ਭੇਜੋ · ਥਾਂ ਸਾਂਝੀ ਕਰੋ · ਪੈਸੇ ਬਚਾਓ',
+    'cta.find': 'ਗੱਡੀ ਲੱਭੋ',
+    'cta.offer': 'ਸਫ਼ਰ ਦਰਜ ਕਰੋ',
+    'how.title': 'ਇਹ ਕਿਵੇਂ ਕੰਮ ਕਰਦਾ ਹੈ',
+    'how.sub': '4 ਆਸਾਨ ਕਦਮਾਂ ਵਿੱਚ ਮਾਲ ਦੀ ਢੋਆ-ਢੁਆਈ',
+    'how.step1.title': '1. ਰੂਟ ਲੱਭੋ',
+    'how.step1.desc': 'ਗੱਡੀ ਮਾਲਕ ਆਪਣਾ ਰੂਟ, ਯਾਤਰਾ ਦੀ ਮਿਤੀ ਅਤੇ ਉਪਲਬਧ ਥਾਂ ਪੋਸਟ ਕਰਦੇ ਹਨ।',
+    'how.step2.title': '2. ਥਾਂ ਦੀ ਬੇਨਤੀ ਕਰੋ',
+    'how.step2.desc': 'ਢੁਕਵੀਂ ਗੱਡੀ ਚੁਣੋ ਅਤੇ ਆਪਣੇ ਮਾਲ ਲਈ ਥਾਂ ਬੁੱਕ ਕਰੋ।',
+    'how.step3.title': '3. ਮਾਲ ਦਾ ਵੇਰਵਾ ਦਿਓ',
+    'how.step3.desc': 'ਮਾਲ ਦੀ ਕਿਸਮ, ਵਜ਼ਨ ਅਤੇ ਪਿਕਅੱਪ ਵੇਰਵੇ ਦਰਜ ਕਰੋ।',
+    'how.step4.title': '4. ਡਿਲੀਵਰੀ ਪੂਰੀ ਕਰੋ',
+    'how.step4.desc': 'ਮਾਲ ਪਹੁੰਚਣ ਉੱਤੇ ਡਿਲੀਵਰੀ ਦੀ ਪੁਸ਼ਟੀ ਕਰੋ।',
+    'tts.read': 'ਸੁਣੋ',
+    'tts.stop': 'ਰੋਕੋ',
+    'tts.read_aloud': 'ਪੂਰਾ ਵੇਰਵਾ ਸੁਣੋ',
+    'tts.stop_audio': 'ਆਵਾਜ਼ ਬੰਦ ਕਰੋ',
+    'tab.explore': 'ਉਪਲਬਧ ਗੱਡੀਆਂ',
+    'tab.my_bookings': 'ਮੇਰੀਆਂ ਬੁਕਿੰਗਾਂ',
+    'tab.map': 'ਲਾਈਵ ਨਕਸ਼ਾ ਰਾਡਾਰ',
+    'tab.profile': 'ਪ੍ਰੋਫਾਈਲ',
+    'tab.driver_trips': 'ਮੇਰੇ ਦਰਜ ਕੀਤੇ ਸਫ਼ਰ',
+    'tab.driver_requests': 'ਆਈਆਂ ਬੇਨਤੀਆਂ',
+    'tab.driver_publish': 'ਨਵਾਂ ਸਫ਼ਰ ਦਰਜ ਕਰੋ',
+    'tab.driver_profile': 'ਡਰਾਈਵਰ ਪ੍ਰੋਫਾਈਲ',
+    'metric.active_trucks': 'ਉਪਲਬਧ ਗੱਡੀਆਂ',
+    'metric.my_bookings': 'ਮੇਰੀਆਂ ਬੁਕਿੰਗਾਂ',
+    'metric.live_transit': 'ਲਾਈਵ ਰਸਤੇ ਵਿੱਚ',
+    'metric.verified_drivers': 'ਤਸਦੀਕਸ਼ੁਦਾ ਡਰਾਈਵਰ',
+    'card.capacity_slots': 'ਸਮਰੱਥਾ ਸਲਾਟ',
+    'card.slots_booked': 'ਸਲਾਟ ਬੁੱਕ ਹੋਏ',
+    'card.space_free': 'ਥਾਂ ਖਾਲੀ ਹੈ',
+    'card.full': 'ਪੂਰੀ ਤਰ੍ਹਾਂ ਭਰਿਆ',
+    'card.co_sharing': 'ਸਾਂਝੇਦਾਰ',
+    'card.first_partner': 'ਪਹਿਲੇ ਸਾਥੀ ਬਣੋ! ਅਗਲੀਆਂ ਬੁਕਿੰਗਾਂ ਨਾਲ ਤੁਹਾਡਾ ਕਿਰਾਇਆ ਹੋਰ ਘਟੇਗਾ।',
+    'card.total_fare': 'ਗੱਡੀ ਦਾ ਕੁੱਲ ਕਿਰਾਇਆ',
+    'card.ton_km_split': 'ਟਨ-ਕਿਮੀ ਸਹੀ ਵੰਡ',
+    'card.fair_pricing_note': 'ਸਹੀ ਮੁੱਲ: ਤੁਸੀਂ ਸਿਰਫ਼ ਆਪਣੇ ਮਾਲ ਦੇ ਵਜ਼ਨ (ਕਿਲੋ) × ਦੂਰੀ (ਕਿਮੀ) ਅਨੁਸਾਰ ਭੁਗਤਾਨ ਕਰਦੇ ਹੋ।',
+    'card.pickup_loc': 'ਪਿਕਅੱਪ ਸਥਾਨ',
+    'card.view_map': 'ਨਕਸ਼ੇ ਤੇ ਦੇਖੋ',
+    'card.request_space': 'ਥਾਂ ਬੁੱਕ ਕਰੋ',
+    'card.close_form': 'ਫਾਰਮ ਬੰਦ ਕਰੋ',
+    'card.track_live': 'ਲਾਈਵ ਟਰੈਕ ਕਰੋ',
+    'card.live_badge': 'ਲਾਈਵ ਰਸਤੇ ਵਿੱਚ ਹੈ',
+    'card.verified': 'ਤਸਦੀਕਸ਼ੁਦਾ ਡਰਾਈਵਰ',
+    'card.unverified': 'ਗੈਰ-ਤਸਦੀਕਸ਼ੁਦਾ',
+    'pricing.max_solo': 'ਵੱਧ ਤੋਂ ਵੱਧ ਅੰਦਾਜ਼ਨ ਕਿਰਾਇਆ:',
+    'pricing.calc_segment': 'ਰੂਟ ਅਨੁਸਾਰ ਤੁਹਾਡਾ ਕਿਰਾਇਆ:',
+    'pricing.base_rate': 'ਮੁੱਢਲੀ ਦਰ',
+    'pricing.pooling_active': 'ਸਾਂਝੀ ਛੋਟ ਸਰਗਰਮ:',
+    'pricing.pooling_desc': 'ਹੋਰ ਵਪਾਰੀ ਜੁੜਨ ਤੇ ਇਹ ਕਿਰਾਇਆ ਆਪਣੇ ਆਪ ਹੋਰ ਘਟ ਜਾਵੇਗਾ।',
+    'form.goods_category': 'ਮਾਲ ਦੀ ਸ਼੍ਰੇਣੀ',
+    'form.select_category': 'ਸ਼੍ਰੇਣੀ ਚੁਣੋ',
+    'form.goods_weight': 'ਮਾਲ ਦਾ ਵਜ਼ਨ (ਕਿਲੋ)',
+    'form.pickup_loc': 'ਤੁਹਾਡਾ ਪਿਕਅੱਪ ਸਥਾਨ',
+    'form.delivery_loc': 'ਡਿਲੀਵਰੀ ਸਥਾਨ',
+    'form.submit_booking': 'ਬੁਕਿੰਗ ਜਮ੍ਹਾਂ ਕਰੋ',
+    'driver.publish_title': 'ਨਵਾਂ ਸਫ਼ਰ ਦਰਜ ਕਰੋ',
+    'driver.from': 'ਸ਼ੁਰੂਆਤੀ ਸ਼ਹਿਰ / ਮੰਡੀ',
+    'driver.to': 'ਪਹੁੰਚ ਸ਼ਹਿਰ',
+    'driver.date': 'ਸਫ਼ਰ ਦੀ ਮਿਤੀ',
+    'driver.vehicle': 'ਗੱਡੀ ਦੀ ਕਿਸਮ',
+    'driver.total_kg': 'ਕੁੱਲ ਸਮਰੱਥਾ (ਕਿਲੋ)',
+    'driver.price': 'ਕੁੱਲ ਸਫ਼ਰ ਭਾੜਾ (₹)',
+    'driver.btn_publish': 'ਸਫ਼ਰ ਪ੍ਰਕਾਸ਼ਿਤ ਕਰੋ',
+    'driver.start_trip': 'ਸਫ਼ਰ ਸ਼ੁਰੂ ਕਰੋ ਅਤੇ GPS ਆਨ ਕਰੋ',
+    'driver.complete_ride': 'ਡਿਲੀਵਰੀ ਪੂਰੀ ਕਰੋ',
+    'driver.cancel_trip': 'ਸਫ਼ਰ ਰੱਦ ਕਰੋ',
+    'profile.setup_title': 'ਆਪਣੀ ਪ੍ਰੋਫਾਈਲ ਪੂਰੀ ਕਰੋ',
+    'profile.submit_btn': 'ਸੇਵ ਕਰੋ ਅਤੇ ਅੱਗੇ ਵਧੋ'
+  },
 
-    'nav.find':
-      'ବାହନ ଖୋଜନ୍ତୁ',
-
-    'nav.offer':
-      'ଯାତ୍ରା ଦିଅନ୍ତୁ',
-
-    'cta.find':
-      'ବାହନ ଖୋଜନ୍ତୁ',
-
-    'cta.offer':
-      'ଯାତ୍ରା ଦିଅନ୍ତୁ',
-
-    'find.title':
-      'ବାହନ ଖୋଜନ୍ତୁ',
-
-    'request.title':
-      'ବାହନରେ ସ୍ଥାନ ଅନୁରୋଧ କରନ୍ତୁ',
-
-    'request.goodsCategory':
-      'ସାମଗ୍ରୀର ପ୍ରକାର',
-
-    'request.send':
-      'ଅନୁରୋଧ ପଠାନ୍ତୁ',
-
-    'offer.title':
-      'ଯାତ୍ରା ଦିଅନ୍ତୁ',
-
-    'offer.publish':
-      'ଯାତ୍ରା ପ୍ରକାଶ କରନ୍ତୁ'
+  /* ================= GUJARATI ================= */
+  gu: {
+    ...EN,
+    gov: 'સ્માર્ટ ડિજિટલ માલ પરિવહન પ્લેટફોર્મ',
+    tagline: 'સહિયારું માલ પરિવહન અને લોજિસ્ટિક્સ',
+    'nav.home': 'હોમ',
+    'nav.find': 'વાહન શોધો',
+    'nav.offer': 'ટ્રિપ ઓફર કરો',
+    nav_logout: 'લૉગ આઉટ',
+    nav_offer_trip: 'ડ્રાઈવર ડેશબોર્ડ',
+    'hero.kicker': 'સ્માર્ટ માલ પરિવહન',
+    'hero.sub': 'આખું વાહન બુક કર્યા વગર ઉપલબ્ધ ખાલી જગ્યા શોધો અને તમારો માલ સરળતાથી મોકલો.',
+    'hero.sub2': 'માલ મોકલો · જગ્યા શેર કરો · પૈસા બચાવો',
+    'cta.find': 'વાહન શોધો',
+    'cta.offer': 'ટ્રિપ ઓફર કરો',
+    'how.title': 'આ કેવી રીતે કાર્ય કરે છે',
+    'how.sub': '4 સરળ પગલાંમાં માલ પરિવહન',
+    'how.step1.title': '1. રૂટ શોધો',
+    'how.step1.desc': 'વાહન માલિકો તેમનો રૂટ, પ્રવાસ તારીખ અને ખાલી જગ્યા શેર કરે છે.',
+    'how.step2.title': '2. જગ્યા માટે વિનંતી કરો',
+    'how.step2.desc': 'યોગ્ય વાહન પસંદ કરો અને તમારા માલ માટે જગ્યા બુક કરો.',
+    'how.step3.title': '3. માલની વિગતો આપો',
+    'how.step3.desc': 'માલનો પ્રકાર, વજન અને પિકઅપ વિગતો દાખલ કરો.',
+    'how.step4.title': '4. ડિલિવરી પૂર્ણ કરો',
+    'how.step4.desc': 'માલ પહોંચ્યા પછી ડિલિવરીની પુષ્ટિ કરો.',
+    'tts.read': 'સાંભળો',
+    'tts.stop': 'રોકો',
+    'tts.read_aloud': 'સંપૂર્ણ વિગતો સાંભળો',
+    'tts.stop_audio': 'અવાજ બંધ કરો',
+    'tab.explore': 'ઉપલબ્ધ વાહનો',
+    'tab.my_bookings': 'મારી બુકિંગ',
+    'tab.map': 'લાઈવ નકશો રડાર',
+    'tab.profile': 'પ્રોફાઇલ',
+    'tab.driver_trips': 'મારી પ્રકાશિત ટ્રિપ્સ',
+    'tab.driver_requests': 'આવેલી વિનંતીઓ',
+    'tab.driver_publish': 'નવી ટ્રિપ નોંધો',
+    'tab.driver_profile': 'ડ્રાઈવર પ્રોફાઇલ',
+    'metric.active_trucks': 'ઉપલબ્ધ વાહનો',
+    'metric.my_bookings': 'મારી બુકિંગ',
+    'metric.live_transit': 'લાઈવ મુસાફરીમાં છે',
+    'metric.verified_drivers': 'ચકાસાયેલ ડ્રાઈવરો',
+    'card.capacity_slots': 'ક્ષમતા સ્લોટ્સ',
+    'card.slots_booked': 'સ્લોટ્સ બુક થયા',
+    'card.space_free': 'જગ્યા ખાલી છે',
+    'card.full': 'સંપૂર્ણ ભરેલું',
+    'card.co_sharing': 'સહ-ભાગીદારો',
+    'card.first_partner': 'પ્રથમ ભાગીદાર બનો! વધુ બુકિંગ થવાથી તમારું ભાડું હજુ ઘટશે.',
+    'card.total_fare': 'વાહનનું કુલ ભાડું',
+    'card.ton_km_split': 'ટન-કિમી ન્યાયી વહેંચણી',
+    'card.fair_pricing_note': 'વાજબી દર: તમે માત્ર તમારા માલના વજન (કિલો) × અંતર (કિમી) મુજબ પૈસા ચૂકવો છો.',
+    'card.pickup_loc': 'પિકઅપ સ્થળ',
+    'card.view_map': 'નકશા પર જુઓ',
+    'card.request_space': 'જગ્યા બુક કરો',
+    'card.close_form': 'ફોર્મ બંધ કરો',
+    'card.track_live': 'લાઈવ ટ્રેક કરો',
+    'card.live_badge': 'લાઈવ રસ્તા પર છે',
+    'card.verified': 'ચકાસાયેલ ડ્રાઈવર',
+    'card.unverified': 'અચકાસાયેલ',
+    'pricing.max_solo': 'મહત્તમ અંદાજિત ભાડું:',
+    'pricing.calc_segment': 'રૂટ મુજબ તમારું ભાડું:',
+    'pricing.base_rate': 'મૂળ દર',
+    'pricing.pooling_active': 'શેરિંગ ડિસ્કાઉન્ટ સક્રિય:',
+    'pricing.pooling_desc': 'વધુ વેપારીઓ જોડાશે તેમ આ ભાડું આપમેળે ઘટશે.',
+    'form.goods_category': 'માલનો પ્રકાર',
+    'form.select_category': 'કેટેગરી પસંદ કરો',
+    'form.goods_weight': 'માલનું વજન (કિલો)',
+    'form.pickup_loc': 'તમારું પિકઅપ સ્થળ',
+    'form.delivery_loc': 'ડિલિવરી સ્થળ',
+    'form.submit_booking': 'બુકિંગ સબમિટ કરો',
+    'driver.publish_title': 'નવી ટ્રિપ નોંધો',
+    'driver.from': 'શરૂઆતનું શહેર / માર્કેટ',
+    'driver.to': 'ગંતવ્ય શહેર',
+    'driver.date': 'પ્રવાસ તારીખ',
+    'driver.vehicle': 'વાહનનો પ્રકાર',
+    'driver.total_kg': 'કુલ ક્ષમતા (કિલો)',
+    'driver.price': 'કુલ ટ્રિપ ભાડું (₹)',
+    'driver.btn_publish': 'ટ્રિપ પ્રકાશિત કરો',
+    'driver.start_trip': 'ટ્રિપ શરૂ કરો અને GPS ચાલુ કરો',
+    'driver.complete_ride': 'ડિલિવરી પૂર્ણ કરો',
+    'driver.cancel_trip': 'ટ્રિપ રદ કરો',
+    'profile.setup_title': 'પ્રોફાઇલ પૂર્ણ કરો',
+    'profile.submit_btn': 'સાચવો અને આગળ વધો'
   }
 }
 
-
 /* =========================================================
-   MAARG-MITRA VOICE ASSISTANT TEXT
+   SAFAR-MITRA VOICE BOT REPLIES (FALLBACK COMPATIBILITY)
 ========================================================= */
 
 const MITRA = {
-
   en: {
-    hello:
-      'Hello! I am Maarg-Mitra. I can help you find a vehicle or offer a trip.',
-
-    find:
-      'Opening the Find a Vehicle page.',
-
-    offer:
-      'Opening the Offer a Trip page.',
-
-    help:
-      'You can say find a vehicle, request space, or offer a trip.',
-
-    fallback:
-      'I can help you find a vehicle or offer a trip.'
+    hello: 'Hello! I am Safar-Mitra. How can I help you transport your goods today?',
+    find: 'I will help you find a suitable vehicle traveling on your route.',
+    offer: 'I can assist you with publishing a new vehicle trip load.'
   },
-
-
   hi: {
-    hello:
-      'नमस्ते! मैं मार्ग-मित्र हूँ। मैं आपको वाहन खोजने या यात्रा देने में मदद कर सकता हूँ।',
-
-    find:
-      'वाहन खोजने वाला पेज खोला जा रहा है।',
-
-    offer:
-      'यात्रा देने वाला पेज खोला जा रहा है।',
-
-    help:
-      'आप वाहन खोजें, जगह का अनुरोध करें या यात्रा दें कह सकते हैं।',
-
-    fallback:
-      'मैं आपको वाहन खोजने या यात्रा देने में मदद कर सकता हूँ।'
-  },
-
-
-  bho: {
-    hello:
-      'नमस्ते! हम मार्ग-मित्र बानी। वाहन खोजे आ यात्रा देवे में मदद कर सकत बानी।',
-
-    find:
-      'वाहन खोजे वाला पेज खुलत बा।',
-
-    offer:
-      'यात्रा देवे वाला पेज खुलत बा।',
-
-    help:
-      'रउआ वाहन खोजीं, जगह माँगीं या यात्रा दीं कह सकत बानी।',
-
-    fallback:
-      'हम वाहन खोजे आ यात्रा देवे में मदद कर सकत बानी।'
-  },
-
-
-  mr: {
-    hello:
-      'नमस्कार! मी मार्ग-मित्र आहे. वाहन शोधण्यात किंवा प्रवास देण्यात मदत करू शकतो.',
-
-    find:
-      'वाहन शोधण्याचे पृष्ठ उघडत आहे.',
-
-    offer:
-      'प्रवास देण्याचे पृष्ठ उघडत आहे.',
-
-    help:
-      'तुम्ही वाहन शोधा किंवा प्रवास द्या असे म्हणू शकता.',
-
-    fallback:
-      'मी वाहन शोधण्यात मदत करू शकतो.'
-  },
-
-
-  bn: {
-    hello:
-      'নমস্কার! আমি মার্গ-মিত্র। আমি আপনাকে গাড়ি খুঁজতে বা যাত্রা অফার করতে সাহায্য করতে পারি।',
-
-    find:
-      'গাড়ি খোঁজার পেজ খোলা হচ্ছে।',
-
-    offer:
-      'যাত্রা অফার করার পেজ খোলা হচ্ছে।',
-
-    help:
-      'আপনি গাড়ি খুঁজুন বা যাত্রা অফার করুন বলতে পারেন।',
-
-    fallback:
-      'আমি আপনাকে গাড়ি খুঁজতে সাহায্য করতে পারি।'
-  },
-
-
-  ur: {
-    hello:
-      'السلام علیکم! میں مارگ متر ہوں۔ میں گاڑی تلاش کرنے یا سفر پیش کرنے میں مدد کر سکتا ہوں۔',
-
-    find:
-      'گاڑی تلاش کرنے والا صفحہ کھولا جا رہا ہے۔',
-
-    offer:
-      'سفر پیش کرنے والا صفحہ کھولا جا رہا ہے۔',
-
-    help:
-      'آپ گاڑی تلاش کریں یا سفر پیش کریں کہہ سکتے ہیں۔',
-
-    fallback:
-      'میں گاڑی تلاش کرنے میں مدد کر سکتا ہوں۔'
-  },
-
-
-  te: {
-    hello:
-      'నమస్కారం! నేను మార్గ్-మిత్ర. వాహనం వెతకడం లేదా ప్రయాణం అందించడంలో సహాయం చేస్తాను.',
-
-    find:
-      'వాహనం వెతికే పేజీ తెరవబడుతోంది.',
-
-    offer:
-      'ప్రయాణాన్ని అందించే పేజీ తెరవబడుతోంది.',
-
-    help:
-      'మీరు వాహనం వెతకండి లేదా ప్రయాణాన్ని అందించండి అని చెప్పవచ్చు.',
-
-    fallback:
-      'వాహనం వెతకడంలో నేను సహాయం చేస్తాను.'
-  },
-
-
-  ta: {
-    hello:
-      'வணக்கம்! நான் மார்க்-மித்ரா. வாகனம் தேட அல்லது பயணம் வழங்க உதவுகிறேன்.',
-
-    find:
-      'வாகனம் தேடும் பக்கம் திறக்கப்படுகிறது.',
-
-    offer:
-      'பயணம் வழங்கும் பக்கம் திறக்கப்படுகிறது.',
-
-    help:
-      'நீங்கள் வாகனம் தேடுங்கள் அல்லது பயணம் வழங்குங்கள் என்று கூறலாம்.',
-
-    fallback:
-      'வாகனம் தேட நான் உதவுகிறேன்.'
-  },
-
-
-  kn: {
-    hello:
-      'ನಮಸ್ಕಾರ! ನಾನು ಮಾರ್ಗ್-ಮಿತ್ರ. ವಾಹನ ಹುಡುಕಲು ಅಥವಾ ಪ್ರಯಾಣ ನೀಡಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ.',
-
-    find:
-      'ವಾಹನ ಹುಡುಕುವ ಪುಟ ತೆರೆಯುತ್ತಿದೆ.',
-
-    offer:
-      'ಪ್ರಯಾಣ ನೀಡುವ ಪುಟ ತೆರೆಯುತ್ತಿದೆ.',
-
-    help:
-      'ನೀವು ವಾಹನ ಹುಡುಕಿ ಅಥವಾ ಪ್ರಯಾಣ ನೀಡಿ ಎಂದು ಹೇಳಬಹುದು.',
-
-    fallback:
-      'ವಾಹನ ಹುಡುಕಲು ನಾನು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ.'
-  },
-
-
-  ml: {
-    hello:
-      'നമസ്കാരം! ഞാൻ മാർഗ്-മിത്ര. വാഹനം കണ്ടെത്താനോ യാത്ര നൽകാനോ സഹായിക്കും.',
-
-    find:
-      'വാഹനം കണ്ടെത്തുന്ന പേജ് തുറക്കുന്നു.',
-
-    offer:
-      'യാത്ര നൽകുന്ന പേജ് തുറക്കുന്നു.',
-
-    help:
-      'നിങ്ങൾ വാഹനം കണ്ടെത്തുക അല്ലെങ്കിൽ യാത്ര നൽകുക എന്ന് പറയാം.',
-
-    fallback:
-      'വാഹനം കണ്ടെത്താൻ ഞാൻ സഹായിക്കും.'
-  },
-
-
-  or: {
-    hello:
-      'ନମସ୍କାର! ମୁଁ ମାର୍ଗ-ମିତ୍ର। ବାହନ ଖୋଜିବା କିମ୍ବା ଯାତ୍ରା ଦେବାରେ ସାହାଯ୍ୟ କରିପାରିବି।',
-
-    find:
-      'ବାହନ ଖୋଜିବା ପୃଷ୍ଠା ଖୋଲୁଛି।',
-
-    offer:
-      'ଯାତ୍ରା ଦେବା ପୃଷ୍ଠା ଖୋଲୁଛି।',
-
-    help:
-      'ଆପଣ ବାହନ ଖୋଜନ୍ତୁ କିମ୍ବା ଯାତ୍ରା ଦିଅନ୍ତୁ କହିପାରିବେ।',
-
-    fallback:
-      'ମୁଁ ବାହନ ଖୋଜିବାରେ ସାହାଯ୍ୟ କରିପାରିବି।'
+    hello: 'नमस्ते! मैं सफ़र-मित्र हूँ। आज आपके सामान परिवहन में कैसे मदद कर सकता हूँ?',
+    find: 'मैं आपके मार्ग पर जाने वाले उपयुक्त वाहन को खोजने में आपकी मदद करूँगा।',
+    offer: 'मैं आपकी नई यात्रा लोड प्रकाशित करने में मदद कर सकता हूँ।'
   }
 }
 
@@ -1259,8 +1339,7 @@ const MITRA = {
 const LangCtx = createContext(null)
 
 export function LangProvider({ children }) {
-
-  const [lang, setLang] = useState(() => {
+  const [lang, setLangState] = useState(() => {
     try {
       return localStorage.getItem('ss_lang') || 'en'
     } catch (e) {
@@ -1268,86 +1347,55 @@ export function LangProvider({ children }) {
     }
   })
 
+  const setLang = (newLang) => {
+    setLangState(newLang)
+    try {
+      localStorage.setItem('ss_lang', newLang)
+      document.documentElement.lang = newLang
+    } catch (e) {}
+  }
 
   useEffect(() => {
-
     document.documentElement.lang = lang
-
-    try {
-      localStorage.setItem(
-        'ss_lang',
-        lang
-      )
-    } catch (e) {}
-
   }, [lang])
 
-
-  const t = key => {
-
-    if (
-      T[lang] &&
-      Object.prototype.hasOwnProperty.call(
-        T[lang],
-        key
-      )
-    ) {
+  const t = (key, fallback = '') => {
+    if (!key) return ''
+    if (T[lang] && T[lang][key] !== undefined && T[lang][key] !== '') {
       return T[lang][key]
     }
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        T.en,
-        key
-      )
-    ) {
+    if (T.en && T.en[key] !== undefined && T.en[key] !== '') {
       return T.en[key]
     }
-
-    return key
+    return fallback || key
   }
 
-
-  const m = key => {
-
-    if (
-      MITRA[lang] &&
-      Object.prototype.hasOwnProperty.call(
-        MITRA[lang],
-        key
-      )
-    ) {
+  const m = (key) => {
+    if (MITRA[lang] && MITRA[lang][key]) {
       return MITRA[lang][key]
     }
-
-    return (
-      MITRA.en[key] ||
-      key
-    )
+    return MITRA.en[key] || key
   }
 
+  const activeLangMeta = LANGS.find(l => l.id === lang) || LANGS[0]
 
   return (
-
     <LangCtx.Provider
       value={{
         lang,
         setLang,
         t,
-        m
+        m,
+        activeLangMeta,
+        langs: LANGS
       }}
     >
-
       {children}
-
     </LangCtx.Provider>
-
   )
 }
 
-
-export const useLang = () =>
-  useContext(LangCtx)
+export const useLang = () => useContext(LangCtx)
 
 
 /* =========================================================
@@ -1356,74 +1404,40 @@ export const useLang = () =>
 
 const AppCtx = createContext(null)
 
-
 export function AppProvider({ children }) {
-
   const [user, setUserState] = useState(() => {
-
     try {
-
-      const saved =
-        localStorage.getItem('ss_user')
-
-      return saved
-        ? JSON.parse(saved)
-        : null
-
+      const saved = localStorage.getItem('ss_user')
+      return saved ? JSON.parse(saved) : null
     } catch (e) {
-
       return null
-
     }
-
   })
 
-
   const setUser = userData => {
-
     setUserState(userData)
-
     try {
-
       if (userData) {
-
-        localStorage.setItem(
-          'ss_user',
-          JSON.stringify(userData)
-        )
-
+        localStorage.setItem('ss_user', JSON.stringify(userData))
       } else {
-
-        localStorage.removeItem(
-          'ss_user'
-        )
-
+        localStorage.removeItem('ss_user')
       }
-
     } catch (e) {}
-
   }
 
-
   return (
-
     <AppCtx.Provider
       value={{
         user,
         setUser
       }}
     >
-
       {children}
-
     </AppCtx.Provider>
-
   )
 }
 
-
-export const useApp = () =>
-  useContext(AppCtx)
+export const useApp = () => useContext(AppCtx)
 
 
 /* =========================================================
@@ -1431,7 +1445,4 @@ export const useApp = () =>
 ========================================================= */
 
 export const inr = n =>
-  '₹' +
-  Number(n || 0).toLocaleString(
-    'en-IN'
-  )
+  '₹' + Number(n || 0).toLocaleString('en-IN')

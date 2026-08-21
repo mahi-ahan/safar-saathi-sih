@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 
 import { useLang } from './lib'
+import { TTSButton } from './tts'
 
 import {
   Btn,
@@ -102,28 +103,28 @@ export function Home() {
 
   const steps = [
     [
-      15,
+      25,
+      MapPin,
+      t('how.step1.title', '1. Search Route'),
+      t('how.step1.desc', 'Vehicle owners publish their route, travel date and available cargo space.')
+    ],
+    [
+      50,
       Search,
-      'Find a Vehicle',
-      'Search vehicles travelling on your route and find available space.'
+      t('how.step2.title', '2. Request space'),
+      t('how.step2.desc', 'People can search for suitable vehicles and request space for their goods.')
     ],
     [
-      45,
+      75,
       Package,
-      'Request Transport',
-      'Add your goods details and send a request to the vehicle owner.'
-    ],
-    [
-      78,
-      Truck,
-      'Move Your Goods',
-      'The vehicle owner accepts your request and transports your goods.'
+      t('how.step3.title', '3. Confirm the goods'),
+      t('how.step3.desc', 'Enter the goods category, quantity and pickup details before sending your request.')
     ],
     [
       100,
       CheckCircle2,
-      'Delivery Complete',
-      'Confirm delivery and complete your transportation journey.'
+      t('how.step4.title', '4. Complete delivery'),
+      t('how.step4.desc', 'The trip is completed after the goods reach their destination.')
     ]
   ]
 
@@ -173,9 +174,14 @@ export function Home() {
           {/* 3. FIXED FOREGROUND TEXT & BUTTONS LAYER */}
           <div className="absolute inset-0 z-20 flex items-center px-6 sm:px-12 md:px-16 pointer-events-none">
             <div className="max-w-xl text-left pointer-events-auto text-white">
-              <span className="inline-block font-mono text-[11px] px-2.5 py-1 rounded-full bg-green-deep/60 text-[#E4C878] border border-gold-light/20 mb-4 tracking-wider uppercase font-semibold">
-                Smart Goods Transportation
-              </span>
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <span className="inline-block font-mono text-[11px] px-2.5 py-1 rounded-full bg-green-deep/60 text-[#E4C878] border border-gold-light/20 tracking-wider uppercase font-semibold">
+                  {t('hero.kicker', 'Smart Goods Transportation')}
+                </span>
+                <TTSButton
+                  textToRead={`Safar-Saathi. ${t('hero.sub', 'Find available vehicle space and move your goods easily without booking an entire vehicle.')}`}
+                />
+              </div>
 
               <h1 className="font-display font-extrabold text-3xl sm:text-5xl text-white drop-shadow-md leading-tight">
                 Safar-Saathi
@@ -187,11 +193,11 @@ export function Home() {
               </h1>
 
               <p className="mt-4 text-sm sm:text-base text-cream/90 font-medium max-w-md drop-shadow">
-                Find available vehicle space and move your goods easily.
+                {t('hero.sub', 'Find available vehicle space and move your goods easily without booking an entire vehicle.')}
                 <br />
 
                 <span className="text-xs text-cream/70 font-normal">
-                  Send goods · Offer space · Share the journey
+                  {t('hero.sub2', 'Send goods · Offer space · Share the journey')}
                 </span>
               </p>
 
@@ -226,9 +232,9 @@ export function Home() {
                       navigate('/login', { state: { intent: 'find' } });
                     }
                   }}
-                  className="bg-green-deep text-cream px-6 py-3.5 rounded-xl font-semibold hover:bg-green border border-green-light/20 transition-all shadow-lg hover:-translate-y-0.5"
+                  className="bg-green-deep text-cream px-6 py-3.5 rounded-xl font-semibold hover:bg-green border border-green-light/20 transition-all shadow-lg hover:-translate-y-0.5 cursor-pointer"
                 >
-                  Find a Vehicle
+                  {t('cta.find', 'Find a Vehicle')}
                 </button>
 
                 {/* Offer a Trip Button */}
@@ -262,9 +268,9 @@ export function Home() {
                       navigate('/login', { state: { intent: 'offer' } });
                     }
                   }}
-                  className="bg-gold text-green-deep px-6 py-3.5 rounded-xl font-semibold hover:bg-gold-light transition-all shadow-lg hover:-translate-y-0.5"
+                  className="bg-gold text-green-deep px-6 py-3.5 rounded-xl font-semibold hover:bg-gold-light transition-all shadow-lg hover:-translate-y-0.5 cursor-pointer"
                 >
-                  Offer a Trip
+                  {t('cta.offer', 'Offer a Trip')}
                 </button>
               </div>
             </div>
@@ -275,10 +281,10 @@ export function Home() {
         <div className="max-w-7xl mx-auto mt-12 sm:mt-20">
           <Reveal>
             <h2 className="font-display font-bold text-2xl sm:text-3xl text-green-deep">
-              How It Works
+              {t('how.title', 'How It Works')}
 
               <span className="text-base font-body font-normal text-green-soft">
-                {' '} / Simple transport in 4 steps
+                {' '} / {t('how.sub', 'Simple transport in 4 steps')}
               </span>
             </h2>
           </Reveal>
@@ -403,6 +409,7 @@ const GOODS_CATEGORIES = [
 ]
 
 export function FindVehicles() {
+  const { t } = useLang()
   const [toast, notify] = useToast()
   const navigate = useNavigate()
 
@@ -938,27 +945,30 @@ export function FindVehicles() {
               Cargo Marketplace & Logistics Hub
             </span>
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold flex items-center gap-1">
-              <CheckCircle2 size={13} /> Sender Active
+              <CheckCircle2 size={13} /> {t('profile.sender_role', 'Sender Active')}
             </span>
           </div>
-          <h1 className="font-display font-bold text-2xl sm:text-3xl text-green-deep mt-1">
-            Find a Vehicle (Sender Dashboard)
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display font-bold text-2xl sm:text-3xl text-green-deep mt-1">
+              {t('find.title', 'Find a Vehicle')}
+            </h1>
+            <TTSButton textToRead={`${t('find.title', 'Find a Vehicle')}. ${t('find.subtitle', 'Browse available cargo space, calculate fair Ton-Km fares, and track shipments live.')}`} />
+          </div>
           <p className="text-sm text-green-soft mt-1">
-            Browse available cargo space, calculate fair Ton-Km fares, and track shipments live.
+            {t('find.subtitle', 'Browse available cargo space, calculate fair Ton-Km fares, and track shipments live.')}
           </p>
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
           <div className="hidden sm:block text-right">
-            <p className="font-bold text-xs text-green-deep">{profile.full_name || 'Sender'}</p>
+            <p className="font-bold text-xs text-green-deep">{profile.full_name || t('profile.sender_role', 'Sender')}</p>
             <p className="text-[11px] text-green-soft font-mono">{profile.email}</p>
           </div>
           <button
             onClick={handleLogout}
             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs cursor-pointer"
           >
-            Logout
+            {t('nav_logout', 'Logout')}
           </button>
         </div>
       </div>
@@ -970,9 +980,9 @@ export function FindVehicles() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">Available Trucks</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('metric.active_trucks', 'Available Trucks')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">{activeVehiclesCount}</p>
-            <p className="text-[11px] text-green-soft mt-0.5">{liveVehiclesCount} Live In-Transit</p>
+            <p className="text-[11px] text-green-soft mt-0.5">{liveVehiclesCount} {t('metric.live_transit', 'Live In-Transit')}</p>
           </div>
           <div className="w-11 h-11 rounded-2xl bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-xl shadow-inner">
             🚛
@@ -984,7 +994,7 @@ export function FindVehicles() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">My Cargo Bookings</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('metric.my_bookings', 'My Cargo Bookings')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">{myRequests.length}</p>
             <p className={`text-[11px] font-semibold mt-0.5 ${myPendingConfCount > 0 ? 'text-amber-700 font-bold animate-pulse' : 'text-green-soft'}`}>
               {myPendingConfCount > 0 ? `⚡ ${myPendingConfCount} Action Required` : `${myActiveBookingsCount} Active Bookings`}
@@ -1000,7 +1010,7 @@ export function FindVehicles() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">Free Cargo Space</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('card.space_free', 'Free Cargo Space')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">{totalAvailableKgAcrossTrips.toLocaleString('en-IN')} <span className="text-xs font-mono font-normal">kg</span></p>
             <p className="text-[11px] text-green-soft mt-0.5">Across marketplace</p>
           </div>
@@ -1014,7 +1024,7 @@ export function FindVehicles() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">Verified Transporters</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('metric.verified_drivers', 'Verified Transporters')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">{verifiedDriversCount}</p>
             <p className="text-[11px] text-green-soft mt-0.5">🛡️ Govt. ID Confirmed</p>
           </div>
@@ -1034,7 +1044,7 @@ export function FindVehicles() {
             }`}
         >
           <Truck size={17} />
-          <span>Explore Available Vehicles</span>
+          <span>{t('tab.explore', 'Explore Available Vehicles')}</span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold ${activeTab === 'explore' ? 'bg-cream text-green-deep' : 'bg-green-deep/10 text-green-deep'}`}>
             {activeVehiclesCount}
           </span>
@@ -1048,7 +1058,7 @@ export function FindVehicles() {
             }`}
         >
           <Package size={17} />
-          <span>My Bookings & Shipments</span>
+          <span>{t('tab.my_bookings', 'My Bookings & Shipments')}</span>
           {myPendingConfCount > 0 ? (
             <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-500 text-white animate-pulse">
               {myPendingConfCount} confirm
@@ -1068,7 +1078,7 @@ export function FindVehicles() {
             }`}
         >
           <Route size={17} />
-          <span>Live Map Radar</span>
+          <span>{t('tab.map', 'Live Map Radar')}</span>
         </button>
 
         <button
@@ -1079,7 +1089,7 @@ export function FindVehicles() {
             }`}
         >
           <Users size={17} />
-          <span>Sender Profile</span>
+          <span>{t('tab.profile', 'Sender Profile')}</span>
         </button>
       </div>
 
@@ -1098,7 +1108,7 @@ export function FindVehicles() {
               <input
                 value={f.pickupSearch}
                 onChange={e => setF({ ...f, pickupSearch: e.target.value })}
-                placeholder="Search by pickup location, origin city, destination, or route in India..."
+                placeholder={t('find.searchPlaceholder', 'Search by pickup location, origin city, destination, or route in India...')}
                 className="w-full rounded-2xl border border-gold/40 bg-cream/30 pl-11 pr-4 py-3 outline-none focus:border-green-deep text-sm font-medium"
               />
             </div>
@@ -1109,7 +1119,7 @@ export function FindVehicles() {
                 value={f.state}
                 onChange={e => setF({ ...f, state: e.target.value })}
               >
-                <option value="">All States</option>
+                <option value="">{t('find.allStates', 'All States')}</option>
                 <option>Uttar Pradesh</option>
                 <option>Maharashtra</option>
                 <option>Delhi</option>
@@ -1124,7 +1134,7 @@ export function FindVehicles() {
                 value={f.veh}
                 onChange={e => setF({ ...f, veh: e.target.value })}
               >
-                <option value="">All Vehicle Types</option>
+                <option value="">{t('find.allVehicles', 'All Vehicle Types')}</option>
                 <option value="Bike">Bike / Scooter</option>
                 <option value="Auto">Auto / Rickshaw</option>
                 <option value="Pickup">Pickup</option>
@@ -1138,8 +1148,8 @@ export function FindVehicles() {
                 value={f.sort}
                 onChange={e => setF({ ...f, sort: e.target.value })}
               >
-                <option value="free">Most Free Space (kg)</option>
-                <option value="date">Earliest Date</option>
+                <option value="free">{t('find.sortFree', 'Most Free Space (kg)')}</option>
+                <option value="date">{t('find.sortDate', 'Earliest Date')}</option>
               </select>
 
               <label className="flex items-center gap-2 rounded-xl border border-gold/40 px-3 py-2 text-xs font-semibold cursor-pointer bg-cream/40 select-none">
@@ -1150,7 +1160,7 @@ export function FindVehicles() {
                   onChange={e => setF({ ...f, ver: e.target.checked })}
                 >
                 </input>
-                <span>🛡️ Verified Only</span>
+                <span>{t('find.verifiedOnly', '🛡️ Verified Only')}</span>
               </label>
             </div>
           </div>
@@ -1200,14 +1210,18 @@ export function FindVehicles() {
                           </div>
 
                           <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            <TTSButton
+                              textToRead={`${trip.from} to ${trip.to}. Vehicle ${trip.vehicle}. Available free capacity ${free} kilograms. Departure date ${trip.date}. Total load fare rupees ${trip.total_driver_amount || trip.totalDriverAmount || (trip.pricePerKg * trip.totalKg) || 0}.`}
+                              size={13}
+                            />
                             {isTripLive && (
                               <span className="animate-pulse bg-green-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
                                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-                                🔴 LIVE IN-TRANSIT
+                                {t('card.live_badge', '🔴 LIVE IN-TRANSIT')}
                               </span>
                             )}
                             <Chip tone={trip.verified ? 'indigo' : 'brick'}>
-                              {trip.verified ? '✔ Verified Driver' : '⏳ Unverified'}
+                              {trip.verified ? t('card.verified', '✔ Verified Driver') : t('card.unverified', '⏳ Unverified')}
                             </Chip>
                           </div>
                         </div>
@@ -1223,7 +1237,7 @@ export function FindVehicles() {
                               className="px-3 py-1 bg-green-700 hover:bg-green-800 text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-1 cursor-pointer"
                             >
                               <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-                              <span>📍 Track Live</span>
+                              <span>📍 {t('card.track_live', 'Track Live')}</span>
                             </button>
                           </div>
                         )}
@@ -1232,13 +1246,13 @@ export function FindVehicles() {
                         <div className="bg-cream rounded-xl border border-gold/20 p-3 mb-3 space-y-2.5">
                           <div className="flex items-center justify-between text-xs font-semibold text-green-deep">
                             <span className="flex items-center gap-1.5">
-                              <span>🎯 Capacity Slots:</span>
+                              <span>🎯 {t('card.capacity_slots', 'Capacity Slots')}:</span>
                               <span className="font-mono bg-white px-2 py-0.5 rounded-md border border-gold/30 text-green-deep font-bold">
-                                {trip.slots_filled || 0} of {trip.slots_total || 5} slots booked
+                                {trip.slots_filled || 0} of {trip.slots_total || 5} {t('card.slots_booked', 'slots booked')}
                               </span>
                             </span>
                             <span className={free <= 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
-                              {free <= 0 ? '❌ Full Capacity' : `✔ ${free} kg space free`}
+                              {free <= 0 ? t('card.full', '❌ Full Capacity') : `✔ ${free} kg ${t('card.space_free', 'space free')}`}
                             </span>
                           </div>
                           {/* Visual Slots Track */}
@@ -1261,7 +1275,7 @@ export function FindVehicles() {
                           <div className="pt-1.5 border-t border-gold/15 flex items-center justify-between flex-wrap gap-2 text-[11px]">
                             <div className="flex items-center gap-1 text-green-deep font-medium">
                               <span>👥</span>
-                              <span className="font-semibold text-[11.5px]">Co-Sharing Partners:</span>
+                              <span className="font-semibold text-[11.5px]">{t('card.co_sharing', 'Co-Sharing Partners')}:</span>
                             </div>
 
                             {trip.partners && trip.partners.length > 0 ? (
@@ -1283,7 +1297,7 @@ export function FindVehicles() {
                               </div>
                             ) : (
                               <span className="text-green-soft text-[10.5px] italic">
-                                ✨ Be the first partner! Next bookings will discount your trip.
+                                {t('card.first_partner', '✨ Be the first partner! Next bookings will discount your trip.')}
                               </span>
                             )}
                           </div>
@@ -1293,17 +1307,17 @@ export function FindVehicles() {
                         <div className="rounded-xl bg-gold/10 border border-gold/25 p-3 mb-3">
                           <div className="flex items-center justify-between flex-wrap gap-1">
                             <div>
-                              <p className="text-[10.5px] font-mono text-green-soft uppercase">Total Vehicle Load Fare</p>
+                              <p className="text-[10.5px] font-mono text-green-soft uppercase">{t('card.total_fare', 'Total Vehicle Load Fare')}</p>
                               <p className="font-display font-bold text-lg text-green-deep mt-0.5">
                                 ₹{(trip.total_driver_amount || trip.totalDriverAmount || (trip.pricePerKg * trip.totalKg) || 0).toLocaleString('en-IN')}
                               </p>
                             </div>
                             <span className="px-2.5 py-1 rounded-lg bg-green-deep/10 text-green-deep font-semibold text-[11px]">
-                              ⚖ Ton-Km Fair Split
+                              {t('card.ton_km_split', '⚖ Ton-Km Fair Split')}
                             </span>
                           </div>
                           <p className="text-[11px] text-green-soft mt-1">
-                            Fair pricing: You pay strictly for your cargo weight (kg) × travel distance (km).
+                            {t('card.fair_pricing_note', 'Fair pricing: You pay strictly for your cargo weight (kg) × travel distance (km).')}
                           </p>
                         </div>
 
@@ -1312,7 +1326,7 @@ export function FindVehicles() {
                           <div className="flex items-start gap-2 min-w-0">
                             <MapPin size={16} className="text-brick shrink-0 mt-0.5" />
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-green-deep">Pickup Location:</p>
+                              <p className="text-xs font-bold text-green-deep">{t('card.pickup_loc', 'Pickup Location:')}</p>
                               <p className="text-xs text-green-soft truncate">{trip.pickup || trip.from}</p>
                             </div>
                           </div>
@@ -1320,7 +1334,7 @@ export function FindVehicles() {
                             onClick={() => handleFocusLocation(trip, 'pickup')}
                             className="px-2.5 py-1 text-[11px] rounded-lg border border-green-deep/40 text-green-deep hover:bg-green-deep hover:text-cream transition flex items-center gap-1 font-medium cursor-pointer shrink-0"
                           >
-                            <span>📦 View on Map</span>
+                            <span>📦 {t('card.view_map', 'View on Map')}</span>
                           </button>
                         </div>
                       </div>
@@ -1332,77 +1346,76 @@ export function FindVehicles() {
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5">
                                 <CheckCircle2 size={16} className="text-green-600" />
-                                <span className="font-bold text-xs text-green-deep">Your Booking:</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${myReq.status === 'pending'
+                                    ? 'bg-gold/20 text-soil'
+                                    : myReq.status === 'accepted'
+                                      ? 'bg-green-deep/10 text-green-deep'
+                                      : myReq.status === 'pending_passenger_confirmation'
+                                        ? 'bg-amber-500 text-white animate-pulse'
+                                        : myReq.status === 'completed'
+                                          ? 'bg-green-700 text-white'
+                                          : 'bg-red-100 text-red-700'
+                                  }`}>
+                                  {myReq.status === 'pending_passenger_confirmation' ? t('status_action_required', 'CONFIRMATION REQUIRED') : (myReq.status || 'PENDING').toUpperCase()}
+                                </span>
                               </div>
-                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${myReq.status === 'pending'
-                                  ? 'bg-gold/20 text-soil'
-                                  : myReq.status === 'accepted'
-                                    ? 'bg-green-deep/10 text-green-deep'
-                                    : myReq.status === 'pending_passenger_confirmation'
-                                      ? 'bg-amber-500 text-white animate-pulse'
-                                      : myReq.status === 'completed'
-                                        ? 'bg-green-700 text-white'
-                                        : 'bg-red-100 text-red-700'
-                                }`}>
-                                {myReq.status === 'pending_passenger_confirmation' ? 'CONFIRMATION REQUIRED' : (myReq.status || 'PENDING').toUpperCase()}
-                              </span>
-                            </div>
 
-                            <div className="bg-white rounded-lg p-2 border border-gold/20 text-xs flex items-center justify-between">
-                              <span className="text-green-soft">Weight: <strong>{myReq.goods_weight_kg || myReq.kg} kg</strong> · Fare Share:</span>
-                              <span className="font-bold text-green-deep font-display text-sm">₹{myReq.per_person_share || 0}</span>
-                            </div>
+                              <div className="bg-white rounded-lg p-2 border border-gold/20 text-xs flex items-center justify-between">
+                                <span className="text-green-soft">{t('request.weight', 'Weight')}: <strong>{myReq.goods_weight_kg || myReq.kg} kg</strong> · {t('pricing.calc_segment', 'Fare Share')}:</span>
+                                <span className="font-bold text-green-deep font-display text-sm">₹{myReq.per_person_share || 0}</span>
+                              </div>
 
-                            {myReq.status === 'pending_passenger_confirmation' && (
-                              <button
-                                onClick={() => {
-                                  setCompletionModal({
-                                    isOpen: true,
-                                    requestId: myReq.id,
-                                    tripOwner: trip.owner,
-                                    route: `${trip.from} → ${trip.to}`,
-                                    weight: myReq.goods_weight_kg || myReq.kg,
-                                    distance: myReq.distance_km || 150,
-                                    kgKm: myReq.kg_km || ((myReq.goods_weight_kg || myReq.kg || 0) * (myReq.distance_km || 150)),
-                                    totalKgKm: myReq.total_trip_kg_km || 0,
-                                    share: myReq.per_person_share || 0,
-                                    totalAmount: trip.total_driver_amount || (trip.pricePerKg * trip.totalKg) || 0,
-                                    sharePct: myReq.share_pct || 0,
-                                    rating: 5,
-                                    feedback: ''
-                                  });
-                                }}
-                                className="w-full py-2 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow transition cursor-pointer"
-                              >
-                                🎉 Confirm Delivery & Rate
-                              </button>
-                            )}
-
-                            {['pending', 'accepted'].includes(myReq.status) && (
-                              <div className="flex justify-end pt-1">
+                              {myReq.status === 'pending_passenger_confirmation' && (
                                 <button
-                                  onClick={async () => {
-                                    if (!window.confirm("Are you sure you want to cancel this booking?")) return;
-                                    const token = localStorage.getItem("access_token");
-                                    try {
-                                      const res = await fetch(`http://localhost:8000/api/requests/${myReq.id}`, {
-                                        method: "DELETE",
-                                        headers: { "Authorization": `Bearer ${token}` }
-                                      });
-                                      if (res.ok) {
-                                        notify("✖ Request cancelled.");
-                                        fetchTripsAndRequests();
-                                      }
-                                    } catch (err) {
-                                      notify("Could not connect to backend.");
-                                    }
+                                  onClick={() => {
+                                    setCompletionModal({
+                                      isOpen: true,
+                                      requestId: myReq.id,
+                                      tripOwner: trip.owner,
+                                      route: `${trip.from} → ${trip.to}`,
+                                      weight: myReq.goods_weight_kg || myReq.kg,
+                                      distance: myReq.distance_km || 150,
+                                      kgKm: myReq.kg_km || ((myReq.goods_weight_kg || myReq.kg || 0) * (myReq.distance_km || 150)),
+                                      totalKgKm: myReq.total_trip_kg_km || 0,
+                                      share: myReq.per_person_share || 0,
+                                      totalAmount: trip.total_driver_amount || (trip.pricePerKg * trip.totalKg) || 0,
+                                      sharePct: myReq.share_pct || 0,
+                                      rating: 5,
+                                      feedback: ''
+                                    });
                                   }}
-                                  className="text-[11px] text-red-600 hover:underline font-semibold cursor-pointer"
+                                  className="w-full py-2 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow transition cursor-pointer"
                                 >
-                                  Cancel Booking
+                                  🎉 {t('card.confirm_delivery', 'Confirm Delivery & Rate')}
                                 </button>
-                              </div>
-                            )}
+                              )}
+
+                              {['pending', 'accepted'].includes(myReq.status) && (
+                                <div className="flex justify-end pt-1">
+                                  <button
+                                    onClick={async () => {
+                                      if (!window.confirm(t('confirm_cancel', 'Are you sure you want to cancel this booking?'))) return;
+                                      const token = localStorage.getItem("access_token");
+                                      try {
+                                        const res = await fetch(`http://localhost:8000/api/requests/${myReq.id}`, {
+                                          method: "DELETE",
+                                          headers: { "Authorization": `Bearer ${token}` }
+                                        });
+                                        if (res.ok) {
+                                          notify("✖ Request cancelled.");
+                                          fetchTripsAndRequests();
+                                        }
+                                      } catch (err) {
+                                        notify("Could not connect to backend.");
+                                      }
+                                    }}
+                                    className="text-[11px] text-red-600 hover:underline font-semibold cursor-pointer"
+                                  >
+                                    {t('card.cancel_booking', 'Cancel Booking')}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           <div>
@@ -1411,7 +1424,7 @@ export function FindVehicles() {
                               className="w-full py-2.5 bg-green-deep hover:bg-green text-cream font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                               <Package size={15} />
-                              <span>{requestOpen === trip.id ? 'Close Booking Form' : 'Request Cargo Space'}</span>
+                              <span>{requestOpen === trip.id ? t('card.close_form', 'Close Booking Form') : t('card.request_space', 'Request Cargo Space')}</span>
                             </button>
                           </div>
                         )}
@@ -1421,7 +1434,7 @@ export function FindVehicles() {
                           <div className="mt-4 rounded-2xl border border-gold/30 bg-cream/40 p-4 space-y-3 animate-[fadeIn_.25s_ease]">
                             <div className="flex items-center justify-between pb-2 border-b border-gold/20">
                               <h4 className="font-display font-bold text-sm text-green-deep">
-                                Request Space ({trip.from} → {trip.to})
+                                {t('card.request_space', 'Request Space')} ({trip.from} → {trip.to})
                               </h4>
                               <button onClick={() => setRequestOpen(null)} className="text-gray-500 hover:text-gray-800 cursor-pointer">
                                 <X size={16} />
@@ -1429,20 +1442,20 @@ export function FindVehicles() {
                             </div>
 
                             <div className="grid sm:grid-cols-2 gap-3">
-                              <Field label="Goods Category">
+                              <Field label={t('form.goods_category', 'Goods Category')}>
                                 <select
                                   className={`${inputCls} py-1.5 text-xs`}
                                   value={r.category || ''}
                                   onChange={e => updateRequest(trip.id, 'category', e.target.value)}
                                 >
-                                  <option value="">Select goods category</option>
+                                  <option value="">{t('form.select_category', 'Select goods category')}</option>
                                   {GOODS_CATEGORIES.map(category => (
                                     <option key={category} value={category}>{category}</option>
                                   ))}
                                 </select>
                               </Field>
 
-                              <Field label="Goods Weight (kg)">
+                              <Field label={t('form.goods_weight', 'Goods Weight (kg)')}>
                                 <input
                                   type="number"
                                   min="1"
@@ -1499,12 +1512,12 @@ export function FindVehicles() {
                                         <span>{isRouteValid ? '✔' : '❌'}</span>
                                         <span>
                                           {isRouteValid
-                                            ? "Route Corridor Validated (Start, destination, or valid intermediate stop)"
-                                            : "Route Mismatch: Selected location is outside the vehicle's transit corridor"}
+                                            ? t('corridor.valid', 'Route Corridor Validated (Start, destination, or valid intermediate stop)')
+                                            : t('corridor.invalid', "Route Mismatch: Selected location is outside the vehicle's transit corridor")}
                                         </span>
                                       </span>
                                       <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-white/70">
-                                        {isRouteValid ? 'Valid Stop' : 'Off-Route'}
+                                        {isRouteValid ? t('corridor.valid_stop', 'Valid Stop') : t('corridor.off_route', 'Off-Route')}
                                       </span>
                                     </div>
                                   )}
@@ -1517,17 +1530,17 @@ export function FindVehicles() {
                                         <div>
                                           <div className="flex items-center gap-1.5">
                                             <span className="text-sm">🛡️</span>
-                                            <span className="font-bold text-green-deep text-xs">Maximum Estimated Solo Fare:</span>
+                                            <span className="font-bold text-green-deep text-xs">{t('pricing.max_solo', 'Maximum Estimated Solo Fare:')}</span>
                                           </div>
                                           <p className="text-[10.5px] text-green-soft mt-0.5">
-                                            Absolute worst-case ceiling if no other cargo shares this vehicle.
+                                            {t('pricing.max_solo_sub', 'Absolute worst-case ceiling if no other cargo shares this vehicle.')}
                                           </p>
                                         </div>
                                         <div className="text-right">
                                           <span className="font-display font-bold text-base text-soil">
                                             ₹{maxSoloFare.toLocaleString('en-IN')}
                                           </span>
-                                          <span className="block text-[10px] text-gray-500 font-mono">Max Solo Ceiling</span>
+                                          <span className="block text-[10px] text-gray-500 font-mono">{t('pricing.max_ceiling', 'Max Solo Ceiling')}</span>
                                         </div>
                                       </div>
 
@@ -1537,21 +1550,21 @@ export function FindVehicles() {
                                           <div className="flex items-center justify-between text-green-deep font-semibold">
                                             <span className="flex items-center gap-1 text-green-800">
                                               <span>💚</span>
-                                              <span>Your Calculated Segment Fare:</span>
+                                              <span>{t('pricing.calc_segment', 'Your Calculated Segment Fare:')}</span>
                                             </span>
                                             <span className="font-bold font-display text-lg text-green-deep">
                                               ₹{estimatedFare.toLocaleString('en-IN')}
                                             </span>
                                           </div>
                                           <div className="flex items-center justify-between text-[11px] text-green-soft">
-                                            <span>Travel Segment: {segDist} km (incl. ₹20 service fee)</span>
-                                            <span>Workload: {weightNum * segDist} kg·km</span>
+                                            <span>{t('pricing.travel_seg', 'Travel Segment')}: {segDist} km (incl. ₹20 service fee)</span>
+                                            <span>{t('pricing.workload', 'Workload')}: {weightNum * segDist} kg·km</span>
                                           </div>
                                         </div>
                                       ) : (
                                         <div className="bg-white/70 rounded-xl p-2 border border-gold/20 text-[11px] text-green-soft flex items-center justify-between">
-                                          <span>📍 Base Rate: <strong>₹{baseRatePerKg.toFixed(1)}/kg</strong></span>
-                                          <span className="text-[10.5px] text-soil font-medium">Select pickup & delivery below for exact route fare</span>
+                                          <span>📍 {t('pricing.base_rate', 'Base Rate')}: <strong>₹{baseRatePerKg.toFixed(1)}/kg</strong></span>
+                                          <span className="text-[10.5px] text-soil font-medium">{t('pricing.select_loc_prompt', 'Select pickup & delivery below for exact route fare')}</span>
                                         </div>
                                       )}
 
@@ -1560,10 +1573,10 @@ export function FindVehicles() {
                                         <span className="text-sm shrink-0">⚡</span>
                                         <div>
                                           <p className="font-bold text-green-900">
-                                            Shared-Load Automatic Discount Active:
+                                            {t('pricing.pooling_active', 'Shared-Load Automatic Discount Active:')}
                                           </p>
                                           <p className="text-[10.5px] text-green-800 mt-0.5 leading-relaxed">
-                                            This price will <strong>automatically drop further</strong> as more co-sharing partners join this vehicle. Total cost is distributed fairly by exact Ton-Km weight × distance.
+                                            {t('pricing.pooling_desc', 'This price will automatically drop further as more co-sharing partners join this vehicle. Total cost is distributed fairly by exact Ton-Km weight × distance.')}
                                           </p>
                                         </div>
                                       </div>
@@ -1574,10 +1587,10 @@ export function FindVehicles() {
                             })()}
 
                             <div className="grid sm:grid-cols-2 gap-3">
-                              <Field label="Your Pickup Location">
+                              <Field label={t('form.pickup_loc', 'Your Pickup Location')}>
                                 <LocationAutocomplete
                                   value={r.pickupLocation || ''}
-                                  placeholder="Search pickup city/hub..."
+                                  placeholder={t('form.pickup_placeholder', 'Search pickup city/hub...')}
                                   onChange={val => updateRequest(trip.id, 'pickupLocation', val)}
                                   onSelectLocation={loc => {
                                     if (loc) {
@@ -1590,10 +1603,10 @@ export function FindVehicles() {
                                 />
                               </Field>
 
-                              <Field label="Delivery Location">
+                              <Field label={t('form.delivery_loc', 'Delivery Location')}>
                                 <LocationAutocomplete
                                   value={r.deliveryLocation || ''}
-                                  placeholder="Search delivery city/hub..."
+                                  placeholder={t('form.delivery_placeholder', 'Search delivery city/hub...')}
                                   onChange={val => updateRequest(trip.id, 'deliveryLocation', val)}
                                   onSelectLocation={loc => {
                                     if (loc) {
@@ -1607,11 +1620,11 @@ export function FindVehicles() {
                               </Field>
                             </div>
 
-                            <Field label="Description (Optional)">
+                            <Field label={t('form.description', 'Description (Optional)')}>
                               <input
                                 className={`${inputCls} py-1.5 text-xs`}
                                 value={r.description || ''}
-                                placeholder="Special handling requirements, fragile goods..."
+                                placeholder={t('form.desc_placeholder', 'Special handling requirements, fragile goods...')}
                                 onChange={e => updateRequest(trip.id, 'description', e.target.value)}
                               />
                             </Field>
@@ -1621,7 +1634,7 @@ export function FindVehicles() {
                               className="w-full py-2.5 rounded-xl bg-green-deep hover:bg-green text-cream font-bold text-xs shadow transition flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                               <Send size={14} />
-                              <span>Submit Cargo Booking</span>
+                              <span>{t('form.submit_booking', 'Submit Cargo Booking')}</span>
                             </button>
                           </div>
                         )}
@@ -2271,6 +2284,7 @@ export function FindVehicles() {
 ========================================================= */
 
 export function OfferTrip() {
+  const { t } = useLang()
   const [toast, notify] = useToast()
   const navigate = useNavigate()
 
@@ -2774,32 +2788,35 @@ export function OfferTrip() {
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full bg-green-deep/10 text-green-deep text-xs font-mono font-bold uppercase tracking-wider">
-              Driver Operations Hub
+              {t('profile.driver_role', 'Driver Operations Hub')}
             </span>
             {profile.is_verified && (
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold flex items-center gap-1">
-                <CheckCircle2 size={13} /> Verified
+                <CheckCircle2 size={13} /> {t('card.verified', 'Verified')}
               </span>
             )}
           </div>
-          <h1 className="font-display font-bold text-2xl sm:text-3xl text-green-deep mt-1">
-            Driver & Logistics Dashboard
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display font-bold text-2xl sm:text-3xl text-green-deep mt-1">
+              {t('nav_offer_trip', 'Driver & Logistics Dashboard')}
+            </h1>
+            <TTSButton textToRead={`${t('nav_offer_trip', 'Driver & Logistics Dashboard')}. ${t('offer.subtitle', 'Share the available space in your vehicle with people who need to transport goods.')}`} />
+          </div>
           <p className="text-sm text-green-soft mt-1">
-            Manage your shared vehicle loads, review cargo requests, and track trips in real time.
+            {t('offer.subtitle', 'Share the available space in your vehicle with people who need to transport goods.')}
           </p>
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
           <div className="hidden sm:block text-right">
-            <p className="font-bold text-xs text-green-deep">{profile.full_name || 'Driver'}</p>
+            <p className="font-bold text-xs text-green-deep">{profile.full_name || t('profile.driver_role', 'Driver')}</p>
             <p className="text-[11px] text-green-soft font-mono">{profile.email}</p>
           </div>
           <button
             onClick={handleLogout}
             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs cursor-pointer"
           >
-            Logout
+            {t('nav_logout', 'Logout')}
           </button>
         </div>
       </div>
@@ -2811,9 +2828,9 @@ export function OfferTrip() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">Active Trips</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('metric.active_trips', 'Active Trips')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">{activeTripsCount}</p>
-            <p className="text-[11px] text-green-soft mt-0.5">{liveTripsCount} Live In-Transit</p>
+            <p className="text-[11px] text-green-soft mt-0.5">{liveTripsCount} {t('metric.live_transit', 'Live In-Transit')}</p>
           </div>
           <div className="w-11 h-11 rounded-2xl bg-green-50 border border-green-200 text-green-700 flex items-center justify-center text-xl shadow-inner">
             🚛
@@ -2825,7 +2842,7 @@ export function OfferTrip() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">Incoming Requests</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('tab.driver_requests', 'Incoming Requests')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">{incomingRequests.length}</p>
             <p className="text-[11px] font-semibold mt-0.5 text-amber-700">
               {pendingRequestsCount > 0 ? `⚡ ${pendingRequestsCount} Pending Action` : 'All caught up'}
@@ -2841,7 +2858,7 @@ export function OfferTrip() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">Total Load Potential</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('metric.revenue_potential', 'Total Load Potential')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">₹{totalRevenuePotential.toLocaleString('en-IN')}</p>
             <p className="text-[11px] text-green-soft mt-0.5">Across {myTrips.length} published trip{myTrips.length !== 1 ? 's' : ''}</p>
           </div>
@@ -2855,9 +2872,9 @@ export function OfferTrip() {
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
-            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">Verification</p>
+            <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('offer.ownerVerification', 'Verification')}</p>
             <p className="font-display font-bold text-lg text-green-deep mt-1">
-              {profile.is_verified ? 'Verified Driver' : 'Pending Upload'}
+              {profile.is_verified ? t('card.verified', 'Verified Driver') : t('find.verificationPending', 'Pending Upload')}
             </p>
             <p className="text-[11px] text-green-soft mt-0.5">
               {profile.is_verified ? '🛡️ Govt. ID Confirmed' : 'Action Required'}
@@ -2879,7 +2896,7 @@ export function OfferTrip() {
             }`}
         >
           <Truck size={17} />
-          <span>My Published Trips</span>
+          <span>{t('tab.driver_trips', 'My Published Trips')}</span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold ${activeTab === 'trips' ? 'bg-cream text-green-deep' : 'bg-green-deep/10 text-green-deep'}`}>
             {myTrips.length}
           </span>
@@ -2893,7 +2910,7 @@ export function OfferTrip() {
             }`}
         >
           <Package size={17} />
-          <span>Incoming Requests</span>
+          <span>{t('tab.driver_requests', 'Incoming Requests')}</span>
           {pendingRequestsCount > 0 ? (
             <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-500 text-white animate-pulse">
               {pendingRequestsCount} new
@@ -2913,7 +2930,7 @@ export function OfferTrip() {
             }`}
         >
           <span>➕</span>
-          <span>Offer New Trip</span>
+          <span>{t('tab.driver_publish', 'Offer New Trip')}</span>
         </button>
 
         <button
@@ -2924,7 +2941,7 @@ export function OfferTrip() {
             }`}
         >
           <ShieldCheck size={17} />
-          <span>Driver Profile & ID</span>
+          <span>{t('tab.driver_profile', 'Driver Profile & ID')}</span>
         </button>
       </div>
 
@@ -3465,20 +3482,23 @@ export function OfferTrip() {
             className="flex flex-col gap-5 bg-paper border border-gold/30 rounded-3xl p-6 shadow-sm"
             onSubmit={e => e.preventDefault()}
           >
-            <div>
-              <h3 className="font-display font-bold text-xl text-green-deep">
-                Publish a New Vehicle Trip
-              </h3>
-              <p className="text-xs text-green-soft mt-0.5">
-                Fill in your route, vehicle capacity, and desired price.
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-bold text-xl text-green-deep">
+                  {t('driver.publish_title', 'Publish a New Vehicle Trip')}
+                </h3>
+                <p className="text-xs text-green-soft mt-0.5">
+                  {t('offer.subtitle', 'Fill in your route, vehicle capacity, and desired price.')}
+                </p>
+              </div>
+              <TTSButton textToRead={`${t('driver.publish_title', 'Publish a New Vehicle Trip')}. ${t('offer.subtitle', 'Fill in your route, vehicle capacity, and desired price.')}`} />
             </div>
 
             <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="From (Origin City/Hub)">
+              <Field label={t('driver.from', 'From (Origin City/Hub)')}>
                 <LocationAutocomplete
                   value={o.from}
-                  placeholder="Search starting city/hub in India..."
+                  placeholder={t('form.pickup_placeholder', 'Search starting city/hub in India...')}
                   onChange={val => setO(prev => ({ ...prev, from: val, fromCoords: null }))}
                   onSelectLocation={loc => {
                     if (loc) {
@@ -3490,10 +3510,10 @@ export function OfferTrip() {
                 />
               </Field>
 
-              <Field label="To (Destination City)">
+              <Field label={t('driver.to', 'To (Destination City)')}>
                 <LocationAutocomplete
                   value={o.to}
-                  placeholder="Search destination city in India..."
+                  placeholder={t('form.delivery_placeholder', 'Search destination city in India...')}
                   onChange={val => setO(prev => ({ ...prev, to: val, toCoords: null }))}
                   onSelectLocation={loc => {
                     if (loc) {
@@ -3505,7 +3525,7 @@ export function OfferTrip() {
                 />
               </Field>
 
-              <Field label="Travel Date">
+              <Field label={t('driver.date', 'Travel Date')}>
                 <input
                   type="date"
                   className={inputCls}
@@ -3514,7 +3534,7 @@ export function OfferTrip() {
                 />
               </Field>
 
-              <Field label="Vehicle Type">
+              <Field label={t('driver.vehicle', 'Vehicle Type')}>
                 <select
                   className={inputCls}
                   value={o.vehicle}
@@ -3535,11 +3555,11 @@ export function OfferTrip() {
             {/* CAPACITY SLIDERS */}
             <div className="bg-cream rounded-2xl border border-gold/30 p-4 space-y-3">
               <label className="text-sm font-semibold text-green-deep block">
-                Vehicle Cargo Capacity: <span className="font-mono text-soil">{o.cap} kg free</span> / {o.total} kg total
+                {t('driver.total_kg', 'Vehicle Cargo Capacity')}: <span className="font-mono text-soil">{o.cap} kg {t('card.space_free', 'free')}</span> / {o.total} kg total
               </label>
 
               <div>
-                <p className="text-[11px] text-green-soft mb-1 font-mono">Total Vehicle Limit: {o.total} kg</p>
+                <p className="text-[11px] text-green-soft mb-1 font-mono">{t('offer.total', 'Total Vehicle Limit')}: {o.total} kg</p>
                 <input
                   type="range"
                   min="50"
@@ -3558,7 +3578,7 @@ export function OfferTrip() {
               </div>
 
               <div>
-                <p className="text-[11px] text-green-soft mb-1 font-mono">Available Space to Share: {o.cap} kg</p>
+                <p className="text-[11px] text-green-soft mb-1 font-mono">{t('offer.shareableCapacity', 'Available Space to Share')}: {o.cap} kg</p>
                 <input
                   type="range"
                   min="0"
@@ -3577,10 +3597,10 @@ export function OfferTrip() {
                 <div className="text-2xl mt-0.5">⚖</div>
                 <div>
                   <p className="font-bold text-sm text-green-deep">
-                    Total Desired Vehicle Load Fare (₹)
+                    {t('driver.price', 'Total Desired Vehicle Load Fare (₹)')}
                   </p>
                   <p className="text-xs text-green-soft mt-0.5">
-                    Enter the total amount you want to earn for this full trip load.
+                    {t('offer.journeyCost', 'Enter the total amount you want to earn for this full trip load.')}
                   </p>
                 </div>
               </div>
@@ -3606,12 +3626,12 @@ export function OfferTrip() {
               </div>
 
               <p className="text-[11px] text-green-800 bg-white/70 rounded-lg p-2 border border-green-200">
-                ⚡ <strong>Ton-Km Fair Split:</strong> The backend automatically splits this ₹{o.price || '0'} among passengers based on their individual weight (kg) × distance (km).
+                ⚡ <strong>{t('card.ton_km_split', 'Ton-Km Fair Split')}:</strong> The backend automatically splits this ₹{o.price || '0'} among passengers based on their individual weight (kg) × distance (km).
               </p>
             </div>
 
             {/* PICKUP */}
-            <Field label="Pickup Instructions / Location Details">
+            <Field label={t('driver.pickup_landmark', 'Pickup Instructions / Location Details')}>
               <input
                 className={inputCls}
                 value={o.pickup}
@@ -3628,7 +3648,7 @@ export function OfferTrip() {
                 </span>
                 <div>
                   <p className="font-bold text-xs text-green-deep">
-                    {profile.is_verified || (docs.identity?.name && docs.license?.name) ? 'Driver Credentials Ready' : 'Verification Required'}
+                    {profile.is_verified || (docs.identity?.name && docs.license?.name) ? t('card.verified', 'Driver Credentials Ready') : t('offer.ownerVerification', 'Verification Required')}
                   </p>
                   <p className="text-[11px] text-green-soft">
                     {profile.is_verified || (docs.identity?.name && docs.license?.name) ? 'Aadhaar & License uploaded' : 'Upload ID in Driver Profile tab'}
@@ -3638,9 +3658,9 @@ export function OfferTrip() {
               <button
                 type="button"
                 onClick={() => setActiveTab('profile')}
-                className="text-xs font-semibold text-green-deep underline hover:text-green cursor-pointer"
+                className="px-3 py-1 bg-cream hover:bg-gold/20 text-green-deep border border-gold/30 rounded-xl text-xs font-semibold cursor-pointer"
               >
-                View ID Docs
+                {t('tab.driver_profile', 'Manage ID')}
               </button>
             </div>
 
@@ -3911,6 +3931,7 @@ export function OfferTrip() {
 }
 
 export function LoginPage() {
+  const { t } = useLang()
   const navigate = useNavigate()
   const location = useLocation()
   const [loading, setLoading] = useState(false)
@@ -3983,8 +4004,11 @@ export function LoginPage() {
     <GoogleOAuthProvider clientId="985266026061-a7hpfspuv6hc17pc72camb1gig9vucqq.apps.googleusercontent.com">
       <div className="min-h-screen bg-cream flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-paper p-8 rounded-2xl shadow-lg border border-gold/30 text-center">
-          <h2 className="text-2xl font-display font-bold text-green-deep mb-2">Sign in to Safar-Saathi</h2>
-          <p className="text-green-soft mb-4 text-sm">Choose any Google account to sign in.</p>
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <h2 className="text-2xl font-display font-bold text-green-deep">{t('auth.signin_title', 'Sign in to Safar-Saathi')}</h2>
+            <TTSButton textToRead={`${t('auth.signin_title', 'Sign in to Safar-Saathi')}. ${t('auth.choose_google', 'Choose any Google account to sign in.')}`} size={14} />
+          </div>
+          <p className="text-green-soft mb-4 text-sm">{t('auth.choose_google', 'Choose any Google account to sign in.')}</p>
 
           {loginError && (
             <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -4008,6 +4032,7 @@ export function LoginPage() {
 }
 
 export function ProfileSetupPage() {
+  const { t } = useLang()
   const navigate = useNavigate();
   const [fullName, setFullName] = useState('');
   const [gender, setGender] = useState('Male');
@@ -4119,11 +4144,16 @@ export function ProfileSetupPage() {
     <div className="min-h-screen bg-cream flex items-center justify-center px-4 py-12">
       {toast}
       <form onSubmit={handleSubmit} className="max-w-lg w-full bg-paper p-8 rounded-2xl shadow-lg border border-gold/30">
-        <h2 className="text-2xl font-display font-bold text-green-deep mb-2">Complete Your Profile</h2>
-        <p className="text-green-soft mb-6 text-sm">Please provide your details to continue to Safar-Saathi as a <strong>{userType === 'driver' ? 'Driver' : 'Sender'}</strong>.</p>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-2xl font-display font-bold text-green-deep">{t('profile.setup_title', 'Complete Your Safar-Saathi Profile')}</h2>
+          <TTSButton textToRead={`${t('profile.setup_title', 'Complete Your Profile')}. ${t('profile.role_prompt', 'Please provide your details to continue.')}`} />
+        </div>
+        <p className="text-green-soft mb-6 text-sm">
+          Please provide your details to continue to Safar-Saathi as a <strong>{userType === 'driver' ? t('profile.driver_role', 'Driver') : t('profile.sender_role', 'Sender')}</strong>.
+        </p>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-green-deep mb-1">Full Name</label>
+          <label className="block text-sm font-medium text-green-deep mb-1">{t('profile.full_name', 'Full Name')}</label>
           <input
             type="text"
             value={fullName}
@@ -4135,7 +4165,7 @@ export function ProfileSetupPage() {
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-green-deep mb-1">Gender</label>
+          <label className="block text-sm font-medium text-green-deep mb-1">{t('profile.gender', 'Gender')}</label>
           <select
             value={gender}
             onChange={(e) => setGender(e.target.value)}
@@ -4148,7 +4178,7 @@ export function ProfileSetupPage() {
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-green-deep mb-1">Phone Number</label>
+          <label className="block text-sm font-medium text-green-deep mb-1">{t('profile.phone', 'Phone Number')}</label>
           <input
             type="text"
             value={phoneNumber}
@@ -4161,10 +4191,10 @@ export function ProfileSetupPage() {
 
         {userType === 'driver' && (
           <div className="mb-6 p-4 rounded-xl bg-gold/10 border border-gold/30 space-y-4">
-            <p className="font-semibold text-sm text-green-deep">Driver Verification Documents</p>
+            <p className="font-semibold text-sm text-green-deep">{t('offer.ownerVerification', 'Driver Verification Documents')}</p>
 
             <div>
-              <label className="block text-xs font-medium text-green-deep mb-1">Aadhaar Card Document / Image [Redacted]</label>
+              <label className="block text-xs font-medium text-green-deep mb-1">{t('profile.aadhaar', 'Aadhaar Card Document / Image [Redacted]')}</label>
               <input
                 type="file"
                 accept="image/*,application/pdf"
@@ -4175,7 +4205,7 @@ export function ProfileSetupPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-green-deep mb-1">Driving License Document / Image</label>
+              <label className="block text-xs font-medium text-green-deep mb-1">{t('profile.license', 'Driving License Document / Image')}</label>
               <input
                 type="file"
                 accept="image/*,application/pdf"
@@ -4190,11 +4220,12 @@ export function ProfileSetupPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-green-deep text-cream py-3 rounded-xl font-semibold hover:bg-green transition"
+          className="w-full bg-green-deep text-cream py-3 rounded-xl font-semibold hover:bg-green transition cursor-pointer"
         >
-          {submitting ? "Saving..." : "Save and Continue"}
+          {submitting ? "Saving..." : t('profile.submit_btn', 'Complete Setup & Proceed')}
         </button>
       </form>
     </div>
   );
 }
+

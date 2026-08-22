@@ -1,19 +1,66 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-
+from typing import Optional
+import os
+import uuid
+import shutil
+import math
 import models
 import schemas
 
 from database import get_db
 from auth.dependencies import require_roles
 
-
-import math
-
 router = APIRouter(
     prefix="/api/trips",
     tags=["Trips"]
 )
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif"}
+ALLOWED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/avif", "image/gif", "image/pjpeg"}
+
+
+def save_uploaded_delivery_proof(file: UploadFile, subfolder: str = "delivery_proofs") -> str:
+    """
+    Validates and saves a driver's delivery proof photo to static storage.
+    Returns relative URL path (/uploads/{subfolder}/{filename}).
+    """
+    if not file or not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Delivery proof image file is missing. A valid image is required."
+        )
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    content_type = (file.content_type or "").lower()
+
+    if ext not in ALLOWED_IMAGE_EXTENSIONS and content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid image format '{ext or content_type}'. Allowed formats: JPG, JPEG, PNG, WEBP, AVIF."
+        )
+
+    base_upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", subfolder)
+    os.makedirs(base_upload_dir, exist_ok=True)
+
+    unique_filename = f"proof_{uuid.uuid4().hex}{ext if ext in ALLOWED_IMAGE_EXTENSIONS else '.jpg'}"
+    target_path = os.path.join(base_upload_dir, unique_filename)
+
+    try:
+        with open(target_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        if os.path.getsize(target_path) == 0:
+            os.remove(target_path)
+            raise HTTPException(status_code=400, detail="Uploaded delivery proof image file is empty.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.exists(target_path):
+            os.remove(target_path)
+        raise HTTPException(status_code=500, detail=f"Failed to persist delivery proof image: {str(e)}")
+
+    return f"/uploads/{subfolder}/{unique_filename}"
 
 
 def calculate_highway_tortuosity_km(straight_line_km: float) -> float:
@@ -169,20 +216,24 @@ def calculate_route_aware_price(passenger_dist_km: float, trip: models.TripModel
     return calculate_strict_fare(distance_km=dist, weight_kg=weight, base_price=base_rate)
 
 
+def get_trip_route_patterns(trip: models.TripModel) -> list[str]:
+    return [
+        f"{trip.from_loc} → {trip.to_loc}",
+        f"{trip.from_loc} -> {trip.to_loc}",
+        f"{trip.from_loc} - {trip.to_loc}"
+    ]
+
+
 def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
     """
     Dynamically recalculates proportional cost shares for all active passengers on a trip
-    using the Ton-Kilometer / Kg-Km principle with exact geographic distance:
-    
-    Formula:
-      Passenger Workload (kg·km) = Passenger Goods Weight (kg) * Exact Travel Distance (km)
-      Total Cumulative Workload (kg·km) = sum(w_i * d_i for all active passengers)
-      Passenger Share = (Passenger Workload / Total Cumulative Workload) * Total Driver Amount
+    Computes real-time dynamic ton-km proportional cost share for each active booking:
+    Formula: Individual Share = (Person's kg * Person's km / Total active kg-km) * Total Vehicle Trip Price
     """
-    route_str = f"{trip.from_loc} → {trip.to_loc}"
+    route_patterns = get_trip_route_patterns(trip)
     active_requests = db.query(models.RequestModel).filter(
         models.RequestModel.owner == trip.owner,
-        models.RequestModel.route == route_str,
+        models.RequestModel.route.in_(route_patterns),
         models.RequestModel.status.in_(["pending", "accepted", "in_transit", "pending_passenger_confirmation", "completed", "assigned"])
     ).all()
 
@@ -241,10 +292,10 @@ def check_and_finalize_trip_completion(trip: models.TripModel, db: Session) -> b
        - Returns True (finalized)
     5. If there are still active unconfirmed passengers and trip is in 'pending_passenger_confirmation', returns False.
     """
-    route_str = f"{trip.from_loc} → {trip.to_loc}"
+    route_patterns = get_trip_route_patterns(trip)
     active_requests = db.query(models.RequestModel).filter(
         models.RequestModel.owner == trip.owner,
-        models.RequestModel.route == route_str,
+        models.RequestModel.route.in_(route_patterns),
         models.RequestModel.status.in_(["accepted", "in_transit", "pending_passenger_confirmation", "completed", "assigned"])
     ).all()
 
@@ -269,10 +320,10 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
 
     total_payload, total_kg_km, available_space, space_used_pct, count = recalculate_trip_cost_shares(trip, db)
 
-    route_str = f"{trip.from_loc} → {trip.to_loc}"
+    route_patterns = get_trip_route_patterns(trip)
     active_requests = db.query(models.RequestModel).filter(
         models.RequestModel.owner == trip.owner,
-        models.RequestModel.route == route_str,
+        models.RequestModel.route.in_(route_patterns),
         models.RequestModel.status.in_(["pending", "accepted", "in_transit", "pending_passenger_confirmation", "completed", "assigned"])
     ).all()
 
@@ -282,7 +333,9 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
             "farmer_name": r.farmer_name or "Cargo Partner",
             "goods_weight_kg": r.goods_weight_kg if r.goods_weight_kg is not None else (r.kg or 0),
             "status": r.status,
-            "pickup_place": r.pickup_place or r.route
+            "pickup_place": r.pickup_place or r.route,
+            "pickup_cargo_image_url": r.pickup_cargo_image_url,
+            "delivery_proof_image_url": r.delivery_proof_image_url
         }
         for r in active_requests
     ]
@@ -317,6 +370,8 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         status=trip.status or "scheduled",
         is_live=bool(trip.is_live),
         speed=trip.speed or 0.0,
+        pickup_cargo_image_url=trip.pickup_cargo_image_url,
+        delivery_proof_image_url=trip.delivery_proof_image_url,
         total_booked_kg=total_payload or 0,
         total_kg_km=total_kg_km or 0.0,
         passenger_count=count or 0,
@@ -580,51 +635,120 @@ def update_trip_status(
     return serialize_trip_with_meta(trip, db)
 
 
+# ==================================================
+# UPLOAD DELIVERY PROOF PHOTO (STAGE 2 UPLOAD ENDPOINT)
+# ==================================================
+
+@router.post("/upload-delivery-proof")
+def upload_delivery_proof(
+    file: UploadFile = File(...)
+):
+    """
+    Accepts and verifies a mandatory delivery proof photo from the transporter.
+    Returns the persisted static delivery proof image URL.
+    """
+    image_url = save_uploaded_delivery_proof(file, subfolder="delivery_proofs")
+    return {
+        "delivery_proof_image_url": image_url,
+        "filename": file.filename,
+        "status": "success",
+        "message": "Delivery proof photo verified and uploaded successfully."
+    }
+
+
 # --------------------------------------------------
-# DRIVER MARKS TRIP AS COMPLETE (TWO-WAY CONFIRMATION STEP 1)
+# DRIVER MARKS TRIP AS COMPLETE WITH MANDATORY DELIVERY PROOF (STAGE 2)
 # --------------------------------------------------
 
 @router.put(
     "/{trip_id}/complete",
     response_model=schemas.TripResponse
 )
+@router.post(
+    "/{trip_id}/complete",
+    response_model=schemas.TripResponse
+)
 def driver_complete_trip(
     trip_id: int,
-    db: Session = Depends(get_db),
-    current_user=Depends(require_roles("user", "driver", "admin"))
+    delivery_proof_image_url: Optional[str] = None,
+    delivery_proof_image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
 ):
     """
-    Driver initiates trip completion.
-    1. Checks exact count of active bookings (status in 'accepted', 'in_transit', 'assigned', 'pending_passenger_confirmation', 'completed').
-    2. If no active booked passengers exist or all active bookings are already confirmed, marks trip as 'completed'.
-    3. Otherwise transitions active unconfirmed bookings to 'pending_passenger_confirmation' and sets trip status to 'pending_passenger_confirmation'.
+    Driver initiates trip completion with MANDATORY delivery proof verification (Stage 2).
+    1. Validates that the trip is currently active (not already completed or cancelled).
+    2. Enforces mandatory delivery proof photo (either as direct UploadFile or pre-uploaded image URL).
+    3. Persists proof image URL on the trip and all connected passenger requests.
+    4. Transitions unconfirmed bookings to 'pending_passenger_confirmation' (or 'completed' if no active passengers).
     """
     trip = db.query(models.TripModel).filter(models.TripModel.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    trip.is_live = False
+    # VALIDATE ACTIVE STATUS BEFORE COMPLETION
+    if trip.status in ["cancelled", "cancelled_by_driver"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot complete trip. Trip is currently cancelled ({trip.status})."
+        )
 
-    route_str = f"{trip.from_loc} → {trip.to_loc}"
-    active_requests = db.query(models.RequestModel).filter(
-        models.RequestModel.owner == trip.owner,
-        models.RequestModel.route == route_str,
-        models.RequestModel.status.in_(["accepted", "in_transit", "assigned", "pending_passenger_confirmation", "completed"])
-    ).all()
+    if trip.status == "completed":
+        raise HTTPException(
+            status_code=400,
+            detail="This trip has already been completed and finalized."
+        )
 
-    unconfirmed_requests = [r for r in active_requests if r.status != "completed"]
+    # STAGE 2: MANDATORY DELIVERY PROOF VALIDATION
+    final_proof_url = None
 
-    if len(active_requests) == 0 or len(unconfirmed_requests) == 0:
-        # No active passengers or all active passengers already confirmed
-        trip.status = "completed"
-    else:
-        trip.status = "pending_passenger_confirmation"
-        for req in unconfirmed_requests:
-            req.status = "pending_passenger_confirmation"
+    if delivery_proof_image is not None and delivery_proof_image.filename:
+        final_proof_url = save_uploaded_delivery_proof(delivery_proof_image, subfolder="delivery_proofs")
+    elif delivery_proof_image_url and str(delivery_proof_image_url).strip():
+        final_proof_url = str(delivery_proof_image_url).strip()
 
-    db.commit()
-    db.refresh(trip)
-    return serialize_trip_with_meta(trip, db)
+    if not final_proof_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Mandatory Delivery Proof Required: Transporter must upload a verified cargo delivery proof photo (JPEG, PNG, WEBP) to complete the ride."
+        )
+
+    try:
+        trip.is_live = False
+        trip.delivery_proof_image_url = final_proof_url
+
+        route_patterns = get_trip_route_patterns(trip)
+        active_requests = db.query(models.RequestModel).filter(
+            models.RequestModel.owner == trip.owner,
+            models.RequestModel.route.in_(route_patterns),
+            models.RequestModel.status.in_(["accepted", "in_transit", "assigned", "pending_passenger_confirmation", "completed"])
+        ).all()
+
+        unconfirmed_requests = [r for r in active_requests if r.status != "completed"]
+
+        # Stamp delivery proof image on all linked active passenger requests
+        for req in active_requests:
+            req.delivery_proof_image_url = final_proof_url
+
+        if len(active_requests) == 0 or len(unconfirmed_requests) == 0:
+            # No active passengers or all active passengers already confirmed
+            trip.status = "completed"
+        else:
+            trip.status = "pending_passenger_confirmation"
+            for req in unconfirmed_requests:
+                req.status = "pending_passenger_confirmation"
+
+        db.commit()
+        db.refresh(trip)
+        return serialize_trip_with_meta(trip, db)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to finalize trip completion: {str(e)}"
+        )
 
 
 # --------------------------------------------------

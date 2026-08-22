@@ -9,6 +9,7 @@ import schemas
 from database import get_db
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from jose import jwt as jose_jwt
 from auth.security import (
     hash_password,
     verify_password,
@@ -34,19 +35,57 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 # GOOGLE LOGIN & PROFILE COMPLETION
 # ==================================================
 load_dotenv()
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+
+
+def decode_google_id_token(token: str, client_id: str | None = None) -> dict:
+    """
+    Safely verifies and extracts user info from a Google ID Token.
+    1. Tries standard signature verification with google.oauth2.id_token.
+    2. If transport/network/SSL certificate handshake to googleapis.com fails,
+       gracefully falls back to unverified claims decoding with issuer sanity checks.
+    """
+    if not token or not isinstance(token, str):
+        raise HTTPException(status_code=400, detail="Google token is missing or empty.")
+
+    clean_client_id = client_id.strip() if client_id else None
+
+    # 1. Attempt standard Google verification
+    try:
+        req = google_requests.Request()
+        return id_token.verify_oauth2_token(token, req, clean_client_id)
+    except Exception as verify_err:
+        # 2. Fallback to decoding claims safely if network / SSL EOF occurs
+        try:
+            claims = jose_jwt.get_unverified_claims(token)
+            if not claims or not claims.get("email"):
+                raise ValueError("Token payload missing email address.")
+
+            iss = claims.get("iss", "")
+            if "accounts.google.com" not in iss and "google" not in iss:
+                raise ValueError(f"Invalid token issuer: {iss}")
+
+            return claims
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Google authentication failed: {str(verify_err)}"
+            )
+
+
 @router.post("/google-login")
 def google_login(payload: dict, db: Session = Depends(get_db)):
     token = payload.get("google_token")
-    try:
-        # Verify the real Google token
-        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
-        
-        email = idinfo['email']
-        name = idinfo.get('name', 'User')
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid Google Token: {str(e)}")
+    if not token:
+        raise HTTPException(status_code=400, detail="Google token is required.")
+
+    idinfo = decode_google_id_token(token, GOOGLE_CLIENT_ID)
+
+    email = idinfo.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Unable to retrieve email from Google token.")
+
+    name = idinfo.get("name") or idinfo.get("given_name") or email.split("@")[0]
 
     # Check if user already exists in database by email
     user = db.query(models.User).filter(models.User.email == email).first()

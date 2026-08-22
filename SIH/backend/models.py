@@ -29,6 +29,8 @@ class TripModel(Base):
   status = Column(String, default="scheduled")
   is_live = Column(Boolean, default=False)
   speed = Column(Float, default=0.0)
+  pickup_cargo_image_url = Column(String, nullable=True)
+  delivery_proof_image_url = Column(String, nullable=True)
 
 
 class RequestModel(Base):
@@ -54,6 +56,8 @@ class RequestModel(Base):
   pickup_lng = Column(Float, nullable=True, default=0.0)
   delivery_lat = Column(Float, nullable=True, default=0.0)
   delivery_lng = Column(Float, nullable=True, default=0.0)
+  pickup_cargo_image_url = Column(String, nullable=True)
+  delivery_proof_image_url = Column(String, nullable=True)
   reason = Column(String, nullable=True)
   rating = Column(Integer, nullable=True)
   feedback = Column(String, nullable=True)

@@ -155,6 +155,8 @@ class TripCreate(BaseModel):
     status: Optional[str] = "scheduled"
     is_live: Optional[bool] = False
     speed: Optional[float] = 0.0
+    pickup_cargo_image_url: Optional[str] = None
+    delivery_proof_image_url: Optional[str] = None
 
 
 class TripResponse(TripCreate):
@@ -167,6 +169,8 @@ class TripResponse(TripCreate):
     slots_total: Optional[int] = 5
     slots_filled: Optional[int] = 0
     partners: Optional[list[dict]] = []
+    pickup_cargo_image_url: Optional[str] = None
+    delivery_proof_image_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -201,6 +205,8 @@ class RequestCreate(BaseModel):
     pickup_lng: Optional[float] = 0.0
     delivery_lat: Optional[float] = 0.0
     delivery_lng: Optional[float] = 0.0
+    pickup_cargo_image_url: Optional[str] = None
+    delivery_proof_image_url: Optional[str] = None
 
 
 class RequestResponse(RequestCreate):
@@ -221,6 +227,8 @@ class RequestResponse(RequestCreate):
     pickup_lng: Optional[float] = 0.0
     delivery_lat: Optional[float] = 0.0
     delivery_lng: Optional[float] = 0.0
+    pickup_cargo_image_url: Optional[str] = None
+    delivery_proof_image_url: Optional[str] = None
     reason: Optional[str] = None
     rating: Optional[int] = None
     feedback: Optional[str] = None

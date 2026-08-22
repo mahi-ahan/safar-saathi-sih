@@ -54,6 +54,33 @@ def get_current_user(
     return user
 
 
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/auth/login",
+    auto_error=False
+)
+
+
+def get_optional_current_user(
+    token: str = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db)
+):
+    if not token or str(token).lower() in ["null", "undefined", "none", ""]:
+        return None
+
+    try:
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+        return db.query(User).filter(User.id == int(user_id)).first()
+    except Exception:
+        return None
+
+
 # --------------------------------------------------
 # AUTHORIZATION
 # --------------------------------------------------
@@ -73,4 +100,4 @@ def require_roles(*required_roles):
 
         return current_user
 
-    return role_checker
+    return role_checker

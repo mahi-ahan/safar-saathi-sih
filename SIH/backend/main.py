@@ -37,6 +37,8 @@ def auto_migrate():
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS pickup_lng FLOAT DEFAULT 0.0;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS is_live BOOLEAN DEFAULT FALSE;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS speed FLOAT DEFAULT 0.0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS pickup_cargo_image_url VARCHAR;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS delivery_proof_image_url VARCHAR;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS goods_weight_kg INTEGER;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS distance_km FLOAT DEFAULT 150.0;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS kg_km FLOAT DEFAULT 0.0;",
@@ -50,6 +52,8 @@ def auto_migrate():
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS pickup_lng FLOAT DEFAULT 0.0;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS delivery_lat FLOAT DEFAULT 0.0;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS delivery_lng FLOAT DEFAULT 0.0;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS pickup_cargo_image_url VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS delivery_proof_image_url VARCHAR;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS reason VARCHAR;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS rating INTEGER;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS feedback VARCHAR;",
@@ -112,6 +116,8 @@ app.add_middleware(
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "cargo"), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "delivery_proofs"), exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 

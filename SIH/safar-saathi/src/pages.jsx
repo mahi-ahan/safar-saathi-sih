@@ -773,6 +773,14 @@ export function FindVehicles() {
       return
     }
 
+    // MANDATORY CARGO PROOF VALIDATION (STAGE 1)
+    if (!r?.pickup_cargo_image_url) {
+      notify(
+        '⚠ Mandatory: Please upload a photo of your cargo to authenticate this booking request.'
+      )
+      return
+    }
+
     if (+r.weight > free) {
       notify(
         `⚠ Maximum available space is ${free} kg.`
@@ -846,16 +854,19 @@ export function FindVehicles() {
     // Actually POST the request to the backend so it
     // persists and can be seen by the vehicle owner
     const token = localStorage.getItem("access_token");
+    const reqHeaders = {
+      "Content-Type": "application/json"
+    };
+    if (token && token !== "null" && token !== "undefined") {
+      reqHeaders["Authorization"] = `Bearer ${token}`;
+    }
     // Build a unique request ID to avoid primary-key collisions
     // when multiple senders request the same trip.
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     try {
       const res = await fetch("http://localhost:8000/api/requests", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers: reqHeaders,
         body: JSON.stringify({
           id: requestId,
           route: `${trip.from} → ${trip.to}`,
@@ -870,13 +881,14 @@ export function FindVehicles() {
           pickup_lat: r.pickupCoords?.lat || 0,
           pickup_lng: r.pickupCoords?.lng || 0,
           delivery_lat: r.deliveryCoords?.lat || 0,
-          delivery_lng: r.deliveryCoords?.lng || 0
+          delivery_lng: r.deliveryCoords?.lng || 0,
+          pickup_cargo_image_url: r.pickup_cargo_image_url
         })
       });
 
       if (res.ok) {
         notify(
-          `✔ Transport request sent to ${trip.owner}`
+          `✔ Transport request sent to ${trip.owner} with verified cargo proof!`
         );
         const created = await res.json();
         setMyRequests(prev => [
@@ -895,6 +907,8 @@ export function FindVehicles() {
             pickup_lng: r.pickupCoords?.lng || 0,
             delivery_lat: r.deliveryCoords?.lat || 0,
             delivery_lng: r.deliveryCoords?.lng || 0,
+            pickup_cargo_image_url: created.pickup_cargo_image_url || r.pickup_cargo_image_url,
+            delivery_proof_image_url: created.delivery_proof_image_url || null,
             kg_km: created.kg_km || (Number(r.weight) * estimatedDist),
             per_person_share: created.per_person_share || 0,
             total_driver_amount: created.total_driver_amount || trip.total_driver_amount,
@@ -1343,8 +1357,8 @@ export function FindVehicles() {
                       {/* CARD ACTIONS & BOOKING STATUS */}
                       <div className="pt-3 border-t border-gold/20 mt-2">
                         {myReq ? (
-                          <div className="rounded-xl bg-green-deep/5 border border-green-deep/20 p-3 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
+                          <div className="rounded-xl bg-green-deep/5 border border-green-deep/20 p-3 space-y-2.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
                               <div className="flex items-center gap-1.5">
                                 <CheckCircle2 size={16} className="text-green-600" />
                                 <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${myReq.status === 'pending'
@@ -1363,33 +1377,61 @@ export function FindVehicles() {
 
                               <div className="bg-white rounded-lg p-2 border border-gold/20 text-xs flex items-center justify-between">
                                 <span className="text-green-soft">{t('request.weight', 'Weight')}: <strong>{myReq.goods_weight_kg || myReq.kg} kg</strong> · {t('pricing.calc_segment', 'Fare Share')}:</span>
-                                <span className="font-bold text-green-deep font-display text-sm">₹{myReq.per_person_share || 0}</span>
+                                <span className="font-bold text-green-deep font-display text-sm ml-2">₹{myReq.per_person_share || 0}</span>
                               </div>
+                            </div>
 
-                              {myReq.status === 'pending_passenger_confirmation' && (
-                                <button
-                                  onClick={() => {
-                                    setCompletionModal({
-                                      isOpen: true,
-                                      requestId: myReq.id,
-                                      tripOwner: trip.owner,
-                                      route: `${trip.from} → ${trip.to}`,
-                                      weight: myReq.goods_weight_kg || myReq.kg,
-                                      distance: myReq.distance_km || 150,
-                                      kgKm: myReq.kg_km || ((myReq.goods_weight_kg || myReq.kg || 0) * (myReq.distance_km || 150)),
-                                      totalKgKm: myReq.total_trip_kg_km || 0,
-                                      share: myReq.per_person_share || 0,
-                                      totalAmount: trip.total_driver_amount || (trip.pricePerKg * trip.totalKg) || 0,
-                                      sharePct: myReq.share_pct || 0,
-                                      rating: 5,
-                                      feedback: ''
-                                    });
-                                  }}
-                                  className="w-full py-2 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow transition cursor-pointer"
+                            {/* PROOF IMAGES ROW */}
+                            <div className="flex items-center gap-2 pt-1 border-t border-gold/15 flex-wrap">
+                              {myReq.pickup_cargo_image_url && (
+                                <a
+                                  href={`http://localhost:8000${myReq.pickup_cargo_image_url}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition shadow-2xs"
                                 >
-                                  🎉 {t('card.confirm_delivery', 'Confirm Delivery & Rate')}
-                                </button>
+                                  <span>📦 My Cargo Photo</span>
+                                  <span className="text-[10px]">🔍</span>
+                                </a>
                               )}
+                              {(myReq.delivery_proof_image_url || trip.delivery_proof_image_url) && (
+                                <a
+                                  href={`http://localhost:8000${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-900 bg-blue-50 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition shadow-2xs"
+                                >
+                                  <span>📸 Delivery Proof Photo</span>
+                                  <span className="text-[10px]">🔍</span>
+                                </a>
+                              )}
+                            </div>
+
+                            {myReq.status === 'pending_passenger_confirmation' && (
+                              <button
+                                onClick={() => {
+                                  setCompletionModal({
+                                    isOpen: true,
+                                    requestId: myReq.id,
+                                    tripOwner: trip.owner,
+                                    route: `${trip.from} → ${trip.to}`,
+                                    weight: myReq.goods_weight_kg || myReq.kg,
+                                    distance: myReq.distance_km || 150,
+                                    kgKm: myReq.kg_km || ((myReq.goods_weight_kg || myReq.kg || 0) * (myReq.distance_km || 150)),
+                                    totalKgKm: myReq.total_trip_kg_km || 0,
+                                    share: myReq.per_person_share || 0,
+                                    totalAmount: trip.total_driver_amount || (trip.pricePerKg * trip.totalKg) || 0,
+                                    sharePct: myReq.share_pct || 0,
+                                    deliveryProofUrl: myReq.delivery_proof_image_url || trip.delivery_proof_image_url || null,
+                                    rating: 5,
+                                    feedback: ''
+                                  });
+                                }}
+                                className="w-full py-2.5 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow transition cursor-pointer"
+                              >
+                                🎉 {t('card.confirm_delivery', 'Confirm Delivery & Rate')}
+                              </button>
+                            )}
 
                               {['pending', 'accepted'].includes(myReq.status) && (
                                 <div className="flex justify-end pt-1">
@@ -1417,7 +1459,6 @@ export function FindVehicles() {
                                 </div>
                               )}
                             </div>
-                          </div>
                         ) : (
                           <div>
                             <button
@@ -1577,6 +1618,75 @@ export function FindVehicles() {
                                 />
                               </Field>
                             </div>
+
+                            <Field label="📸 Cargo Photo Proof (Mandatory Verification)">
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-3">
+                                  <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-gold/50 hover:border-green-deep rounded-xl bg-white/80 hover:bg-gold/5 cursor-pointer transition text-xs font-semibold text-green-deep shadow-2xs">
+                                    <Upload size={15} className="text-gold shrink-0" />
+                                    <span>{r.pickup_cargo_image_url ? '✔ Change Cargo Photo' : 'Upload Cargo Photo (JPG/PNG/WEBP)'}</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const token = localStorage.getItem("access_token");
+                                        const formData = new FormData();
+                                        formData.append('file', file);
+                                        try {
+                                          notify("Uploading cargo proof photo...");
+                                          const uploadHeaders = {};
+                                          if (token && token !== "null" && token !== "undefined") {
+                                            uploadHeaders["Authorization"] = `Bearer ${token}`;
+                                          }
+                                          const res = await fetch("http://localhost:8000/api/requests/upload-cargo-image", {
+                                            method: "POST",
+                                            headers: uploadHeaders,
+                                            body: formData
+                                          });
+                                          const data = await res.json();
+                                          if (res.ok && data.pickup_cargo_image_url) {
+                                            updateRequest(trip.id, 'pickup_cargo_image_url', data.pickup_cargo_image_url);
+                                            notify("✔ Cargo photo verified & attached!");
+                                          } else {
+                                            notify(data.detail || "Failed to upload cargo photo.");
+                                          }
+                                        } catch (err) {
+                                          notify("Could not upload cargo photo.");
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                  {r.pickup_cargo_image_url && (
+                                    <a
+                                      href={`http://localhost:8000${r.pickup_cargo_image_url}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="w-12 h-12 rounded-xl overflow-hidden border-2 border-emerald-500 shrink-0 block hover:opacity-90 shadow-sm"
+                                      title="Click to preview uploaded cargo photo"
+                                    >
+                                      <img
+                                        src={`http://localhost:8000${r.pickup_cargo_image_url}`}
+                                        alt="Cargo Proof"
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </a>
+                                  )}
+                                </div>
+                                {r.pickup_cargo_image_url ? (
+                                  <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                                    <span>✔</span>
+                                    <span>Verified Cargo Photo Attached (Ready for Driver Inspection)</span>
+                                  </p>
+                                ) : (
+                                  <p className="text-[11px] text-amber-700 font-medium">
+                                    ⚠ Required: Please upload a clear photo of your agricultural/commercial goods.
+                                  </p>
+                                )}
+                              </div>
+                            </Field>
 
                             <Field label={t('form.description', 'Description (Optional)')}>
                               <input
@@ -2180,6 +2290,25 @@ export function FindVehicles() {
               </p>
             </div>
 
+            {/* DRIVER DELIVERY PROOF PHOTO PREVIEW */}
+            {completionModal.deliveryProofUrl && (
+              <div className="mt-4 rounded-2xl bg-blue-50 border border-blue-200 p-3">
+                <p className="text-xs font-bold text-blue-900 mb-1.5 flex items-center gap-1">
+                  <span>📸 Verified Delivery Proof Photo</span>
+                </p>
+                <div className="rounded-xl overflow-hidden border border-blue-300 max-h-48 bg-black/5">
+                  <a href={`http://localhost:8000${completionModal.deliveryProofUrl}`} target="_blank" rel="noreferrer" title="Click to view full photo">
+                    <img
+                      src={`http://localhost:8000${completionModal.deliveryProofUrl}`}
+                      alt="Driver Delivery Proof"
+                      className="w-full h-44 object-cover hover:scale-105 transition duration-300 cursor-pointer"
+                    />
+                  </a>
+                </div>
+                <p className="text-[10.5px] text-blue-800 mt-1">Photo captured & uploaded by driver at drop-off location.</p>
+              </div>
+            )}
+
             {/* 5-STAR RATING SELECTOR */}
             <div className="mt-5">
               <label className="block text-xs font-semibold text-green-deep mb-2 text-center">
@@ -2378,6 +2507,7 @@ export function OfferTrip() {
   const [incomingRequests, setIncomingRequests] = useState([])
   const [myTrips, setMyTrips] = useState([])
   const [activeLiveTripId, setActiveLiveTripId] = useState(null)
+  const [proofModal, setProofModal] = useState({ isOpen: false, tripId: null, proofUrl: null, uploading: false })
   const liveIntervalRef = useRef(null)
 
   // Calculated Road Distance for Vehicle Suitability Validation
@@ -2580,9 +2710,49 @@ export function OfferTrip() {
     );
   };
 
-  const driverCompleteTrip = async (tripId) => {
+  const driverCompleteTrip = (tripId) => {
+    setProofModal({
+      isOpen: true,
+      tripId: tripId,
+      proofUrl: null,
+      uploading: false
+    });
+  };
 
-    if (!window.confirm("Mark this trip as complete? Connected passengers will be prompted to confirm delivery, view their dynamic weight-based share, and rate your service.")) {
+  const handleUploadDeliveryProof = async (file) => {
+    if (!file) return;
+    const token = localStorage.getItem("access_token");
+    const formData = new FormData();
+    formData.append("file", file);
+    setProofModal(prev => ({ ...prev, uploading: true }));
+    try {
+      notify("Uploading delivery proof photo...");
+      const uploadHeaders = {};
+      if (token && token !== "null" && token !== "undefined") {
+        uploadHeaders["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch("http://localhost:8000/api/trips/upload-delivery-proof", {
+        method: "POST",
+        headers: uploadHeaders,
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok && data.delivery_proof_image_url) {
+        setProofModal(prev => ({ ...prev, proofUrl: data.delivery_proof_image_url, uploading: false }));
+        notify("✔ Delivery proof photo verified!");
+      } else {
+        setProofModal(prev => ({ ...prev, uploading: false }));
+        notify(data.detail || "Failed to upload delivery proof.");
+      }
+    } catch (err) {
+      setProofModal(prev => ({ ...prev, uploading: false }));
+      notify("Could not connect to backend to upload proof.");
+    }
+  };
+
+  const confirmCompleteWithProof = async () => {
+    if (!proofModal.proofUrl) {
+      notify("⚠ Mandatory: Please upload a delivery proof photo before completing this trip.");
       return;
     }
     if (liveIntervalRef.current) {
@@ -2590,24 +2760,30 @@ export function OfferTrip() {
       liveIntervalRef.current = null;
     }
     const token = localStorage.getItem("access_token");
+    const headers = {};
+    if (token && token !== "null" && token !== "undefined") {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     try {
-      const res = await fetch(`http://localhost:8000/api/trips/${tripId}/complete`, {
+      const res = await fetch(`http://localhost:8000/api/trips/${proofModal.tripId}/complete?delivery_proof_image_url=${encodeURIComponent(proofModal.proofUrl)}`, {
         method: "PUT",
-        headers: { "Authorization": `Bearer ${token}` }
+        headers
       });
       if (res.ok) {
         setActiveLiveTripId(null);
-        notify("✔ Trip marked complete! Waiting for passenger delivery confirmation & rating.");
+        notify("✔ Delivery proof verified! Trip marked complete, waiting for passenger confirmation & rating.");
+        setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false });
         fetchMyTrips();
         const reqRes = await fetch("http://localhost:8000/api/requests/incoming", {
-          headers: { "Authorization": `Bearer ${token}` }
+          headers
         });
-        const reqData = await reqRes.json();
+        const reqData = await reqRes.json().catch(() => []);
         if (reqRes.ok && Array.isArray(reqData)) {
           setIncomingRequests(reqData);
         }
       } else {
-        notify("⚠ Failed to initiate trip completion.");
+        const data = await res.json().catch(() => ({}));
+        notify(data.detail || "⚠ Failed to initiate trip completion.");
       }
     } catch (err) {
       console.error("Failed to complete trip", err);
@@ -3404,6 +3580,41 @@ export function OfferTrip() {
                         )}
                       </div>
 
+                      {/* SHIPPER VERIFIED CARGO PHOTO */}
+                      {req.pickup_cargo_image_url && (
+                        <div className="rounded-xl bg-gold/10 border border-gold/30 p-2.5 mb-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <a
+                              href={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="w-12 h-12 rounded-xl overflow-hidden border border-gold/40 shrink-0 block hover:opacity-90 shadow-2xs"
+                              title="Click to inspect full cargo photo"
+                            >
+                              <img
+                                src={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                                alt="Shipper Cargo"
+                                className="w-full h-full object-cover"
+                              />
+                            </a>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-green-deep truncate flex items-center gap-1">
+                                <span>📸 Verified Cargo Proof</span>
+                              </p>
+                              <p className="text-[11px] text-green-soft">Shipper goods authenticated</p>
+                            </div>
+                          </div>
+                          <a
+                            href={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2.5 py-1 bg-white hover:bg-gold/10 text-green-deep font-semibold text-[11px] rounded-lg border border-gold/30 shrink-0 transition shadow-2xs"
+                          >
+                            View 🔍
+                          </a>
+                        </div>
+                      )}
+
                       {/* TON-KM DYNAMIC SHARE HIGHLIGHT */}
                       <div className="rounded-xl bg-gold/10 border border-gold/30 p-3 mb-3">
                         <div className="flex items-center justify-between">
@@ -4168,6 +4379,79 @@ export function OfferTrip() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MANDATORY DELIVERY PROOF PHOTO MODAL (STAGE 2) */}
+      {proofModal.isOpen && (
+        <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-[fadeIn_.2s_ease]">
+          <div className="bg-white rounded-3xl border border-gold/40 shadow-2xl max-w-md w-full p-6 animate-[scaleIn_.25s_ease]">
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-700 mx-auto flex items-center justify-center mb-3 text-3xl shadow-inner">
+                📸
+              </div>
+              <h3 className="font-display font-bold text-2xl text-green-deep">
+                Upload Delivery Proof
+              </h3>
+              <p className="text-xs text-green-soft mt-1 leading-relaxed">
+                Stage 2 Verification: Transporters must upload a clear photo of the delivered cargo at the destination before completing the ride.
+              </p>
+            </div>
+
+            {/* UPLOAD DROPZONE */}
+            <div className="mt-5 space-y-3">
+              <label className="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-gold/50 hover:border-green-deep rounded-2xl bg-cream/30 hover:bg-gold/5 cursor-pointer transition text-center">
+                <Upload size={24} className="text-gold" />
+                <span className="text-xs font-bold text-green-deep">
+                  {proofModal.proofUrl ? "✔ Change Delivery Photo" : "Take or Choose Delivery Photo (Mandatory)"}
+                </span>
+                <span className="text-[11px] text-green-soft">Supports JPG, PNG, WEBP from Camera or Gallery</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => handleUploadDeliveryProof(e.target.files?.[0])}
+                />
+              </label>
+
+              {proofModal.proofUrl && (
+                <div className="rounded-2xl border-2 border-emerald-500 overflow-hidden bg-black/5 p-2">
+                  <img
+                    src={`http://localhost:8000${proofModal.proofUrl}`}
+                    alt="Delivery Proof Preview"
+                    className="w-full h-44 object-cover rounded-xl"
+                  />
+                  <p className="text-[11px] font-bold text-emerald-800 text-center mt-1.5 flex items-center justify-center gap-1">
+                    <span>✔</span>
+                    <span>Delivery Proof Photo Attached & Verified</span>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ACTION BUTTONS */}
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false })}
+                className="flex-1 py-3 px-4 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!proofModal.proofUrl || proofModal.uploading}
+                onClick={confirmCompleteWithProof}
+                className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  proofModal.proofUrl && !proofModal.uploading
+                    ? 'bg-green-deep hover:bg-green text-cream'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                <span>🏁</span>
+                <span>{proofModal.uploading ? 'Uploading...' : 'Confirm & Complete'}</span>
+              </button>
             </div>
           </div>
         </div>

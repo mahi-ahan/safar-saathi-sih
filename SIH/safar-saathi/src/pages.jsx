@@ -21,9 +21,11 @@ import {
   VolumeX
 } from 'lucide-react'
 
-import { useLang } from './lib'
+import { useLang, VEHICLE_CAPACITY_SPECS, getVehicleCapacitySpec } from './lib'
 import { TTSButton, speakText, stopSpeech } from './tts'
 import { AuthModal, AUTH_ROLE_TEXTS, GOOGLE_CLIENT_ID } from './AuthModal'
+import { sendBookingToDriverWhatsApp, sendAcceptanceToFarmerWhatsApp, sendDeliveryCompleteWhatsApp } from './whatsapp'
+export { LoginPage } from './LoginPage'
 
 import {
   Btn,
@@ -204,60 +206,18 @@ export function Home() {
                 </span>
               </p>
 
-                  <div className="mt-8 flex flex-wrap gap-4">
-                {/* Find a Vehicle Button -> Smooth AuthModal if not signed in */}
+              <div className="mt-8 flex flex-wrap gap-4">
+                {/* Find a Vehicle Button */}
                 <button
-                  onClick={async () => {
-                    const token = localStorage.getItem("access_token");
-                    if (!token) {
-                      setAuthModal({ isOpen: true, intent: 'find' });
-                      return;
-                    }
-                    try {
-                      const res = await fetch("http://localhost:8000/auth/status", {
-                        headers: { "Authorization": `Bearer ${token}` }
-                      });
-                      const data = await res.json();
-                      if (!data.is_profile_complete) {
-                        navigate('/complete-profile');
-                      } else if (data.user_type === 'driver') {
-                        setAuthModal({ isOpen: true, intent: 'find' });
-                      } else {
-                        navigate('/find');
-                      }
-                    } catch (err) {
-                      setAuthModal({ isOpen: true, intent: 'find' });
-                    }
-                  }}
+                  onClick={() => navigate('/find')}
                   className="bg-green-deep text-cream px-6 py-3.5 rounded-xl font-semibold hover:bg-green border border-green-light/20 transition-all shadow-lg hover:-translate-y-0.5 cursor-pointer"
                 >
                   {t('cta.find', 'Find a Vehicle')}
                 </button>
 
-                {/* Offer a Trip Button -> Smooth AuthModal if not signed in */}
+                {/* Offer a Trip Button */}
                 <button
-                  onClick={async () => {
-                    const token = localStorage.getItem("access_token");
-                    if (!token) {
-                      setAuthModal({ isOpen: true, intent: 'offer' });
-                      return;
-                    }
-                    try {
-                      const res = await fetch("http://localhost:8000/auth/status", {
-                        headers: { "Authorization": `Bearer ${token}` }
-                      });
-                      const data = await res.json();
-                      if (!data.is_profile_complete) {
-                        navigate('/complete-profile');
-                      } else if (data.user_type !== 'driver') {
-                        setAuthModal({ isOpen: true, intent: 'offer' });
-                      } else {
-                        navigate('/offer');
-                      }
-                    } catch (err) {
-                      setAuthModal({ isOpen: true, intent: 'offer' });
-                    }
-                  }}
+                  onClick={() => navigate('/offer')}
                   className="bg-gold text-green-deep px-6 py-3.5 rounded-xl font-semibold hover:bg-gold-light transition-all shadow-lg hover:-translate-y-0.5 cursor-pointer"
                 >
                   {t('cta.offer', 'Offer a Trip')}
@@ -320,72 +280,6 @@ export function Home() {
    FIND VEHICLES
 ========================================================= */
 
-const TRIPS = [
-  {
-    id: 1,
-    state: 'Uttar Pradesh',
-    from: 'Lucknow',
-    to: 'Delhi',
-    date: '2026-08-20',
-    vehicle: 'Mini-Truck',
-    owner: 'Ramesh Kumar',
-    verified: true,
-    pct: 55,
-    totalKg: 900,
-    pricePerKg: 8,
-    pickup: 'Alambagh Transport Nagar, Lucknow',
-    lat: 26.8467,
-    lng: 80.9462
-  },
-  {
-    id: 2,
-    state: 'Maharashtra',
-    from: 'Mumbai',
-    to: 'Pune',
-    date: '2026-08-21',
-    vehicle: 'Mini-Truck',
-    owner: 'Amit Patil',
-    verified: true,
-    pct: 30,
-    totalKg: 1200,
-    pricePerKg: 10,
-    pickup: 'Andheri East, Mumbai',
-    lat: 19.1197,
-    lng: 72.8468
-  },
-  {
-    id: 3,
-    state: 'Delhi',
-    from: 'Delhi',
-    to: 'Jaipur',
-    date: '2026-08-22',
-    vehicle: 'Heavy-Truck',
-    owner: 'Sandeep Sharma',
-    verified: true,
-    pct: 70,
-    totalKg: 8000,
-    pricePerKg: 6,
-    pickup: 'Okhla Industrial Area, Delhi',
-    lat: 28.5355,
-    lng: 77.2730
-  },
-  {
-    id: 4,
-    state: 'Karnataka',
-    from: 'Bengaluru',
-    to: 'Chennai',
-    date: '2026-08-23',
-    vehicle: 'Heavy-Truck',
-    owner: 'Arjun Reddy',
-    verified: false,
-    pct: 40,
-    totalKg: 2500,
-    pricePerKg: 7,
-    pickup: 'Electronic City, Bengaluru',
-    lat: 12.8399,
-    lng: 77.6770
-  }
-]
 
 const GOODS_CATEGORIES = [
   'Parcel / Package',
@@ -401,7 +295,7 @@ const GOODS_CATEGORIES = [
 ]
 
 export function FindVehicles() {
-  const { t } = useLang()
+  const { lang, t } = useLang()
   const [toast, notify] = useToast()
   const navigate = useNavigate()
 
@@ -423,6 +317,7 @@ export function FindVehicles() {
   const [requestOpen, setRequestOpen] = useState(null)
   const [requests, setRequests] = useState({})
   const [myRequests, setMyRequests] = useState([])
+  const [submittingTripId, setSubmittingTripId] = useState(null)
   const [cancellationModal, setCancellationModal] = useState({
     isOpen: false,
     title: 'The driver has cancelled this ride.',
@@ -631,8 +526,10 @@ export function FindVehicles() {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const data = await res.json();
-        if (res.ok) {
+        if (res.ok && data.authenticated !== false) {
           setProfile(data);
+        } else {
+          localStorage.removeItem("access_token");
         }
       } catch (err) {
         console.error("Failed to fetch user status", err);
@@ -659,17 +556,19 @@ export function FindVehicles() {
     navigate('/login');
   };
 
-  const list = (trips.length > 0 ? trips : TRIPS)
+  const handleSwitchToDriver = () => {
+    localStorage.removeItem("access_token");
+    localStorage.setItem("login_intent", "offer");
+    sessionStorage.clear();
+    stopSpeech();
+    navigate('/login', { state: { intent: 'offer' } });
+  };
+
+  const list = trips
     .filter(trip => {
-      // Exclude cancelled or completed trips from new booking search,
-      // UNLESS the passenger has a request on that trip so they can view its cancelled status
-      const hasMyReq = myRequests.some(
-        req =>
-          req.owner === trip.owner &&
-          req.route === `${trip.from} → ${trip.to}`
-      );
-      if (trip.status === 'completed' || trip.status === 'cancelled' || trip.status === 'cancelled_by_driver') {
-        if (!hasMyReq) return false;
+      // Completed, cancelled, or pending confirmation trips MUST NEVER appear in Explore Available Vehicles
+      if (trip.status === 'completed' || trip.status === 'cancelled' || trip.status === 'cancelled_by_driver' || trip.status === 'pending_passenger_confirmation') {
+        return false;
       }
 
       return (
@@ -699,8 +598,7 @@ export function FindVehicles() {
 
 
   const fly = id => {
-    const allTrips = trips.length > 0 ? trips : TRIPS;
-    const trip = allTrips.find(x => x.id === id)
+    const trip = trips.find(x => x.id === id)
 
     if (!trip) return
 
@@ -753,6 +651,9 @@ export function FindVehicles() {
 
 
   const submitRequest = async trip => {
+    if (submittingTripId === trip.id) return;
+    setSubmittingTripId(trip.id);
+
     const r = requests[trip.id]
 
     const free = Math.round(
@@ -769,7 +670,7 @@ export function FindVehicles() {
       notify(
         '⚠ Please fill all required request details.'
       )
-
+      setSubmittingTripId(null);
       return
     }
 
@@ -778,6 +679,7 @@ export function FindVehicles() {
       notify(
         '⚠ Mandatory: Please upload a photo of your cargo to authenticate this booking request.'
       )
+      setSubmittingTripId(null);
       return
     }
 
@@ -785,7 +687,7 @@ export function FindVehicles() {
       notify(
         `⚠ Maximum available space is ${free} kg.`
       )
-
+      setSubmittingTripId(null);
       return
     }
 
@@ -812,6 +714,7 @@ export function FindVehicles() {
 
     if (!pickupCoords || !deliveryCoords) {
       notify("❌ Please select a verified Indian location from the suggestions dropdown for both pickup and delivery.");
+      setSubmittingTripId(null);
       return;
     }
 
@@ -824,31 +727,23 @@ export function FindVehicles() {
       const isPickupOnRoute = isPassengerOnRoute(pickupCoords, driverRoute);
       if (!isPickupOnRoute) {
         notify(`❌ Route Mismatch: Requested pickup (${r.pickupLocation}) is not along the driver's route (${trip.from} → ${trip.to}). Booking blocked.`);
+        setSubmittingTripId(null);
         return;
       }
 
       const isDeliveryOnRoute = isPassengerOnRoute(deliveryCoords, driverRoute);
       if (!isDeliveryOnRoute) {
         notify(`❌ Route Mismatch: Requested drop-off (${r.deliveryLocation}) is not along the driver's route (${trip.from} → ${trip.to}). Booking blocked.`);
+        setSubmittingTripId(null);
         return;
       }
     }
 
-    // Calculate travel distance between user pickup and delivery locations
+    // Calculate travel distance between user pickup and delivery locations instantly (0ms)
     let estimatedDist = trip.distance_km || 150;
     if (pickupCoords && deliveryCoords) {
-      try {
-        const osrmDist = await getOsrmDistanceKm(pickupCoords, deliveryCoords);
-        if (osrmDist > 0) {
-          estimatedDist = osrmDist;
-        } else {
-          const direct = haversineDistance(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng);
-          estimatedDist = Math.max(5, calculateHighwayTortuosityKm(direct));
-        }
-      } catch (e) {
-        const direct = haversineDistance(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng);
-        estimatedDist = Math.max(5, calculateHighwayTortuosityKm(direct));
-      }
+      const direct = haversineDistance(pickupCoords.lat, pickupCoords.lng, deliveryCoords.lat, deliveryCoords.lng);
+      estimatedDist = Math.max(5, calculateHighwayTortuosityKm(direct));
     }
 
     // Actually POST the request to the backend so it
@@ -864,6 +759,7 @@ export function FindVehicles() {
     // when multiple senders request the same trip.
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     try {
+      const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
       const res = await fetch("http://localhost:8000/api/requests", {
         method: "POST",
         headers: reqHeaders,
@@ -882,7 +778,8 @@ export function FindVehicles() {
           pickup_lng: r.pickupCoords?.lng || 0,
           delivery_lat: r.deliveryCoords?.lat || 0,
           delivery_lng: r.deliveryCoords?.lng || 0,
-          pickup_cargo_image_url: r.pickup_cargo_image_url
+          pickup_cargo_image_url: r.pickup_cargo_image_url,
+          lang: activeLang
         })
       });
 
@@ -891,31 +788,35 @@ export function FindVehicles() {
           `✔ Transport request sent to ${trip.owner} with verified cargo proof!`
         );
         const created = await res.json();
-        setMyRequests(prev => [
-          ...prev,
-          {
-            id: created.id || requestId,
-            status: created.status || 'pending',
-            route: `${trip.from} → ${trip.to}`,
-            vehicle: trip.vehicle,
-            owner: trip.owner,
-            farmer_name: profile.full_name || 'User',
-            kg: Number(r.weight),
-            goods_weight_kg: Number(r.weight),
-            distance_km: estimatedDist,
-            pickup_lat: r.pickupCoords?.lat || 0,
-            pickup_lng: r.pickupCoords?.lng || 0,
-            delivery_lat: r.deliveryCoords?.lat || 0,
-            delivery_lng: r.deliveryCoords?.lng || 0,
-            pickup_cargo_image_url: created.pickup_cargo_image_url || r.pickup_cargo_image_url,
-            delivery_proof_image_url: created.delivery_proof_image_url || null,
-            kg_km: created.kg_km || (Number(r.weight) * estimatedDist),
-            per_person_share: created.per_person_share || 0,
-            total_driver_amount: created.total_driver_amount || trip.total_driver_amount,
-            total_trip_kg_km: created.total_trip_kg_km || 0,
-            share_pct: created.share_pct || 0
-          }
-        ]);
+        
+        setMyRequests(prev => {
+          const filtered = prev.filter(req => req.id !== (created.id || requestId) && !(req.owner === trip.owner && req.route === `${trip.from} → ${trip.to}`));
+          return [
+            {
+              id: created.id || requestId,
+              status: created.status || 'pending',
+              route: `${trip.from} → ${trip.to}`,
+              vehicle: trip.vehicle,
+              owner: trip.owner,
+              farmer_name: profile.full_name || 'User',
+              kg: Number(r.weight),
+              goods_weight_kg: Number(r.weight),
+              distance_km: estimatedDist,
+              pickup_lat: r.pickupCoords?.lat || 0,
+              pickup_lng: r.pickupCoords?.lng || 0,
+              delivery_lat: r.deliveryCoords?.lat || 0,
+              delivery_lng: r.deliveryCoords?.lng || 0,
+              pickup_cargo_image_url: created.pickup_cargo_image_url || r.pickup_cargo_image_url,
+              delivery_proof_image_url: created.delivery_proof_image_url || null,
+              kg_km: created.kg_km || (Number(r.weight) * estimatedDist),
+              per_person_share: created.per_person_share || 0,
+              total_driver_amount: created.total_driver_amount || trip.total_driver_amount,
+              total_trip_kg_km: created.total_trip_kg_km || 0,
+              share_pct: created.share_pct || 0
+            },
+            ...filtered
+          ];
+        });
         setRequestOpen(null);
         fetchTripsAndRequests();
       } else {
@@ -925,7 +826,9 @@ export function FindVehicles() {
 
     } catch (err) {
       console.error("Failed to send request", err);
-      notify("Could not connect to backend. Request not sent.");
+      notify("Could not connect to backend.");
+    } finally {
+      setSubmittingTripId(null);
     }
   }
 
@@ -976,14 +879,22 @@ export function FindVehicles() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
           <div className="hidden sm:block text-right">
             <p className="font-bold text-xs text-green-deep">{profile.full_name || t('profile.sender_role', 'Sender')}</p>
             <p className="text-[11px] text-green-soft font-mono">{profile.email}</p>
           </div>
           <button
+            onClick={handleSwitchToDriver}
+            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs flex items-center gap-1 cursor-pointer"
+            title="Switch to Driver Google Account"
+          >
+            <span>🔄</span>
+            <span>Switch to Driver Hub</span>
+          </button>
+          <button
             onClick={handleLogout}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs cursor-pointer"
+            className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs cursor-pointer"
           >
             {t('nav_logout', 'Logout')}
           </button>
@@ -1195,10 +1106,12 @@ export function FindVehicles() {
                   const bookedKg = trip.total_booked_kg || 0;
 
                   const r = requests[trip.id] || {};
+                  // Only treat ACTIVE non-cancelled requests as blocking in Explore
                   const myReq = myRequests.find(
                     req =>
                       req.owner === trip.owner &&
-                      req.route === `${trip.from} → ${trip.to}`
+                      req.route === `${trip.from} → ${trip.to}` &&
+                      ['pending', 'accepted', 'assigned', 'in_transit', 'pending_passenger_confirmation'].includes(req.status)
                   );
                   const isTripLive = trip.status === 'in_transit' || trip.is_live;
 
@@ -1382,28 +1295,48 @@ export function FindVehicles() {
                             </div>
 
                             {/* PROOF IMAGES ROW */}
-                            <div className="flex items-center gap-2 pt-1 border-t border-gold/15 flex-wrap">
+                            <div className="pt-2 border-t border-gold/15 space-y-2">
                               {myReq.pickup_cargo_image_url && (
-                                <a
-                                  href={`http://localhost:8000${myReq.pickup_cargo_image_url}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition shadow-2xs"
-                                >
-                                  <span>📦 My Cargo Photo</span>
-                                  <span className="text-[10px]">🔍</span>
-                                </a>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={`http://localhost:8000${myReq.pickup_cargo_image_url}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition shadow-2xs"
+                                  >
+                                    <span>📦 My Cargo Photo</span>
+                                    <span className="text-[10px]">🔍</span>
+                                  </a>
+                                </div>
                               )}
                               {(myReq.delivery_proof_image_url || trip.delivery_proof_image_url) && (
-                                <a
-                                  href={`http://localhost:8000${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-900 bg-blue-50 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition shadow-2xs"
-                                >
-                                  <span>📸 Delivery Proof Photo</span>
-                                  <span className="text-[10px]">🔍</span>
-                                </a>
+                                <div className="rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 p-3 shadow-xs">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                                      <span>📸</span>
+                                      <span>Stage 2 Delivery Photo Proof</span>
+                                    </span>
+                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
+                                      <span>✔</span>
+                                      <span>Verified at Drop-off</span>
+                                    </span>
+                                  </div>
+                                  <a
+                                    href={`http://localhost:8000${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block rounded-xl overflow-hidden border-2 border-white shadow group relative max-h-48 bg-slate-900"
+                                  >
+                                    <img
+                                      src={`http://localhost:8000${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
+                                      alt="Delivery Proof Photo"
+                                      className="w-full h-40 object-cover group-hover:scale-105 transition duration-300"
+                                    />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-semibold text-xs gap-1.5">
+                                      <span>🔍 Click to View Full Resolution Photo</span>
+                                    </div>
+                                  </a>
+                                </div>
                               )}
                             </div>
 
@@ -1698,11 +1631,25 @@ export function FindVehicles() {
                             </Field>
 
                             <button
+                              disabled={submittingTripId === trip.id}
                               onClick={() => submitRequest(trip)}
-                              className="w-full py-2.5 rounded-xl bg-green-deep hover:bg-green text-cream font-bold text-xs shadow transition flex items-center justify-center gap-1.5 cursor-pointer"
+                              className={`w-full py-2.5 rounded-xl text-cream font-bold text-xs shadow transition flex items-center justify-center gap-1.5 ${
+                                submittingTripId === trip.id
+                                  ? 'bg-gray-400 cursor-not-allowed'
+                                  : 'bg-green-deep hover:bg-green cursor-pointer'
+                              }`}
                             >
-                              <Send size={14} />
-                              <span>{t('form.submit_booking', 'Submit Cargo Booking')}</span>
+                              {submittingTripId === trip.id ? (
+                                <>
+                                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                  <span>{t('form.sending', 'Sending Request...')}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Send size={14} />
+                                  <span>{t('form.submit_booking', 'Submit Cargo Booking')}</span>
+                                </>
+                              )}
                             </button>
                           </div>
                         )}
@@ -1906,6 +1853,55 @@ export function FindVehicles() {
                         </div>
                       </div>
 
+                      {/* PROOF IMAGES (CARGO & DELIVERY) */}
+                      {(req.pickup_cargo_image_url || req.delivery_proof_image_url) && (
+                        <div className="space-y-2 mb-3">
+                          {req.delivery_proof_image_url && (
+                            <div className="rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 p-3 shadow-xs">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                                  <span>📸</span>
+                                  <span>Stage 2 Delivery Photo Proof</span>
+                                </span>
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
+                                  <span>✔</span>
+                                  <span>Verified at Drop-off</span>
+                                </span>
+                              </div>
+                              <a
+                                href={`http://localhost:8000${req.delivery_proof_image_url}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block rounded-xl overflow-hidden border-2 border-white shadow group relative max-h-44 bg-slate-900"
+                              >
+                                <img
+                                  src={`http://localhost:8000${req.delivery_proof_image_url}`}
+                                  alt="Delivery Proof Photo"
+                                  className="w-full h-36 object-cover group-hover:scale-105 transition duration-300"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-semibold text-xs gap-1.5">
+                                  <span>🔍 Click to View Full Resolution Photo</span>
+                                </div>
+                              </a>
+                            </div>
+                          )}
+
+                          {req.pickup_cargo_image_url && (
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition shadow-2xs"
+                              >
+                                <span>📦 My Cargo Photo</span>
+                                <span className="text-[10px]">🔍</span>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* RATING DISPLAY IF COMPLETED */}
                       {req.rating && (
                         <div className="rounded-xl bg-amber-50 border border-amber-200 p-2.5 text-xs mb-3">
@@ -1938,6 +1934,7 @@ export function FindVehicles() {
                               share: req.per_person_share || 0,
                               totalAmount: req.total_driver_amount || 0,
                               sharePct: req.share_pct || 0,
+                              deliveryProofUrl: req.delivery_proof_image_url || null,
                               rating: 5,
                               feedback: ''
                             });
@@ -2350,8 +2347,9 @@ export function FindVehicles() {
               <button
                 onClick={async () => {
                   const token = localStorage.getItem("access_token");
+                  const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
                   try {
-                    const res = await fetch(`http://localhost:8000/api/requests/${completionModal.requestId}/confirm-completion`, {
+                    const res = await fetch(`http://localhost:8000/api/requests/${completionModal.requestId}/confirm-completion?lang=${encodeURIComponent(activeLang)}`, {
                       method: "PUT",
                       headers: {
                         "Content-Type": "application/json",
@@ -2367,6 +2365,7 @@ export function FindVehicles() {
                       setCompletionModal(prev => ({ ...prev, isOpen: false }));
                       setSelectedTripId(null);
                       setRequestOpen(null);
+                      await fetchTripsAndRequests();
                     } else {
                       notify("⚠ Failed to confirm delivery.");
                     }
@@ -2390,88 +2389,11 @@ export function FindVehicles() {
 
 
 /* =========================================================
-   VEHICLE PHYSICAL CAPACITY SPECIFICATIONS & HARD LIMITS
-========================================================= */
-
-export const VEHICLE_CAPACITY_SPECS = {
-  'Two-Wheeler': {
-    name: 'Two-Wheeler',
-    displayName: 'Two-Wheeler (Bike / Scooter)',
-    defaultKg: 30,
-    maxKg: 50,
-    minKg: 5,
-    maxDistanceKm: 20,
-    basePrice: 150,
-    perKmRate: 12,
-    step: 5,
-    icon: '🛵',
-    description: 'Two-Wheeler (Max 50 kg · Max 20 km range)'
-  },
-  'Three-Wheeler/Auto': {
-    name: 'Three-Wheeler/Auto',
-    displayName: 'Three-Wheeler/Auto (Cargo Rickshaw)',
-    defaultKg: 200,
-    maxKg: 350,
-    minKg: 20,
-    maxDistanceKm: 100,
-    basePrice: 350,
-    perKmRate: 16,
-    step: 10,
-    icon: '🛺',
-    description: 'Three-Wheeler (Max 350 kg · Max 100 km range)'
-  },
-  'Mini-Truck': {
-    name: 'Mini-Truck',
-    displayName: 'Mini-Truck (Tata Ace / Pickup / Bolero)',
-    defaultKg: 800,
-    maxKg: 1500,
-    minKg: 50,
-    maxDistanceKm: 500,
-    basePrice: 1200,
-    perKmRate: 24,
-    step: 50,
-    icon: '🛻',
-    description: 'Mini-Truck (Max 1,500 kg · Max 500 km range)'
-  },
-  'Heavy-Truck': {
-    name: 'Heavy-Truck',
-    displayName: 'Heavy-Truck (HCV / 10-Wheeler / Lorry)',
-    defaultKg: 8000,
-    maxKg: 25000,
-    minKg: 500,
-    maxDistanceKm: Infinity,
-    basePrice: 4500,
-    perKmRate: 42,
-    step: 250,
-    icon: '🚛',
-    description: 'Heavy Commercial HCV (Max 25,000 kg · Any distance)'
-  }
-};
-
-export function getVehicleCapacitySpec(vehicleName) {
-  if (!vehicleName) return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
-  const v = String(vehicleName).toLowerCase().trim();
-  if (v.includes('two') || v.includes('bike') || v.includes('scooter') || v.includes('motorcycle')) {
-    return VEHICLE_CAPACITY_SPECS['Two-Wheeler'];
-  }
-  if (v.includes('three') || v.includes('auto') || v.includes('rickshaw')) {
-    return VEHICLE_CAPACITY_SPECS['Three-Wheeler/Auto'];
-  }
-  if (v.includes('mini') || v.includes('ace') || v.includes('chota') || v.includes('jeeto') || v.includes('pickup') || v.includes('bolero') || v.includes('yodha') || v.includes('van') || v.includes('eeco') || v.includes('supro')) {
-    return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
-  }
-  if (v.includes('heavy') || v.includes('truck') || v.includes('lorry') || v.includes('hcv') || v.includes('trailer') || v.includes('tempo') || v.includes('407') || v.includes('canter') || v.includes('tractor')) {
-    return VEHICLE_CAPACITY_SPECS['Heavy-Truck'];
-  }
-  return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
-}
-
-/* =========================================================
    OFFER A TRIP + DRIVER DELIVERY
 ========================================================= */
 
 export function OfferTrip() {
-  const { t } = useLang()
+  const { lang, t } = useLang()
   const [toast, notify] = useToast()
   const navigate = useNavigate()
 
@@ -2509,6 +2431,7 @@ export function OfferTrip() {
   const [activeLiveTripId, setActiveLiveTripId] = useState(null)
   const [proofModal, setProofModal] = useState({ isOpen: false, tripId: null, proofUrl: null, uploading: false })
   const liveIntervalRef = useRef(null)
+  const isLiveActiveRef = useRef(false)
 
   // Calculated Road Distance for Vehicle Suitability Validation
   const [routeDistanceKm, setRouteDistanceKm] = useState(0);
@@ -2652,6 +2575,7 @@ export function OfferTrip() {
             })
           });
 
+          isLiveActiveRef.current = true;
           setActiveLiveTripId(trip.id);
           notify("✔ Trip Started! Sharing live location with all senders.");
           fetchMyTrips();
@@ -2660,8 +2584,10 @@ export function OfferTrip() {
 
           let step = 0;
           liveIntervalRef.current = setInterval(() => {
+            if (!isLiveActiveRef.current) return;
             navigator.geolocation.getCurrentPosition(
               async (pos) => {
+                if (!isLiveActiveRef.current) return;
                 let currentLat = pos.coords.latitude;
                 let currentLng = pos.coords.longitude;
 
@@ -2673,6 +2599,7 @@ export function OfferTrip() {
                 const currentSpeed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 40;
 
                 try {
+                  if (!isLiveActiveRef.current) return;
                   await fetch(`http://localhost:8000/api/trips/${trip.id}/location`, {
                     method: "PUT",
                     headers: {
@@ -2711,6 +2638,12 @@ export function OfferTrip() {
   };
 
   const driverCompleteTrip = (tripId) => {
+    isLiveActiveRef.current = false;
+    if (liveIntervalRef.current) {
+      clearInterval(liveIntervalRef.current);
+      liveIntervalRef.current = null;
+    }
+    setActiveLiveTripId(null);
     setProofModal({
       isOpen: true,
       tripId: tripId,
@@ -2755,24 +2688,42 @@ export function OfferTrip() {
       notify("⚠ Mandatory: Please upload a delivery proof photo before completing this trip.");
       return;
     }
+    isLiveActiveRef.current = false;
     if (liveIntervalRef.current) {
       clearInterval(liveIntervalRef.current);
       liveIntervalRef.current = null;
     }
+    setActiveLiveTripId(null);
     const token = localStorage.getItem("access_token");
     const headers = {};
     if (token && token !== "null" && token !== "undefined") {
       headers["Authorization"] = `Bearer ${token}`;
     }
     try {
-      const res = await fetch(`http://localhost:8000/api/trips/${proofModal.tripId}/complete?delivery_proof_image_url=${encodeURIComponent(proofModal.proofUrl)}`, {
+      const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
+      const res = await fetch(`http://localhost:8000/api/trips/${proofModal.tripId}/complete?delivery_proof_image_url=${encodeURIComponent(proofModal.proofUrl)}&lang=${encodeURIComponent(activeLang)}`, {
         method: "PUT",
         headers
       });
       if (res.ok) {
-        setActiveLiveTripId(null);
+        setMyTrips(prev => prev.map(t => t.id === proofModal.tripId ? { ...t, status: 'pending_passenger_confirmation', is_live: false } : t));
         notify("✔ Delivery proof verified! Trip marked complete, waiting for passenger confirmation & rating.");
         setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false });
+        
+        // Trigger real WhatsApp delivery notification to connected farmer
+        if (incomingRequests && incomingRequests.length > 0) {
+          const targetReq = incomingRequests.find(r => r.farmer_phone);
+          if (targetReq && targetReq.farmer_phone) {
+            sendDeliveryCompleteWhatsApp({
+              farmerPhone: targetReq.farmer_phone,
+              farmerName: targetReq.farmer_name,
+              driverName: profile.full_name || "Driver",
+              route: targetReq.route || "Mandi Route",
+              weight: targetReq.goods_weight_kg || targetReq.kg || 400,
+              lang
+            });
+          }
+        }
         fetchMyTrips();
         const reqRes = await fetch("http://localhost:8000/api/requests/incoming", {
           headers
@@ -2802,7 +2753,7 @@ export function OfferTrip() {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const data = await res.json();
-        if (res.ok) {
+        if (res.ok && data.authenticated !== false) {
           setProfile(data);
           setDocs(prev => {
             const next = { ...prev };
@@ -2816,7 +2767,7 @@ export function OfferTrip() {
           });
         }
       } catch (err) {
-        console.error("Failed to fetch user status", err);
+        console.error("Could not fetch user profile status", err);
       }
 
       try {
@@ -2830,10 +2781,9 @@ export function OfferTrip() {
       } catch (err) {
         console.error("Failed to fetch incoming requests", err);
       }
-
-      await fetchMyTrips();
     };
     fetchStatus();
+    fetchMyTrips();
     return () => {
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
     };
@@ -2849,37 +2799,40 @@ export function OfferTrip() {
     navigate('/login');
   };
 
+  const handleSwitchToSender = () => {
+    localStorage.removeItem("access_token");
+    localStorage.setItem("login_intent", "find");
+    sessionStorage.clear();
+    stopSpeech();
+    navigate('/login', { state: { intent: 'find' } });
+  };
+
   const upDoc = async (key, file) => {
-    if (!file) return
-
-    if (!checkSize(file)) return
-
-    // Immediate local preview via object URL
-    const localUrl = URL.createObjectURL(file)
+    if (!file) return;
+    const localUrl = URL.createObjectURL(file);
     setDocs(prev => ({
       ...prev,
       [key]: {
         name: file.name,
         url: localUrl
       }
-    }))
+    }));
 
-    // Persist the document to the backend so it survives page reloads
-    const token = localStorage.getItem("access_token")
-    const docType = key === 'identity' ? 'aadhaar' : 'license'
+    const token = localStorage.getItem("access_token");
+    const docType = key === 'identity' ? 'aadhaar' : 'license';
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('doc_type', docType)
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('doc_type', docType);
 
       const res = await fetch("http://localhost:8000/auth/upload-document", {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` },
         body: formData
-      })
+      });
 
       if (res.ok) {
-        const data = await res.json()
+        const data = await res.json();
         setProfile(prev => ({
           ...prev,
           aadhaar_doc: data.aadhaar_doc || prev.aadhaar_doc,
@@ -2887,24 +2840,23 @@ export function OfferTrip() {
           license_doc: data.license_doc || prev.license_doc,
           license_doc_url: data.license_doc_url || prev.license_doc_url,
           is_verified: data.is_verified
-        }))
-        // Use the server URL/name so the preview is stable across reloads
+        }));
         setDocs(prev => ({
           ...prev,
           [key]: {
             name: data.filename || file.name,
             url: data.url || localUrl
           }
-        }))
-        notify(`✔ ${docType === 'aadhaar' ? 'Aadhaar' : 'Driving Licence'} uploaded successfully!`)
+        }));
+        notify(`✔ ${docType === 'aadhaar' ? 'Aadhaar' : 'Driving Licence'} uploaded successfully!`);
       } else {
-        notify("⚠ Could not save document to server. It is only previewed locally.")
+        notify("⚠ Could not save document to server. It is only previewed locally.");
       }
     } catch (err) {
-      console.error("Failed to upload document", err)
-      notify("⚠ Could not save document to server. It is only previewed locally.")
+      console.error("Failed to upload document", err);
+      notify("⚠ Could not save document to server. It is only previewed locally.");
     }
-  }
+  };
 
   const taken = Math.round(
     (1 - o.cap / o.total) * 100
@@ -2912,13 +2864,41 @@ export function OfferTrip() {
 
   const publishTrip = async () => {
     if (isPublishing) return;
-    if (
-      !o.from ||
-      !o.to ||
-      !o.date ||
-      !o.pickup
-    ) {
-      notify('⚠ Please fill all trip details.');
+    if (!o.from || !o.from.trim()) {
+      notify('⚠ Please select a starting city/hub (From location).');
+      return;
+    }
+    if (!o.to || !o.to.trim()) {
+      notify('⚠ Please select a destination city/hub (To location).');
+      return;
+    }
+    if (o.from.trim().toLowerCase() === o.to.trim().toLowerCase()) {
+      notify('⚠ Origin and Destination locations cannot be identical.');
+      return;
+    }
+    if (!o.date) {
+      notify('⚠ Please select a valid travel departure date.');
+      return;
+    }
+    if (!o.vehicle) {
+      notify('⚠ Please select a vehicle type.');
+      return;
+    }
+    if (!o.total || Number(o.total) <= 0) {
+      notify('⚠ Please enter total vehicle capacity in kg.');
+      return;
+    }
+    if (!o.cap || Number(o.cap) <= 0) {
+      notify('⚠ Please enter available space to share in kg.');
+      return;
+    }
+    const desiredPrice = Number(o.totalDriverAmount) || Number(o.price) || 0;
+    if (desiredPrice <= 0) {
+      notify('⚠ Please enter the total desired vehicle load fare (₹).');
+      return;
+    }
+    if (!o.pickup || !o.pickup.trim()) {
+      notify('⚠ Please enter pickup instructions or landmark details.');
       return;
     }
 
@@ -2975,6 +2955,7 @@ export function OfferTrip() {
 
       // Send trip to backend
       const token = localStorage.getItem("access_token");
+      const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
       const res = await fetch("http://localhost:8000/api/trips", {
         method: "POST",
         headers: {
@@ -2990,22 +2971,24 @@ export function OfferTrip() {
           owner: profile.full_name || 'Driver',
           verified: profile.is_verified || (!!hasIdentity && !!hasLicense),
           pct: taken,
-          total_kg: o.total,
+          total_kg: Number(o.total),
           price_per_kg: Number(o.price) || 0,
-          total_driver_amount: Number(o.totalDriverAmount) || Number(o.price) || 0,
+          total_driver_amount: desiredPrice,
           pickup: o.pickup,
           lat: tripLat,
           lng: tripLng,
           dest_lat: toResolved.lat,
           dest_lng: toResolved.lng,
           pickup_lat: tripLat,
-          pickup_lng: tripLng
+          pickup_lng: tripLng,
+          lang: activeLang
         })
       });
 
       if (res.ok) {
+        const createdTrip = await res.json();
         setPublished(true);
-        notify(`✔ Trip published successfully: ${fromResolved.shortName} → ${toResolved.shortName}`);
+        notify(`✔ Trip published successfully: ${fromResolved.shortName || fromResolved.state || o.from} → ${toResolved.shortName || toResolved.state || o.to}`);
         // Reset form state
         setO({
           from: '',
@@ -3022,6 +3005,9 @@ export function OfferTrip() {
           pickup: '',
           pickupCoords: null
         });
+        if (createdTrip && createdTrip.id) {
+          setMyTrips(prev => [createdTrip, ...prev.filter(t => t.id !== createdTrip.id)]);
+        }
         await fetchMyTrips();
         // Immediately redirect to published trips list
         setActiveTab('trips');
@@ -3091,14 +3077,22 @@ export function OfferTrip() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
           <div className="hidden sm:block text-right">
             <p className="font-bold text-xs text-green-deep">{profile.full_name || t('profile.driver_role', 'Driver')}</p>
             <p className="text-[11px] text-green-soft font-mono">{profile.email}</p>
           </div>
           <button
+            onClick={handleSwitchToSender}
+            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs flex items-center gap-1 cursor-pointer"
+            title="Switch to Sender Google Account"
+          >
+            <span>🔄</span>
+            <span>Switch to Sender Hub</span>
+          </button>
+          <button
             onClick={handleLogout}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs cursor-pointer"
+            className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl shadow-sm transition duration-200 text-xs cursor-pointer"
           >
             {t('nav_logout', 'Logout')}
           </button>
@@ -3373,6 +3367,58 @@ export function OfferTrip() {
                           <MapPin size={14} className="text-brick shrink-0 mt-0.5" />
                           <span className="truncate"><strong>Pickup:</strong> {trip.pickup}</span>
                         </p>
+                      )}
+
+                      {/* CONNECTED ACCEPTED PASSENGERS / CARGO */}
+                      {trip.partners && trip.partners.filter(p => p.status === 'accepted' || p.status === 'in_transit' || p.status === 'pending').length > 0 && (
+                        <div className="bg-emerald-50/80 border border-emerald-300/80 rounded-xl p-2.5 mb-3">
+                          <p className="text-[11px] font-bold text-emerald-900 flex items-center justify-between mb-1.5">
+                            <span>📦 Accepted Cargo Bookings ({trip.partners.filter(p => p.status === 'accepted' || p.status === 'in_transit' || p.status === 'pending').length})</span>
+                            <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-mono font-semibold">Ready to Ship</span>
+                          </p>
+                          <div className="space-y-1">
+                            {trip.partners.filter(p => p.status === 'accepted' || p.status === 'in_transit' || p.status === 'pending').map(p => (
+                              <div key={p.id} className="text-xs text-emerald-950 flex items-center justify-between bg-white/80 px-2.5 py-1.5 rounded-lg border border-emerald-200 shadow-2xs">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-emerald-700 font-bold">👤 {p.farmer_name}</span>
+                                  <span className="text-emerald-600 text-[10px]">({p.status.toUpperCase()})</span>
+                                </div>
+                                <span className="font-mono text-[11px] font-semibold text-emerald-800">{p.goods_weight_kg} kg</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* DRIVER DELIVERY PROOF PHOTO PREVIEW */}
+                      {trip.delivery_proof_image_url && (
+                        <div className="rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 p-3 shadow-xs mb-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                              <span>📸</span>
+                              <span>Stage 2 Delivery Photo Proof</span>
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
+                              <span>✔</span>
+                              <span>Uploaded at Destination</span>
+                            </span>
+                          </div>
+                          <a
+                            href={`http://localhost:8000${trip.delivery_proof_image_url}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block rounded-xl overflow-hidden border-2 border-white shadow group relative max-h-44 bg-slate-900"
+                          >
+                            <img
+                              src={`http://localhost:8000${trip.delivery_proof_image_url}`}
+                              alt="Delivery Proof Photo"
+                              className="w-full h-36 object-cover group-hover:scale-105 transition duration-300"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-semibold text-xs gap-1.5">
+                              <span>🔍 Click to View Full Resolution Photo</span>
+                            </div>
+                          </a>
+                        </div>
                       )}
                     </div>
 
@@ -3650,9 +3696,10 @@ export function OfferTrip() {
                           <button
                             onClick={async () => {
                               const token = localStorage.getItem("access_token");
+                              const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
                               try {
                                 const res = await fetch(
-                                  `http://localhost:8000/api/requests/${req.id}/status?status=accepted`,
+                                  `http://localhost:8000/api/requests/${req.id}/status?status=accepted&lang=${encodeURIComponent(activeLang)}`,
                                   {
                                     method: "PUT",
                                     headers: { "Authorization": `Bearer ${token}` }
@@ -3680,9 +3727,10 @@ export function OfferTrip() {
                           <button
                             onClick={async () => {
                               const token = localStorage.getItem("access_token");
+                              const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
                               try {
                                 const res = await fetch(
-                                  `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has rejected this request.")}`,
+                                  `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has rejected this request.")}&lang=${encodeURIComponent(activeLang)}`,
                                   {
                                     method: "PUT",
                                     headers: { "Authorization": `Bearer ${token}` }
@@ -3711,11 +3759,13 @@ export function OfferTrip() {
                       )}
 
                       {isAccepted && (
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs text-green-700 font-semibold flex items-center gap-1">
-                            <span>✔</span>
-                            <span>Accepted</span>
-                          </p>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-green-700 font-semibold flex items-center gap-1">
+                              <span>✔</span>
+                              <span>Accepted</span>
+                            </p>
+                          </div>
                           <button
                             onClick={async () => {
                               if (!window.confirm(`Are you sure you want to cancel the accepted ride for ${req.farmer_name}?`)) return;
@@ -4076,12 +4126,12 @@ export function OfferTrip() {
               />
             </div>
 
-            {/* PICKUP */}
-            <Field label={t('driver.pickup_landmark', 'Pickup Instructions / Location Details')}>
+            {/* PICKUP INSTRUCTIONS */}
+            <Field label={t('driver.pickup_landmark', 'Pickup Instructions & Landmarks for Senders (पिकअप निर्देश / लैंडमार्क)')}>
               <input
                 className={inputCls}
                 value={o.pickup}
-                placeholder="e.g. Near highway toll plaza gate 2, 6:00 AM / Be on time"
+                placeholder="e.g. Near Toll Plaza Gate 2, departure at 6:00 AM, please arrive 15 mins early"
                 onChange={e => setO(prev => ({ ...prev, pickup: e.target.value }))}
               />
             </Field>
@@ -4363,15 +4413,47 @@ export function OfferTrip() {
                       </label>
 
                       {docUrl && (
-                        <div className="rounded-2xl border border-gold/30 overflow-hidden bg-cream p-3">
-                          <div className="flex items-center justify-between text-[11px] text-green-soft font-mono mb-2">
-                            <p className="truncate max-w-[200px] font-semibold text-green-deep">📄 {docName}</p>
-                            <span className="text-green-700 font-bold">✔ Verified</span>
+                        <div className="rounded-2xl border border-gold/30 overflow-hidden bg-cream/60 p-3 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <p className="truncate max-w-[180px] font-semibold text-green-deep flex items-center gap-1.5">
+                              <span>📄</span>
+                              <span className="truncate">{docName}</span>
+                            </p>
+                            <span className="text-emerald-700 font-bold text-[11px] bg-emerald-100/80 px-2 py-0.5 rounded-full">
+                              ✔ Verified
+                            </span>
                           </div>
+
                           {isPdf ? (
-                            <iframe src={docUrl} className="w-full h-36 rounded-xl border border-gold/20" title={label}></iframe>
+                            <div className="bg-white/80 rounded-xl p-3 border border-gold/20 flex flex-col items-center justify-center text-center gap-2">
+                              <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-lg font-bold">
+                                📑
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-green-deep">{label}</p>
+                                <p className="text-[10px] text-green-soft">PDF Document Attached</p>
+                              </div>
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1 inline-flex items-center gap-1 px-3 py-1.5 bg-green-deep text-cream text-[11px] font-semibold rounded-lg hover:bg-green transition cursor-pointer shadow-sm"
+                              >
+                                <span>Open / View Document ↗</span>
+                              </a>
+                            </div>
                           ) : (
-                            <img src={docUrl} alt={label} className="h-36 object-contain mx-auto rounded-xl" />
+                            <div className="relative group bg-white/80 rounded-xl p-2 border border-gold/20 flex flex-col items-center">
+                              <img src={docUrl} alt={label} className="h-32 object-contain mx-auto rounded-lg" />
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-2 inline-flex items-center gap-1 text-xs text-green-deep font-semibold hover:underline"
+                              >
+                                View Full Size ↗
+                              </a>
+                            </div>
                           )}
                         </div>
                       )}
@@ -4460,496 +4542,6 @@ export function OfferTrip() {
   );
 }
 
-export function LoginPage() {
-  const { lang, t } = useLang();
-  const navigate = useNavigate();
-  const location = useLocation();
+export { default as ProfileSetupPage } from './ProfileSetupPage';
 
-  const [intent, setIntent] = useState(location.state?.intent || localStorage.getItem('login_intent') || 'find');
-  const [loading, setLoading] = useState(false);
-  const [roleError, setRoleError] = useState(location.state?.error ? { type: 'initial', message: location.state.error } : null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-
-  const localizedText = AUTH_ROLE_TEXTS[lang] || AUTH_ROLE_TEXTS.hi || AUTH_ROLE_TEXTS.en;
-
-  // Clear stale session on arriving at /login to prevent abrupt cached auto-login loops
-  useEffect(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("user_type");
-    if (location.state?.intent) {
-      setIntent(location.state.intent);
-      localStorage.setItem('login_intent', location.state.intent);
-    }
-    if (location.state?.error) {
-      setRoleError({ type: 'initial', message: location.state.error });
-    }
-  }, [location.state]);
-
-  const handleToggleVoice = () => {
-    if (isSpeaking) {
-      stopSpeech();
-      setIsSpeaking(false);
-    } else {
-      const textToNarrate = roleError
-        ? roleError.message
-        : `${localizedText.title}. ${intent === 'offer' ? localizedText.driver_title : localizedText.sender_title}. ${localizedText.role_notice_body}`;
-
-      setIsSpeaking(true);
-      speakText(textToNarrate, lang, () => {
-        setIsSpeaking(false);
-      });
-    }
-  };
-
-  const handleGoogleSuccess = async (credentialResponse) => {
-    setLoading(true);
-    setRoleError(null);
-
-    try {
-      const res = await fetch("http://127.0.0.1:8000/auth/google-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          google_token: credentialResponse.credential
-        })
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        if (!data.is_profile_complete) {
-          localStorage.setItem("access_token", data.access_token);
-          localStorage.setItem("login_intent", intent);
-          navigate('/complete-profile');
-          return;
-        }
-
-        // Check for Intent vs Role Mismatch
-        if (intent === 'find' && data.user_type === 'driver') {
-          localStorage.removeItem("access_token");
-          const errorMsg = localizedText.sender_mismatch;
-          setRoleError({
-            type: 'driver_on_sender',
-            message: errorMsg,
-            token: data.access_token
-          });
-          speakText(errorMsg, lang);
-          return;
-        }
-
-        if (intent === 'offer' && data.user_type !== 'driver') {
-          localStorage.removeItem("access_token");
-          const errorMsg = localizedText.driver_mismatch;
-          setRoleError({
-            type: 'sender_on_driver',
-            message: errorMsg,
-            token: data.access_token
-          });
-          speakText(errorMsg, lang);
-          return;
-        }
-
-        localStorage.removeItem('login_intent');
-        localStorage.setItem("access_token", data.access_token);
-
-        if (data.user_type === 'driver') {
-          navigate('/offer');
-        } else {
-          navigate('/find');
-        }
-      } else {
-        const detail = data.detail || "Google authentication failed on backend.";
-        setRoleError({ type: 'general', message: detail });
-        speakText(detail, lang);
-      }
-    } catch (err) {
-      console.error("Auth error:", err);
-      const netErr = "Could not connect to FastAPI server. Ensure backend is running.";
-      setRoleError({ type: 'network', message: netErr });
-      speakText(netErr, lang);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-[85vh] bg-cream flex items-center justify-center px-4 py-8 relative">
-      <div className="relative w-full max-w-lg bg-paper/95 backdrop-blur-xl border border-gold/40 rounded-3xl p-6 sm:p-9 shadow-2xl overflow-hidden">
-        {/* TOP ACCENT DECORATION */}
-        <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-soil via-gold to-green-deep"></div>
-
-        {/* HEADER BAR WITH BACK TO HOME & VOICE */}
-        <div className="flex items-center justify-between mb-5 pt-1">
-          <button
-            type="button"
-            onClick={() => {
-              stopSpeech();
-              navigate('/');
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white/70 text-green-deep border border-gold/30 hover:bg-white hover:border-gold/60 transition cursor-pointer shadow-2xs"
-          >
-            <ArrowLeft size={14} />
-            <span>{t('nav.home', 'Home')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleToggleVoice}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition cursor-pointer ${
-              isSpeaking
-                ? 'bg-green-700 text-white border-green-500 animate-pulse shadow-sm'
-                : 'bg-gold/15 text-green-deep border-gold/40 hover:bg-gold/30'
-            }`}
-            title="Listen to Instructions"
-          >
-            {isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            <span>{isSpeaking ? "Stop Voice" : "Listen Aloud"}</span>
-          </button>
-        </div>
-
-        {/* ROLE SELECTOR TABS */}
-        <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 rounded-2xl bg-green-deep/5 border border-gold/30">
-          <button
-            type="button"
-            onClick={() => {
-              setIntent('find');
-              setRoleError(null);
-              localStorage.setItem('login_intent', 'find');
-            }}
-            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              intent === 'find'
-                ? 'bg-green-deep text-cream shadow-md scale-[1.02]'
-                : 'text-green-soft hover:text-green-deep hover:bg-white/50'
-            }`}
-          >
-            <Package size={16} className={intent === 'find' ? 'text-gold-light' : 'text-soil'} />
-            <span>{t('nav.find', 'Find a Vehicle')}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setIntent('offer');
-              setRoleError(null);
-              localStorage.setItem('login_intent', 'offer');
-            }}
-            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              intent === 'offer'
-                ? 'bg-green-deep text-cream shadow-md scale-[1.02]'
-                : 'text-green-soft hover:text-green-deep hover:bg-white/50'
-            }`}
-          >
-            <Truck size={16} className={intent === 'offer' ? 'text-gold-light' : 'text-soil'} />
-            <span>{t('nav.offer', 'Offer a Trip')}</span>
-          </button>
-        </div>
-
-        {/* ROLE ICON & HEADER */}
-        <div className="text-center mb-5">
-          <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-tr from-green-deep/10 to-gold/20 border border-gold/30 flex items-center justify-center text-3xl shadow-inner">
-            {intent === 'offer' ? <Truck className="text-green-deep" size={32} /> : <Package className="text-soil" size={32} />}
-          </div>
-
-          <span className="inline-block px-3.5 py-1 rounded-full text-xs font-bold font-mono uppercase tracking-wider bg-green-deep/10 text-green-deep mb-2">
-            {intent === 'offer' ? localizedText.driver_title : localizedText.sender_title}
-          </span>
-
-          <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-green-deep">
-            {localizedText.title}
-          </h2>
-          <p className="text-xs sm:text-sm text-green-soft mt-1.5">
-            {localizedText.subtitle}
-          </p>
-        </div>
-
-        {/* FRIENDLY ROLE INFO BANNER */}
-        <div className="mb-5 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-left">
-          <div className="flex items-start gap-2.5">
-            <Info className="text-amber-700 shrink-0 mt-0.5" size={18} />
-            <div className="text-xs text-amber-950">
-              <p className="font-bold text-amber-900">{localizedText.role_notice_title}</p>
-              <p className="mt-0.5 leading-relaxed text-[11.5px] text-amber-900/90">
-                {localizedText.role_notice_body}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* DYNAMIC ROLE MISMATCH / ERROR BANNER */}
-        {roleError && (
-          <div className="mb-5 p-4 rounded-2xl bg-blue-50 border border-blue-200 text-left animate-[fadeIn_0.2s_ease]">
-            <div className="flex items-start gap-2.5">
-              <ShieldCheck className="text-blue-600 shrink-0 mt-0.5" size={18} />
-              <div className="text-xs text-blue-900 space-y-2.5">
-                <p className="font-medium leading-relaxed text-[12px]">
-                  {roleError.message}
-                </p>
-
-                {roleError.type === 'driver_on_sender' && roleError.token && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      localStorage.setItem("access_token", roleError.token);
-                      navigate('/offer');
-                    }}
-                    className="px-3.5 py-1.5 bg-green-deep text-cream rounded-xl text-xs font-semibold hover:bg-green transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  >
-                    <Truck size={14} /> {localizedText.go_driver} →
-                  </button>
-                )}
-
-                {roleError.type === 'sender_on_driver' && roleError.token && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      localStorage.setItem("access_token", roleError.token);
-                      navigate('/find');
-                    }}
-                    className="px-3.5 py-1.5 bg-soil text-cream rounded-xl text-xs font-semibold hover:bg-soil-light transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  >
-                    <Package size={14} /> {localizedText.go_sender} →
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* GOOGLE SIGN IN BUTTON */}
-        <div className="flex flex-col items-center justify-center my-3">
-          <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-            <div className="transform hover:scale-102 transition-transform shadow-xs rounded-full">
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={() => {
-                  const failMsg = "Google Sign In Failed. Please check popups or try again.";
-                  setRoleError({ type: 'fail', message: failMsg });
-                  speakText(failMsg, lang);
-                }}
-                useOneTap={false}
-                prompt="select_account"
-                theme="outline"
-                shape="pill"
-                size="large"
-                text="continue_with"
-                width="280"
-              />
-            </div>
-          </GoogleOAuthProvider>
-
-          {loading && (
-            <div className="flex items-center gap-2 mt-4 text-xs text-green-soft font-medium animate-pulse">
-              <div className="w-4 h-4 border-2 border-green-deep border-t-transparent rounded-full animate-spin"></div>
-              <span>{localizedText.logging_in}</span>
-            </div>
-          )}
-        </div>
-
-        {/* FOOTER PRIVACY NOTICE */}
-        <p className="text-[11px] text-green-soft text-center mt-5">
-          🛡️ Verified by Government Digital Logistics Infrastructure
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export function ProfileSetupPage() {
-  const { t } = useLang()
-  const navigate = useNavigate();
-  const [fullName, setFullName] = useState('');
-  const [gender, setGender] = useState('Male');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [userType, setUserType] = useState('sender'); // Auto-detected
-
-  const [aadhaarFile, setAadhaarFile] = useState(null);
-  const [licenseFile, setLicenseFile] = useState(null);
-
-  const [submitting, setSubmitting] = useState(false);
-  const [toast, notify] = useToast();
-
-  useEffect(() => {
-    // Auto-detect user role/intent based on local storage intent
-    const intent = localStorage.getItem('login_intent');
-    if (intent === 'offer') {
-      setUserType('driver');
-    } else {
-      setUserType('sender');
-    }
-  }, []);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (userType === 'driver') {
-      if (!aadhaarFile || !licenseFile) {
-        notify('⚠ Drivers must upload both verification documents.');
-        return;
-      }
-    }
-
-    setSubmitting(true);
-    const token = localStorage.getItem("access_token");
-
-    try {
-      let aadhaarName = aadhaarFile ? aadhaarFile.name : null;
-      let licenseName = licenseFile ? licenseFile.name : null;
-
-      // Upload document files to backend so they are stored on disk
-      if (userType === 'driver') {
-        try {
-          const fd1 = new FormData();
-          fd1.append('file', aadhaarFile);
-          fd1.append('doc_type', 'aadhaar');
-          const up1 = await fetch("http://localhost:8000/auth/upload-document", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
-            body: fd1
-          });
-          if (up1.ok) {
-            const d1 = await up1.json();
-            aadhaarName = d1.filename || aadhaarName;
-          }
-
-          const fd2 = new FormData();
-          fd2.append('file', licenseFile);
-          fd2.append('doc_type', 'license');
-          const up2 = await fetch("http://localhost:8000/auth/upload-document", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` },
-            body: fd2
-          });
-          if (up2.ok) {
-            const d2 = await up2.json();
-            licenseName = d2.filename || licenseName;
-          }
-        } catch (err) {
-          console.error(err);
-          notify("⚠ Document upload failed. Continuing with filename only.");
-        }
-      }
-
-      const res = await fetch("http://localhost:8000/auth/complete-profile", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          full_name: fullName,
-          gender: gender,
-          phone_number: phoneNumber,
-          user_type: userType,
-          aadhaar_doc: aadhaarName,
-          license_doc: licenseName
-        })
-      });
-
-      if (res.ok) {
-        if (userType === 'driver') {
-          navigate('/offer');
-        } else {
-          navigate('/find');
-        }
-      } else {
-        const data = await res.json();
-        notify(data.detail || "Failed to complete profile.");
-      }
-    } catch (err) {
-      console.error(err);
-      notify("Could not connect to FastAPI backend.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-cream flex items-center justify-center px-4 py-12">
-      {toast}
-      <form onSubmit={handleSubmit} className="max-w-lg w-full bg-paper p-8 rounded-2xl shadow-lg border border-gold/30">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-2xl font-display font-bold text-green-deep">{t('profile.setup_title', 'Complete Your Safar-Saathi Profile')}</h2>
-          <TTSButton textToRead={`${t('profile.setup_title', 'Complete Your Profile')}. ${t('profile.role_prompt', 'Please provide your details to continue.')}`} />
-        </div>
-        <p className="text-green-soft mb-6 text-sm">
-          Please provide your details to continue to Safar-Saathi as a <strong>{userType === 'driver' ? t('profile.driver_role', 'Driver') : t('profile.sender_role', 'Sender')}</strong>.
-        </p>
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-green-deep mb-1">{t('profile.full_name', 'Full Name')}</label>
-          <input
-            type="text"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="Enter your full name"
-            className={inputCls}
-            required
-          />
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-green-deep mb-1">{t('profile.gender', 'Gender')}</label>
-          <select
-            value={gender}
-            onChange={(e) => setGender(e.target.value)}
-            className={inputCls}
-          >
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-green-deep mb-1">{t('profile.phone', 'Phone Number')}</label>
-          <input
-            type="text"
-            value={phoneNumber}
-            onChange={(e) => setPhoneNumber(e.target.value)}
-            placeholder="Enter 10-digit mobile number"
-            className={inputCls}
-            required
-          />
-        </div>
-
-        {userType === 'driver' && (
-          <div className="mb-6 p-4 rounded-xl bg-gold/10 border border-gold/30 space-y-4">
-            <p className="font-semibold text-sm text-green-deep">{t('offer.ownerVerification', 'Driver Verification Documents')}</p>
-
-            <div>
-              <label className="block text-xs font-medium text-green-deep mb-1">{t('profile.aadhaar', 'Aadhaar Card Document / Image [Redacted]')}</label>
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => setAadhaarFile(e.target.files[0])}
-                className="text-xs text-green-soft"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-green-deep mb-1">{t('profile.license', 'Driving License Document / Image')}</label>
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => setLicenseFile(e.target.files[0])}
-                className="text-xs text-green-soft"
-                required
-              />
-            </div>
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full bg-green-deep text-cream py-3 rounded-xl font-semibold hover:bg-green transition cursor-pointer"
-        >
-          {submitting ? "Saving..." : t('profile.submit_btn', 'Complete Setup & Proceed')}
-        </button>
-      </form>
-    </div>
-  );
-}
 

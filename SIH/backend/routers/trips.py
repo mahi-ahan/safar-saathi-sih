@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import Optional
 import os
 import uuid
@@ -10,6 +11,8 @@ import schemas
 
 from database import get_db
 from auth.dependencies import require_roles
+from services.dispatcher import dispatch_automated_alert, resolve_user_contact_and_lang
+import services.messages as msgs
 
 router = APIRouter(
     prefix="/api/trips",
@@ -260,18 +263,22 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
         total_kg_km += req_workload
 
     # 2. Proportionally distribute total driver fare among active passengers based on their kg·km share
-    for req in active_requests:
-        if total_kg_km > 0 and total_driver_amount > 0:
-            share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)
-        else:
-            share = 0.0
-        req.per_person_share = share
-
-    # 3. Calculate dynamic used percentage and available capacity in kg
     trip_capacity = trip.total_kg if (trip.total_kg and trip.total_kg > 0) else 1000
     available_space = max(0, trip_capacity - total_payload)
     space_used_pct = min(100, round((total_payload / trip_capacity) * 100)) if trip_capacity > 0 else 0
     trip.pct = space_used_pct
+
+    for req in active_requests:
+        req_wt = float(req.goods_weight_kg if req.goods_weight_kg is not None else (req.kg or 0))
+        if len(active_requests) > 1 and total_kg_km > 0:
+            share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)
+        elif len(active_requests) == 1 and trip_capacity > 0:
+            share = round(max(50.0, (req_wt / trip_capacity) * total_driver_amount), 2)
+        elif total_kg_km > 0 and total_driver_amount > 0:
+            share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)
+        else:
+            share = 0.0
+        req.per_person_share = share
 
     db.commit()
     return total_payload, total_kg_km, available_space, space_used_pct, len(active_requests)
@@ -280,18 +287,12 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
 def check_and_finalize_trip_completion(trip: models.TripModel, db: Session) -> bool:
     """
     Validates and finalizes trip completion based on exact active bookings count:
-    1. Queries all active booked requests for this trip.
-       (Excludes empty capacity slots, cancelled, cancelled_by_driver, and rejected requests).
-       Active statuses: 'accepted', 'in_transit', 'pending_passenger_confirmation', 'completed', 'assigned'.
-    2. Counts the exact number of active booked passengers: total_active.
-    3. Counts how many of those active passengers have submitted confirmation: confirmed_count (req.status == 'completed').
-    4. If total_active == 0 OR confirmed_count == total_active:
-       - Transitions trip.status = 'completed'
-       - Sets trip.is_live = False
-       - Commits to db
-       - Returns True (finalized)
-    5. If there are still active unconfirmed passengers and trip is in 'pending_passenger_confirmation', returns False.
+    ONLY finalize a trip if it has been marked complete / pending confirmation or all active bookings confirmed.
+    A published/scheduled trip with 0 bookings is OPEN and AVAILABLE for all farmers, NOT completed.
     """
+    if trip.status not in ["pending_passenger_confirmation", "in_transit"]:
+        return False
+
     route_patterns = get_trip_route_patterns(trip)
     active_requests = db.query(models.RequestModel).filter(
         models.RequestModel.owner == trip.owner,
@@ -302,7 +303,7 @@ def check_and_finalize_trip_completion(trip: models.TripModel, db: Session) -> b
     total_active = len(active_requests)
     confirmed_count = sum(1 for req in active_requests if req.status == "completed")
 
-    if total_active == 0 or confirmed_count == total_active:
+    if total_active > 0 and confirmed_count == total_active:
         if trip.status != "completed":
             trip.status = "completed"
             trip.is_live = False
@@ -344,6 +345,21 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
     slots_total = max(5, int(total_capacity / 200))
     slots_filled = min(slots_total, len(active_requests))
 
+    driver_phone = None
+    if trip.owner:
+        d_prof = (
+            db.query(models.UserProfile)
+            .join(models.User, models.UserProfile.user_id == models.User.id)
+            .filter(
+                (models.UserProfile.full_name == trip.owner) |
+                (models.User.username == trip.owner) |
+                (models.User.username.ilike(f"%{trip.owner}%"))
+            )
+            .first()
+        )
+        if d_prof and d_prof.phone_number:
+            driver_phone = d_prof.phone_number
+
     return schemas.TripResponse(
         id=trip.id,
         state=trip.state or "",
@@ -352,6 +368,7 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         date=trip.date or "",
         vehicle=trip.vehicle or "",
         owner=trip.owner or "",
+        driver_phone=driver_phone,
         verified=bool(trip.verified),
         pct=space_used_pct or 0,
         space_used_percentage=space_used_pct or 0,
@@ -370,8 +387,8 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         status=trip.status or "scheduled",
         is_live=bool(trip.is_live),
         speed=trip.speed or 0.0,
-        pickup_cargo_image_url=trip.pickup_cargo_image_url,
-        delivery_proof_image_url=trip.delivery_proof_image_url,
+        pickup_cargo_image_url=getattr(trip, "pickup_cargo_image_url", None),
+        delivery_proof_image_url=getattr(trip, "delivery_proof_image_url", None),
         total_booked_kg=total_payload or 0,
         total_kg_km=total_kg_km or 0.0,
         passenger_count=count or 0,
@@ -400,12 +417,15 @@ def get_trips(
     db: Session = Depends(get_db),
 ):
     """
-    Returns all published trips with real-time pooled payload calculations.
+    Returns all published active trips with real-time pooled payload calculations.
+    Excludes completed, cancelled, and finalized trips.
     """
     query = db.query(models.TripModel)
 
     if not include_completed:
-        query = query.filter(models.TripModel.status != "completed")
+        query = query.filter(
+            ~models.TripModel.status.in_(["completed", "cancelled", "cancelled_by_driver", "pending_passenger_confirmation"])
+        )
 
     if state:
         query = query.filter(
@@ -417,7 +437,7 @@ def get_trips(
             models.TripModel.vehicle == vehicle
         )
 
-    trips = query.all()
+    trips = query.order_by(models.TripModel.id.desc()).all()
     return [serialize_trip_with_meta(t, db) for t in trips]
 
 
@@ -441,17 +461,39 @@ def get_my_trips(
         models.UserProfile.user_id == current_user.id
     ).first()
 
-    owner_name = profile.full_name if (profile and profile.full_name) else current_user.username
+    possible_owners = [current_user.username]
+    if current_user.email:
+        possible_owners.append(current_user.email)
+    if profile and profile.full_name:
+        possible_owners.append(profile.full_name)
 
     query = db.query(models.TripModel).filter(
-        models.TripModel.owner == owner_name
+        or_(
+            models.TripModel.owner.in_(possible_owners),
+            models.TripModel.owner.ilike(f"%{current_user.username}%"),
+            models.TripModel.owner.ilike(f"%{profile.full_name}%") if (profile and profile.full_name) else False
+        )
     )
 
-    if not include_completed:
-        query = query.filter(models.TripModel.status != "completed")
+    all_trips = query.order_by(models.TripModel.id.desc()).all()
+    result_trips = []
 
-    trips = query.all()
-    return [serialize_trip_with_meta(t, db) for t in trips]
+    for t in all_trips:
+        route_patterns = get_trip_route_patterns(t)
+        has_active_accepted = db.query(models.RequestModel).filter(
+            models.RequestModel.owner == t.owner,
+            models.RequestModel.route.in_(route_patterns),
+            models.RequestModel.status.in_(["accepted", "in_transit", "pending"])
+        ).first()
+
+        if has_active_accepted and t.status in ["completed", "cancelled_by_driver", "cancelled"]:
+            t.status = "scheduled"
+            db.commit()
+
+        if include_completed or t.status not in ["completed", "cancelled_by_driver", "cancelled"] or has_active_accepted:
+            result_trips.append(t)
+
+    return [serialize_trip_with_meta(t, db) for t in result_trips]
 
 
 # --------------------------------------------------
@@ -483,8 +525,8 @@ def get_trip_by_id(
 )
 def create_trip(
     trip: schemas.TripCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-
     current_user=Depends(
         require_roles(
             "user",
@@ -493,6 +535,24 @@ def create_trip(
         )
     )
 ):
+    # STRICT MANDATORY FORM FIELDS VALIDATION
+    if not trip.from_loc or not str(trip.from_loc).strip():
+        raise HTTPException(status_code=400, detail="Starting city/hub (From location) is mandatory.")
+    if not trip.to_loc or not str(trip.to_loc).strip():
+        raise HTTPException(status_code=400, detail="Destination city/hub (To location) is mandatory.")
+    if str(trip.from_loc).strip().lower() == str(trip.to_loc).strip().lower():
+        raise HTTPException(status_code=400, detail="Origin and Destination locations cannot be identical.")
+    if not trip.date or not str(trip.date).strip():
+        raise HTTPException(status_code=400, detail="Travel departure date is mandatory.")
+    if not trip.vehicle or not str(trip.vehicle).strip():
+        raise HTTPException(status_code=400, detail="Vehicle type selection is mandatory.")
+    if not trip.owner or not str(trip.owner).strip():
+        raise HTTPException(status_code=400, detail="Transporter/Driver name is required.")
+    
+    trip_price = float(trip.total_driver_amount or trip.price_per_kg or 0.0)
+    if trip_price <= 0:
+        raise HTTPException(status_code=400, detail="Total desired vehicle load fare (₹) must be greater than zero.")
+
     # BULLETPROOF PHYSICAL CAPACITY ENFORCEMENT
     limits = schemas.get_vehicle_capacity_limits(trip.vehicle)
     declared_kg = trip.total_kg if trip.total_kg is not None else limits["default_kg"]
@@ -519,15 +579,48 @@ def create_trip(
         )
 
     trip_data = trip.model_dump()
+    trip_lang = trip_data.pop("lang", "hi")
     trip_data["total_kg"] = declared_kg
 
+    profile = db.query(models.UserProfile).filter(
+        models.UserProfile.user_id == current_user.id
+    ).first()
+    driver_name = profile.full_name if (profile and profile.full_name) else (trip.owner or current_user.username)
+    trip_data["owner"] = driver_name
+    trip_data["preferred_lang"] = trip_lang
+
+    valid_cols = set(models.TripModel.__table__.columns.keys())
+    filtered_data = {k: v for k, v in trip_data.items() if k in valid_cols}
+
     db_trip = models.TripModel(
-        **trip_data
+        **filtered_data
     )
 
     db.add(db_trip)
     db.commit()
     db.refresh(db_trip)
+
+    # Automated WhatsApp Confirmation Alert to Driver upon Trip Publish
+    if background_tasks:
+        driver_phone, driver_lang = resolve_user_contact_and_lang(
+            db,
+            user_id=current_user.id,
+            username_or_name=db_trip.owner,
+            default_lang=trip_lang
+        )
+        if driver_phone:
+            d_msg = msgs.msg_trip_published(
+                driver_name=db_trip.owner or 'Driver',
+                from_loc=db_trip.from_loc,
+                to_loc=db_trip.to_loc,
+                date=db_trip.date,
+                vehicle=db_trip.vehicle,
+                total_kg=declared_kg,
+                price=trip_price,
+                pickup=db_trip.pickup or '',
+                lang=driver_lang
+            )
+            background_tasks.add_task(dispatch_automated_alert, driver_phone, d_msg)
 
     return serialize_trip_with_meta(db_trip, db)
 
@@ -553,13 +646,20 @@ def update_trip_location(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
+    # If the trip is already completed, waiting for passenger confirmation, or cancelled,
+    # NEVER allow background location updates to revert it to in_transit or is_live=True!
+    if trip.status in ["completed", "pending_passenger_confirmation", "cancelled", "cancelled_by_driver"]:
+        trip.is_live = False
+        db.commit()
+        return serialize_trip_with_meta(trip, db)
+
     trip.lat = loc_data.lat
     trip.lng = loc_data.lng
     if loc_data.speed is not None:
         trip.speed = loc_data.speed
-    if loc_data.status is not None:
+    if loc_data.status is not None and trip.status not in ["completed", "pending_passenger_confirmation", "cancelled", "cancelled_by_driver"]:
         trip.status = loc_data.status
-    if loc_data.is_live is not None:
+    if loc_data.is_live is not None and trip.status not in ["completed", "pending_passenger_confirmation", "cancelled", "cancelled_by_driver"]:
         trip.is_live = loc_data.is_live
 
     db.commit()
@@ -578,6 +678,8 @@ def update_trip_location(
 def update_trip_status(
     trip_id: int,
     status: str,
+    background_tasks: BackgroundTasks,
+    lang: Optional[str] = "hi",
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -632,6 +734,49 @@ def update_trip_status(
 
     db.commit()
     db.refresh(trip)
+
+    # Automated Two-Way Dispatch Alerts
+    if background_tasks:
+        driver_phone, driver_lang = resolve_user_contact_and_lang(
+            db,
+            username_or_name=trip.owner,
+            default_lang=lang or 'hi'
+        )
+
+        # 1. Trip Started / In Transit
+        if status == "in_transit":
+            if driver_phone:
+                d_msg = msgs.msg_in_transit_driver(
+                    driver_name=trip.owner or 'Driver',
+                    route=route_str,
+                    lang=driver_lang
+                )
+                background_tasks.add_task(dispatch_automated_alert, driver_phone, d_msg)
+
+            all_reqs = db.query(models.RequestModel).filter(
+                models.RequestModel.owner == trip.owner,
+                models.RequestModel.route == route_str,
+                models.RequestModel.status.in_(["accepted", "assigned", "in_transit"])
+            ).all()
+
+            for req in all_reqs:
+                f_phone, f_lang = resolve_user_contact_and_lang(
+                    db,
+                    user_id=req.user_id,
+                    username_or_name=req.farmer_name,
+                    default_lang=lang or 'hi'
+                )
+                if f_phone:
+                    f_msg = msgs.msg_in_transit_shipper(
+                        shipper_name=req.farmer_name or 'Shipper',
+                        driver_name=trip.owner or 'Driver',
+                        driver_phone=driver_phone or '',
+                        weight=req.goods_weight_kg or req.kg or 0,
+                        route=req.route or route_str,
+                        lang=f_lang
+                    )
+                    background_tasks.add_task(dispatch_automated_alert, f_phone, f_msg)
+
     return serialize_trip_with_meta(trip, db)
 
 
@@ -670,8 +815,10 @@ def upload_delivery_proof(
 )
 def driver_complete_trip(
     trip_id: int,
+    background_tasks: BackgroundTasks,
     delivery_proof_image_url: Optional[str] = None,
     delivery_proof_image: Optional[UploadFile] = File(None),
+    lang: Optional[str] = "hi",
     db: Session = Depends(get_db)
 ):
     """
@@ -680,6 +827,7 @@ def driver_complete_trip(
     2. Enforces mandatory delivery proof photo (either as direct UploadFile or pre-uploaded image URL).
     3. Persists proof image URL on the trip and all connected passenger requests.
     4. Transitions unconfirmed bookings to 'pending_passenger_confirmation' (or 'completed' if no active passengers).
+    5. Dispatches instant WhatsApp verification prompt to ALL connected shippers to confirm delivery & rate.
     """
     trip = db.query(models.TripModel).filter(models.TripModel.id == trip_id).first()
     if not trip:
@@ -739,6 +887,41 @@ def driver_complete_trip(
 
         db.commit()
         db.refresh(trip)
+
+        # Two-Way Notifications on Delivery Proof Submission
+        # Two-Way Notifications on Delivery Proof Submission
+        if background_tasks:
+            driver_phone, driver_lang = resolve_user_contact_and_lang(
+                db,
+                username_or_name=trip.owner,
+                default_lang=lang or 'hi'
+            )
+
+            if driver_phone:
+                d_msg = msgs.msg_delivery_proof_driver(
+                    driver_name=trip.owner or 'Driver',
+                    route=f"{trip.from_loc} → {trip.to_loc}",
+                    lang=driver_lang
+                )
+                background_tasks.add_task(dispatch_automated_alert, driver_phone, d_msg, media_path=final_proof_url)
+
+            for req in active_requests:
+                f_phone, f_lang = resolve_user_contact_and_lang(
+                    db,
+                    user_id=req.user_id,
+                    username_or_name=req.farmer_name,
+                    default_lang=lang or 'hi'
+                )
+                if f_phone:
+                    f_msg = msgs.msg_delivery_proof_shipper(
+                        shipper_name=req.farmer_name or 'Shipper',
+                        driver_name=trip.owner or 'Driver',
+                        weight=req.goods_weight_kg or req.kg or 0,
+                        route=req.route or f"{trip.from_loc} → {trip.to_loc}",
+                        lang=f_lang
+                    )
+                    background_tasks.add_task(dispatch_automated_alert, f_phone, f_msg, media_path=final_proof_url)
+
         return serialize_trip_with_meta(trip, db)
     except HTTPException:
         db.rollback()

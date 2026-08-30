@@ -5,10 +5,11 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import os
 
+from typing import Optional
 from database import get_db, engine
 import models
 from models import User
-from routers.auth import get_current_user  # Adjust import based on your project structure if needed
+from auth.dependencies import get_current_user, get_optional_current_user
 
 # Routers
 from routers import auth
@@ -18,6 +19,7 @@ from routers import users
 from routers import drivers
 from routers import admins
 from routers import pricing
+from routers import notifications
 
 
 # =========================================================
@@ -57,7 +59,9 @@ def auto_migrate():
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS reason VARCHAR;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS rating INTEGER;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS feedback VARCHAR;",
-
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS preferred_lang VARCHAR DEFAULT 'hi';",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS preferred_lang VARCHAR DEFAULT 'hi';",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS preferred_lang VARCHAR DEFAULT 'hi';",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -236,11 +240,28 @@ def home():
 # =========================================================
 
 @app.get("/auth/status")
-def get_auth_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_auth_status(current_user: Optional[User] = Depends(get_optional_current_user), db: Session = Depends(get_db)):
     """
     Returns the authenticated user's profile status including driver
     verification documents (Aadhaar & Driving License).
+    Gracefully returns authenticated=False if token is absent or expired.
     """
+    if not current_user:
+        return {
+            "authenticated": False,
+            "email": None,
+            "is_profile_complete": False,
+            "user_type": None,
+            "full_name": None,
+            "gender": None,
+            "phone_number": None,
+            "aadhaar_doc": None,
+            "aadhaar_doc_url": None,
+            "license_doc": None,
+            "license_doc_url": None,
+            "is_verified": False
+        }
+
     profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
     
     is_complete = False
@@ -260,8 +281,10 @@ def get_auth_status(current_user: User = Depends(get_current_user), db: Session 
         aadhaar_doc = profile.aadhaar_doc
         license_doc = profile.license_doc
         is_verified = profile.is_verified
-        if profile.phone_number:
-            is_complete = True
+        if user_type == "driver":
+            is_complete = bool(profile.phone_number and profile.aadhaar_doc and profile.license_doc)
+        else:
+            is_complete = bool(profile.phone_number and profile.user_type)
     
     # Fallback if profile not saved yet
     if not full_name:
@@ -273,6 +296,7 @@ def get_auth_status(current_user: User = Depends(get_current_user), db: Session 
     license_doc_url = f"{BASE_URL}/uploads/{license_doc}" if license_doc else None
     
     return {
+        "authenticated": True,
         "email": current_user.email,
         "is_profile_complete": is_complete,
         "user_type": user_type,
@@ -388,4 +412,9 @@ app.include_router(
 # AI Pricing & Market Validation
 app.include_router(
     pricing.router
+)
+
+# Automated WhatsApp & SMS Dispatch Alerts
+app.include_router(
+    notifications.router
 )

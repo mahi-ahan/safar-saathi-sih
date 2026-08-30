@@ -9,7 +9,9 @@ import {
   useLocation
 } from 'react-router-dom';
 
-import { LoginPage, ProfileSetupPage, Home, FindVehicles, OfferTrip } from './pages';
+import ProfileSetupPage from './ProfileSetupPage';
+import LoginPage from './LoginPage';
+import { Home, FindVehicles, OfferTrip } from './pages';
 import Maps from './Maps';
 
 import {
@@ -126,45 +128,14 @@ const NAV = [
 
 function Header() {
   const { t } = useLang()
-  const { openAuthModal } = useApp()
   const navigate = useNavigate()
   const location = useLocation()
   const [open, setOpen] = useState(false)
 
-  const handleNavClick = async (e, item) => {
-    if (item.key === 'home') {
-      setOpen(false)
-      return
-    }
-
+  const handleNavClick = (e, item) => {
     e.preventDefault()
     setOpen(false)
-
-    const intent = item.key === 'find' ? 'find' : 'offer'
-    const token = localStorage.getItem("access_token")
-
-    if (!token) {
-      openAuthModal(intent)
-      return
-    }
-
-    try {
-      const res = await fetch("http://localhost:8000/auth/status", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      const data = await res.json()
-      if (!data.is_profile_complete) {
-        navigate('/complete-profile')
-      } else if (intent === 'find' && data.user_type === 'driver') {
-        openAuthModal('find')
-      } else if (intent === 'offer' && data.user_type !== 'driver') {
-        openAuthModal('offer')
-      } else {
-        navigate(item.to)
-      }
-    } catch (err) {
-      openAuthModal(intent)
-    }
+    navigate(item.to)
   }
 
   return (
@@ -759,7 +730,7 @@ function ProtectedRoute({ children, requiredType }) {
     const checkAuth = async () => {
       const token = localStorage.getItem("access_token")
       if (!token) {
-        navigate('/login')
+        navigate('/login', { state: { intent: requiredType === 'driver' ? 'offer' : 'find' } })
         return
       }
 
@@ -770,24 +741,34 @@ function ProtectedRoute({ children, requiredType }) {
 
         if (!res.ok) {
           localStorage.removeItem("access_token")
-          navigate('/login')
+          navigate('/login', { state: { intent: requiredType === 'driver' ? 'offer' : 'find' } })
           return
         }
 
         const data = await res.json()
 
-        if (!data.is_profile_complete) {
-          navigate('/complete-profile')
+        if (data.authenticated === false) {
+          localStorage.removeItem("access_token")
+          navigate('/login', { state: { intent: requiredType === 'driver' ? 'offer' : 'find' } })
           return
         }
 
-        // STRICT role separation
+        if (!data.is_profile_complete) {
+          const derivedIntent = requiredType === 'driver' ? 'offer' : 'find'
+          localStorage.setItem("login_intent", derivedIntent)
+          navigate('/complete-profile', { state: { intent: derivedIntent } })
+          return
+        }
+
+        // ROLE-BASED ACCESS CONTROL ENFORCEMENT:
+        // A Sender (user_type !== 'driver') cannot access Driver Hub (/offer)
+        // A Driver (user_type === 'driver') cannot access Sender Hub (/find)
         if (requiredType === 'driver' && data.user_type !== 'driver') {
           localStorage.removeItem("access_token")
           navigate('/login', {
             state: {
               intent: 'offer',
-              error: "This account belongs to Find a Vehicle (Sender). Please use a Driver account for Offer a Trip."
+              error: `You were logged in as a Sender (${data.email}). Please sign in with your Driver account to access the Driver Operations Hub.`
             }
           })
           return
@@ -798,15 +779,13 @@ function ProtectedRoute({ children, requiredType }) {
           navigate('/login', {
             state: {
               intent: 'find',
-              error: "This account belongs to Offer a Trip (Driver). Please use a Sender account for Find a Vehicle."
+              error: `You were logged in as a Driver (${data.email}). Please sign in with your Sender account to access Find a Vehicle.`
             }
           })
           return
         }
       } catch (err) {
-        localStorage.removeItem("access_token")
-        navigate('/login')
-        return
+        console.error("Auth status error:", err)
       } finally {
         setLoading(false)
       }

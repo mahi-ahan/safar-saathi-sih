@@ -1185,9 +1185,20 @@ export async function searchIndianLocations(query) {
     }
   }
 
-  // Tier 2: Photon High-Speed Geocoding API
+  // If local results found, return immediately without network delay
+  if (results.length >= 2) {
+    return results.slice(0, 8);
+  }
+
+  // Tier 2: Photon High-Speed Geocoding API with 1.2s timeout
   try {
-    const photonRes = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query.trim())}&limit=8&lat=20.5937&lon=78.9629`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const photonRes = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query.trim())}&limit=8&lat=20.5937&lon=78.9629`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
     if (photonRes.ok) {
       const pData = await photonRes.json();
       if (pData?.features && Array.isArray(pData.features)) {
@@ -1199,7 +1210,6 @@ export async function searchIndianLocations(query) {
           const props = f.properties || {};
           const country = props.country || '';
           
-          // Focus on India or nearby bounds
           if (country && country.toLowerCase() !== 'india' && country.toLowerCase() !== 'in') {
             continue;
           }
@@ -1221,36 +1231,7 @@ export async function searchIndianLocations(query) {
       }
     }
   } catch (err) {
-    console.warn("Photon search fallback", err);
-  }
-
-  // Tier 3: OpenStreetMap Nominatim Fallback if needed
-  if (results.length < 2) {
-    try {
-      const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query.trim())}&countrycodes=in&limit=4&addressdetails=1`);
-      if (nomRes.ok) {
-        const nomData = await nomRes.json();
-        if (Array.isArray(nomData)) {
-          for (const item of nomData) {
-            const lat = parseFloat(item.lat);
-            const lng = parseFloat(item.lon);
-            const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              results.push({
-                name: item.display_name,
-                shortName: item.address?.city || item.address?.town || item.address?.village || item.address?.suburb || item.display_name.split(',')[0],
-                state: item.address?.state || '',
-                lat,
-                lng
-              });
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // Ignored fallback
-    }
+    // Graceful fallback
   }
 
   return results.slice(0, 8);

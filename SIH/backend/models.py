@@ -29,8 +29,8 @@ class TripModel(Base):
   status = Column(String, default="scheduled")
   is_live = Column(Boolean, default=False)
   speed = Column(Float, default=0.0)
-  pickup_cargo_image_url = Column(String, nullable=True)
   delivery_proof_image_url = Column(String, nullable=True)
+  preferred_lang = Column(String, default="hi")
 
 
 class RequestModel(Base):
@@ -61,6 +61,7 @@ class RequestModel(Base):
   reason = Column(String, nullable=True)
   rating = Column(Integer, nullable=True)
   feedback = Column(String, nullable=True)
+  preferred_lang = Column(String, default="hi")
 
 
 class RoutePricingCache(Base):
@@ -146,5 +147,6 @@ class UserProfile(Base):
     aadhaar_doc = Column(String, nullable=True)
     license_doc = Column(String, nullable=True)
     is_verified = Column(Boolean, default=False)
+    preferred_lang = Column(String, default="hi")
 
     user = relationship("User", back_populates="profile")

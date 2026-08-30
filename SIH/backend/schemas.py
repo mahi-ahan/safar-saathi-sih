@@ -42,6 +42,25 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class ProfileCreateSchema(BaseModel):
+    phone_number: str
+    user_type: str = "sender"
+    full_name: Optional[str] = None
+    gender: Optional[str] = "Other"
+    aadhaar_doc: Optional[str] = None
+    license_doc: Optional[str] = None
+
+
+class ProfileUpdateSchema(BaseModel):
+    phone_number: Optional[str] = None
+    user_type: Optional[str] = None
+    full_name: Optional[str] = None
+    gender: Optional[str] = None
+    aadhaar_doc: Optional[str] = None
+    license_doc: Optional[str] = None
+
+
+
 # ==================================================
 # STRICT VEHICLE CATEGORIES, PHYSICAL LIMITS & DISTANCE CONSTRAINTS
 # ==================================================
@@ -157,6 +176,7 @@ class TripCreate(BaseModel):
     speed: Optional[float] = 0.0
     pickup_cargo_image_url: Optional[str] = None
     delivery_proof_image_url: Optional[str] = None
+    lang: Optional[str] = "hi"
 
 
 class TripResponse(TripCreate):
@@ -171,6 +191,7 @@ class TripResponse(TripCreate):
     partners: Optional[list[dict]] = []
     pickup_cargo_image_url: Optional[str] = None
     delivery_proof_image_url: Optional[str] = None
+    driver_phone: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -196,6 +217,7 @@ class RequestCreate(BaseModel):
     vehicle: Optional[str] = ""
     owner: Optional[str] = ""
     farmer_name: Optional[str] = ""
+    farmer_phone: Optional[str] = None
     kg: Optional[int] = 0
     goods_weight_kg: Optional[int] = None
     distance_km: Optional[float] = 150.0
@@ -207,6 +229,7 @@ class RequestCreate(BaseModel):
     delivery_lng: Optional[float] = 0.0
     pickup_cargo_image_url: Optional[str] = None
     delivery_proof_image_url: Optional[str] = None
+    lang: Optional[str] = "hi"
 
 
 class RequestResponse(RequestCreate):
@@ -229,6 +252,8 @@ class RequestResponse(RequestCreate):
     delivery_lng: Optional[float] = 0.0
     pickup_cargo_image_url: Optional[str] = None
     delivery_proof_image_url: Optional[str] = None
+    farmer_phone: Optional[str] = None
+    driver_phone: Optional[str] = None
     reason: Optional[str] = None
     rating: Optional[int] = None
     feedback: Optional[str] = None
@@ -344,3 +369,9 @@ class CalculatePtlFareResponse(BaseModel):
     breakdown: dict
     voice_announcement_text: dict
     warning: Optional[str] = None
+
+
+class RequestStatusUpdate(BaseModel):
+    status: Optional[str] = None
+    reason: Optional[str] = None
+    lang: Optional[str] = "hi"

@@ -1352,6 +1352,17 @@ export function LangProvider({ children }) {
     try {
       localStorage.setItem('ss_lang', newLang)
       document.documentElement.lang = newLang
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        fetch('http://localhost:8000/auth/set-lang', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ lang: newLang })
+        }).catch(() => {})
+      }
     } catch (e) {}
   }
 
@@ -1467,3 +1478,81 @@ export const useApp = () => useContext(AppCtx)
 
 export const inr = n =>
   '₹' + Number(n || 0).toLocaleString('en-IN')
+
+
+/* =========================================================
+   VEHICLE PHYSICAL CAPACITY SPECIFICATIONS & HARD LIMITS
+========================================================= */
+
+export const VEHICLE_CAPACITY_SPECS = {
+  'Two-Wheeler': {
+    name: 'Two-Wheeler',
+    displayName: 'Two-Wheeler (Bike / Scooter)',
+    defaultKg: 30,
+    maxKg: 50,
+    minKg: 5,
+    maxDistanceKm: 20,
+    basePrice: 150,
+    perKmRate: 12,
+    step: 5,
+    icon: '🛵',
+    description: 'Two-Wheeler (Max 50 kg · Max 20 km range)'
+  },
+  'Three-Wheeler/Auto': {
+    name: 'Three-Wheeler/Auto',
+    displayName: 'Three-Wheeler/Auto (Cargo Rickshaw)',
+    defaultKg: 200,
+    maxKg: 350,
+    minKg: 20,
+    maxDistanceKm: 100,
+    basePrice: 350,
+    perKmRate: 16,
+    step: 10,
+    icon: '🛺',
+    description: 'Three-Wheeler (Max 350 kg · Max 100 km range)'
+  },
+  'Mini-Truck': {
+    name: 'Mini-Truck',
+    displayName: 'Mini-Truck (Tata Ace / Pickup / Bolero)',
+    defaultKg: 800,
+    maxKg: 1500,
+    minKg: 50,
+    maxDistanceKm: 500,
+    basePrice: 1200,
+    perKmRate: 24,
+    step: 50,
+    icon: '🛻',
+    description: 'Mini-Truck (Max 1,500 kg · Max 500 km range)'
+  },
+  'Heavy-Truck': {
+    name: 'Heavy-Truck',
+    displayName: 'Heavy-Truck (HCV / 10-Wheeler / Lorry)',
+    defaultKg: 8000,
+    maxKg: 25000,
+    minKg: 500,
+    maxDistanceKm: Infinity,
+    basePrice: 4500,
+    perKmRate: 42,
+    step: 250,
+    icon: '🚛',
+    description: 'Heavy Commercial HCV (Max 25,000 kg · Any distance)'
+  }
+};
+
+export function getVehicleCapacitySpec(vehicleName) {
+  if (!vehicleName) return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
+  const v = String(vehicleName).toLowerCase().trim();
+  if (v.includes('two') || v.includes('bike') || v.includes('scooter') || v.includes('motorcycle')) {
+    return VEHICLE_CAPACITY_SPECS['Two-Wheeler'];
+  }
+  if (v.includes('three') || v.includes('auto') || v.includes('rickshaw')) {
+    return VEHICLE_CAPACITY_SPECS['Three-Wheeler/Auto'];
+  }
+  if (v.includes('mini') || v.includes('ace') || v.includes('chota') || v.includes('jeeto') || v.includes('pickup') || v.includes('bolero') || v.includes('yodha') || v.includes('van') || v.includes('eeco') || v.includes('supro')) {
+    return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
+  }
+  if (v.includes('heavy') || v.includes('truck') || v.includes('lorry') || v.includes('hcv') || v.includes('trailer') || v.includes('tempo') || v.includes('407') || v.includes('canter') || v.includes('tractor')) {
+    return VEHICLE_CAPACITY_SPECS['Heavy-Truck'];
+  }
+  return VEHICLE_CAPACITY_SPECS['Mini-Truck'];
+}

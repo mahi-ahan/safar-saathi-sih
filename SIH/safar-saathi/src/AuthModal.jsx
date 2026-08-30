@@ -135,7 +135,7 @@ export function AuthModal({
           localStorage.setItem("access_token", data.access_token);
           localStorage.setItem("login_intent", intent);
           onClose();
-          navigate('/complete-profile');
+          navigate('/complete-profile', { state: { intent } });
           return;
         }
 

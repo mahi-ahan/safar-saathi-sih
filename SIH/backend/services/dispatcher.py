@@ -26,10 +26,12 @@ def resolve_user_contact_and_lang(
     default_lang: str = "hi"
 ) -> tuple[str, str]:
     """
-    Bulletproof resolver for user's WhatsApp phone number and preferred language.
+    Bulletproof multi-layered resolver for user/driver WhatsApp phone number and preferred language.
     1. Looks up UserProfile by user_id
-    2. Looks up UserProfile/User by name or username
-    3. Falls back to platform test phone '9608959215' so messages NEVER drop.
+    2. Cleans name string (removes vehicle labels/parens like 'Ramesh (Mini-Truck)')
+    3. Looks up TripModel FIRST to get the driver's exact trip phone or linked user profile phone
+    4. Looks up UserProfile/User by clean name or username (bidirectional search)
+    5. Falls back to DEFAULT_DRIVER_PHONE / test phone so messages never drop.
     """
     import models
     phone = None
@@ -44,40 +46,71 @@ def resolve_user_contact_and_lang(
             if p.preferred_lang:
                 lang = p.preferred_lang
 
-    # 2. Search by name or username
-    if not phone and username_or_name:
-        p = (
-            db.query(models.UserProfile)
-            .join(models.User, models.UserProfile.user_id == models.User.id)
-            .filter(
-                (models.UserProfile.full_name == username_or_name) |
-                (models.User.username == username_or_name) |
-                (models.User.username.ilike(f"%{username_or_name}%")) |
-                (models.UserProfile.full_name.ilike(f"%{username_or_name}%"))
+    clean_name = ""
+    if username_or_name:
+        # Strip parens, vehicle labels, route tags e.g. "Ramesh Patil (Mini-Truck)" -> "Ramesh Patil"
+        clean_name = str(username_or_name).split("(")[0].split("-")[0].strip()
+
+    # 2. Check TripModel FIRST for linked user_id or driver_phone (Specific trip driver takes priority)
+    if not phone and (username_or_name or clean_name):
+        search_terms = [t for t in [username_or_name, clean_name] if t]
+        for term in search_terms:
+            trip = db.query(models.TripModel).filter(
+                (models.TripModel.owner == term) |
+                (models.TripModel.owner.ilike(f"%{term}%"))
+            ).order_by(models.TripModel.id.desc()).first()
+            if trip:
+                if getattr(trip, "user_id", None):
+                    driver_p = db.query(models.UserProfile).filter(models.UserProfile.user_id == trip.user_id).first()
+                    if driver_p and driver_p.phone_number:
+                        phone = driver_p.phone_number
+                        if driver_p.preferred_lang:
+                            lang = driver_p.preferred_lang
+                if not phone and getattr(trip, "driver_phone", None):
+                    phone = trip.driver_phone
+                if phone:
+                    break
+
+    # 3. Search UserProfile / User by name or clean_name
+    if not phone and (username_or_name or clean_name):
+        query_terms = [t for t in [username_or_name, clean_name] if t]
+        for term in query_terms:
+            p = (
+                db.query(models.UserProfile)
+                .join(models.User, models.UserProfile.user_id == models.User.id)
+                .filter(
+                    (models.UserProfile.full_name == term) |
+                    (models.User.username == term) |
+                    (models.User.email == term) |
+                    (models.User.username.ilike(f"%{term}%")) |
+                    (models.UserProfile.full_name.ilike(f"%{term}%"))
+                )
+                .first()
             )
-            .first()
-        )
-        if p:
-            if p.phone_number:
+            if p and p.phone_number:
                 phone = p.phone_number
-            if p.preferred_lang:
-                lang = p.preferred_lang
+                if p.preferred_lang:
+                    lang = p.preferred_lang
+                break
 
-    # 3. Search User table directly
-    if not phone and username_or_name:
-        u = db.query(models.User).filter(
-            (models.User.username == username_or_name) |
-            (models.User.username.ilike(f"%{username_or_name}%"))
-        ).first()
-        if u and u.profile:
-            if u.profile.phone_number:
+    # 4. Search User table directly by username or email
+    if not phone and (username_or_name or clean_name):
+        search_terms = [t for t in [username_or_name, clean_name] if t]
+        for term in search_terms:
+            u = db.query(models.User).filter(
+                (models.User.username == term) |
+                (models.User.email == term) |
+                (models.User.username.ilike(f"%{term}%"))
+            ).first()
+            if u and u.profile and u.profile.phone_number:
                 phone = u.profile.phone_number
-            if u.profile.preferred_lang:
-                lang = u.profile.preferred_lang
+                if u.profile.preferred_lang:
+                    lang = u.profile.preferred_lang
+                break
 
-    # 4. Safe fallback to active WhatsApp test phone
+    # 5. Safe fallback to active WhatsApp test phone or ENV override
     if not phone:
-        phone = "9608959215"
+        phone = os.getenv("DEFAULT_DRIVER_PHONE", "9608959215")
 
     return phone, lang
 

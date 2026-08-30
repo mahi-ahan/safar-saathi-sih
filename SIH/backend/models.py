@@ -1,12 +1,14 @@
 # models.py
 from database import Base  # <--- MAKE SURE THIS LINE IS AT THE TOP
-from sqlalchemy import Boolean, Column, Float, Integer, String
+from sqlalchemy import Boolean, Column, Float, Integer, String, ForeignKey
 
 
 class TripModel(Base):
   __tablename__ = "trips"
 
   id = Column(Integer, primary_key=True, index=True)
+  user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+  driver_phone = Column(String, nullable=True)
   state = Column(String, index=True)
   from_loc = Column(String, index=True)
   to_loc = Column(String, index=True)

@@ -325,7 +325,8 @@ def create_request(
             savings_to_show = 0.0
 
         # 4. Automated Two-Way Background Dispatch Alert
-        driver_phone, driver_lang = resolve_user_contact_and_lang(db, username_or_name=req.owner, default_lang=getattr(req, "lang", "hi") or "hi")
+        driver_user_id = getattr(trip, "user_id", None) if trip else None
+        driver_phone, driver_lang = resolve_user_contact_and_lang(db, user_id=driver_user_id, username_or_name=req.owner, default_lang=getattr(req, "lang", "hi") or "hi")
         farmer_phone, farmer_lang = resolve_user_contact_and_lang(db, user_id=user_id_val, username_or_name=req.farmer_name, default_lang=getattr(req, "lang", "hi") or "hi")
 
         if background_tasks:
@@ -587,16 +588,19 @@ def cancel_request(
     db.commit()
 
     # Recalculate remaining passengers' shares and check completion for linked trip
+    linked_trip = None
     all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
     for t in all_trips:
         patterns = get_trip_route_patterns(t)
         if request.route in patterns or f"{t.from_loc} → {t.to_loc}" == request.route or f"{t.from_loc} -> {t.to_loc}" == request.route:
             check_and_finalize_trip_completion(t, db)
             recalculate_trip_cost_shares(t, db)
+            linked_trip = t
             break
 
     # Two-way notification on cancellation by farmer
-    driver_phone, driver_lang = resolve_user_contact_and_lang(db, username_or_name=request.owner, default_lang="hi")
+    driver_user_id = getattr(linked_trip, "user_id", None) if linked_trip else None
+    driver_phone, driver_lang = resolve_user_contact_and_lang(db, user_id=driver_user_id, username_or_name=request.owner, default_lang="hi")
     farmer_phone, farmer_lang = resolve_user_contact_and_lang(db, user_id=request.user_id, username_or_name=request.farmer_name, default_lang="hi")
 
     if background_tasks:
@@ -720,6 +724,7 @@ def update_request_status(
     db.refresh(request)
 
     # Recalculate trip cost shares and check completion
+    linked_trip = None
     all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
     for t in all_trips:
         patterns = get_trip_route_patterns(t)
@@ -727,11 +732,13 @@ def update_request_status(
             check_and_finalize_trip_completion(t, db)
             recalculate_trip_cost_shares(t, db)
             db.refresh(request)
+            linked_trip = t
             break
 
     # Automated Two-Way Background Dispatch Alerts
     if background_tasks:
-        driver_phone, driver_lang = resolve_user_contact_and_lang(db, username_or_name=request.owner, default_lang=lang or 'hi')
+        driver_user_id = getattr(linked_trip, "user_id", None) if linked_trip else None
+        driver_phone, driver_lang = resolve_user_contact_and_lang(db, user_id=driver_user_id, username_or_name=request.owner, default_lang=lang or 'hi')
         farmer_phone, farmer_lang = resolve_user_contact_and_lang(db, user_id=request.user_id, username_or_name=request.farmer_name, default_lang=lang or 'hi')
 
         # 1. Driver Accepts Request

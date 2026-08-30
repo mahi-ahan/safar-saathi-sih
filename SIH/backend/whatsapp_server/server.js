@@ -27,6 +27,7 @@ app.listen(PORT, () => {
 // Visual Web QR & Status Page (Open http://localhost:3001 in browser)
 app.get('/', (req, res) => {
   if (isReady) {
+    const connectedNum = (client && client.info && client.info.wid) ? client.info.wid.user : 'Unknown';
     return res.send(`
       <!DOCTYPE html>
       <html>
@@ -38,16 +39,21 @@ app.get('/', (req, res) => {
           .card { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.06); text-align: center; max-width: 420px; border: 2px solid #bbf7d0; }
           .icon { font-size: 56px; margin-bottom: 12px; }
           h1 { font-size: 22px; margin: 0 0 8px; color: #14532d; }
-          p { font-size: 14px; color: #15803d; line-height: 1.5; margin: 0; }
-          .badge { display: inline-block; background: #22c55e; color: white; padding: 4px 14px; border-radius: 99px; font-size: 12px; font-weight: bold; margin-top: 16px; }
+          p { font-size: 14px; color: #15803d; line-height: 1.5; margin: 0 0 12px; }
+          .num-box { background: #dcfce7; padding: 8px 16px; border-radius: 12px; font-weight: bold; font-size: 15px; color: #14532d; margin-bottom: 16px; display: inline-block; }
+          .badge { display: inline-block; background: #22c55e; color: white; padding: 4px 14px; border-radius: 99px; font-size: 12px; font-weight: bold; }
+          .btn-logout { display: block; margin-top: 20px; background: #ef4444; color: white; text-decoration: none; padding: 10px 18px; border-radius: 12px; font-size: 13px; font-weight: bold; }
+          .btn-logout:hover { background: #dc2626; }
         </style>
       </head>
       <body>
         <div class="card">
           <div class="icon">✅</div>
           <h1>WhatsApp Gateway Active</h1>
-          <p>Safar-Saathi is connected to WhatsApp and ready to deliver automated dispatch alerts in the background!</p>
+          <p>Safar-Saathi is connected to WhatsApp and delivering automated alerts!</p>
+          <div class="num-box">📱 Connected Sender: +${connectedNum}</div><br/>
           <div class="badge">100% Online & Ready</div>
+          <a href="/logout" class="btn-logout" onclick="return confirm('Disconnect this WhatsApp number and scan a new QR code?')">🔄 Change Sender Number / Scan New QR</a>
         </div>
       </body>
       </html>
@@ -133,8 +139,59 @@ app.get('/status', (req, res) => {
     status: isReady ? 'ready' : (lastQr ? 'qr_ready' : 'initializing'),
     ready: isReady,
     has_qr: !!lastQr,
+    connected_number: (client && client.info && client.info.wid) ? client.info.wid.user : null,
     timestamp: new Date().toISOString()
   });
+});
+
+// Logout / Reset session endpoint to change sender WhatsApp number
+app.get('/logout', async (req, res) => {
+  isReady = false;
+  lastQr = null;
+  console.log('🔄 [WhatsApp Gateway] Logging out and resetting session...');
+  
+  if (client) {
+    try {
+      await client.logout();
+    } catch (e) {
+      try { await client.destroy(); } catch (err) {}
+    }
+    client = null;
+  }
+
+  const authDir = path.join(__dirname, '.wwebjs_auth');
+  if (fs.existsSync(authDir)) {
+    try {
+      fs.rmSync(authDir, { recursive: true, force: true });
+      console.log('🧹 [WhatsApp Gateway] Cleared session authentication files.');
+    } catch (err) {
+      console.log('Notice removing auth dir:', err.message);
+    }
+  }
+
+  setTimeout(() => {
+    startWhatsAppClient();
+  }, 1000);
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Resetting WhatsApp Gateway</title>
+      <meta http-equiv="refresh" content="4;url=/">
+      <style>
+        body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fafaf9; }
+        .card { background: white; padding: 32px; border-radius: 20px; text-align: center; border: 1px solid #e7e5e4; max-width: 400px; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <p style="font-size: 18px; font-weight: bold; color: #1c1917;">Logged Out Successfully!</p>
+        <p style="font-size: 13px; color: #57534e;">Generating a new QR code for your new WhatsApp phone number... Redirecting in 4 seconds...</p>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
 // Message Queue to prevent race conditions when multiple messages are dispatched simultaneously
@@ -336,6 +393,27 @@ async function startWhatsAppClient() {
 
     client.on('auth_failure', (msg) => {
       console.error('❌ [WhatsApp Gateway] Authentication Failure:', msg);
+    });
+
+    client.on('message', async (msg) => {
+      try {
+        const fromNum = msg.from ? msg.from.replace('@c.us', '') : 'Unknown';
+        console.log(`📩 [WhatsApp Gateway] Incoming message from ${fromNum}: "${msg.body}"`);
+        
+        // Forward incoming message to backend webhook if configured
+        try {
+          const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+          await fetch('http://127.0.0.1:8000/api/notifications/webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: fromNum, body: msg.body, timestamp: msg.timestamp })
+          });
+        } catch (webhookErr) {
+          // Backend webhook notice silently logged
+        }
+      } catch (err) {
+        console.log(`[WhatsApp Gateway] Notice processing incoming message: ${err.message}`);
+      }
     });
 
     client.on('disconnected', async (reason) => {

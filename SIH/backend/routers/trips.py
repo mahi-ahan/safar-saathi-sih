@@ -587,6 +587,8 @@ def create_trip(
     ).first()
     driver_name = profile.full_name if (profile and profile.full_name) else (trip.owner or current_user.username)
     trip_data["owner"] = driver_name
+    trip_data["user_id"] = current_user.id
+    trip_data["driver_phone"] = profile.phone_number if (profile and profile.phone_number) else None
     trip_data["preferred_lang"] = trip_lang
 
     valid_cols = set(models.TripModel.__table__.columns.keys())

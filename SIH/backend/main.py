@@ -31,6 +31,8 @@ models.Base.metadata.create_all(bind=engine)
 def auto_migrate():
     from sqlalchemy import text
     migrations = [
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS driver_phone VARCHAR;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS total_driver_amount FLOAT DEFAULT 0.0;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS distance_km FLOAT DEFAULT 150.0;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS dest_lat FLOAT DEFAULT 0.0;",
@@ -133,6 +135,28 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 def seed_data():
     db = next(get_db())
     try:
+        # Seed default driver user profiles if missing
+        seed_drivers = [
+            {"username": "ramesh_patil", "full_name": "Ramesh Patil", "phone": "9608959215"},
+            {"username": "gurpreet_singh", "full_name": "Gurpreet Singh", "phone": "9608959215"},
+            {"username": "rajesh_yadav", "full_name": "Rajesh Yadav", "phone": "9608959215"},
+            {"username": "mahesh_patel", "full_name": "Mahesh Bhai Patel", "phone": "9608959215"},
+        ]
+        for sd in seed_drivers:
+            existing_u = db.query(models.User).filter(models.User.username == sd["username"]).first()
+            if not existing_u:
+                u = models.User(username=sd["username"], email=f"{sd['username']}@safarsaathi.com", role=models.UserRole.DRIVER)
+                db.add(u)
+                db.commit()
+                db.refresh(u)
+                p = models.UserProfile(user_id=u.id, full_name=sd["full_name"], phone_number=sd["phone"], user_type="driver", is_verified=True)
+                db.add(p)
+                db.commit()
+            else:
+                if existing_u.profile and not existing_u.profile.phone_number:
+                    existing_u.profile.phone_number = sd["phone"]
+                    db.commit()
+
         # Only insert mock trips if table is empty
         if not db.query(
             models.TripModel
@@ -145,6 +169,7 @@ def seed_data():
                     date="2026-08-18",
                     vehicle="Mini-Truck",
                     owner="Ramesh Patil",
+                    driver_phone="9608959215",
                     verified=True,
                     pct=62,
                     total_kg=900,
@@ -162,6 +187,7 @@ def seed_data():
                     date="2026-08-20",
                     vehicle="Mini-Truck",
                     owner="Gurpreet Singh",
+                    driver_phone="9608959215",
                     verified=True,
                     pct=30,
                     total_kg=1000,
@@ -179,6 +205,7 @@ def seed_data():
                     date="2026-08-19",
                     vehicle="Heavy-Truck",
                     owner="Rajesh Yadav",
+                    driver_phone="9608959215",
                     verified=False,
                     pct=85,
                     total_kg=4500,
@@ -196,6 +223,7 @@ def seed_data():
                     date="2026-08-22",
                     vehicle="Heavy-Truck",
                     owner="Mahesh Bhai Patel",
+                    driver_phone="9608959215",
                     verified=True,
                     pct=45,
                     total_kg=8000,
@@ -210,14 +238,16 @@ def seed_data():
 
             db.add_all(initial_trips)
             db.commit()
-            print(
-                "Initial trip data inserted successfully."
-            )
-        else:
-            print(
-                "Trip data already exists. "
-                "Skipping seed."
-            )
+            print("Initial trip data inserted successfully.")
+        # Sync all existing trips with latest UserProfile driver phone numbers
+        all_trips = db.query(models.TripModel).all()
+        for t in all_trips:
+            from services.dispatcher import resolve_user_contact_and_lang
+            phone, _ = resolve_user_contact_and_lang(db, user_id=t.user_id, username_or_name=t.owner)
+            if phone:
+                t.driver_phone = phone
+        db.commit()
+        print("Trip data synced with latest driver phone numbers.")
     finally:
         db.close()
 

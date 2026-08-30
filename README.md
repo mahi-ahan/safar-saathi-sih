@@ -55,11 +55,17 @@ npm install
 # Start the WhatsApp Gateway
 npm start
 ```
-- **One-time Link**:
-  1. Open [`http://localhost:3001`](http://localhost:3001) in your web browser.
+- **Linking a Sender Phone Number**:
+  1. Open [`http://localhost:3001`](http://localhost:3001) in your browser.
   2. On your phone, open **WhatsApp → Linked Devices → Link a Device**.
   3. Scan the QR code displayed on the screen.
-  4. The gateway is now linked and will automatically deliver real messages and delivery photos!
+  4. Once linked, the status page will display: `📱 Connected Sender: +91XXXXXXXXXX`.
+- **Changing / Resetting Sender Number**:
+  - To switch to a different sender WhatsApp number at any time, click **"🔄 Change Sender Number / Scan New QR"** on [`http://localhost:3001`](http://localhost:3001) (or visit [`http://localhost:3001/logout`](http://localhost:3001/logout)).
+  - Scan the fresh QR code with your new WhatsApp phone number.
+- **Two-Way Messaging & Webhooks**:
+  - **Outbound**: Automatically dispatches localized booking, acceptance, price-drop, and delivery photo proof alerts to driver and shipper phone numbers.
+  - **Inbound**: Listens for incoming WhatsApp replies from users/drivers and forwards them to the backend webhook (`POST /api/notifications/webhook`).
 
 ---
 

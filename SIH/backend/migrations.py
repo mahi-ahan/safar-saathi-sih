@@ -27,6 +27,15 @@ def main():
     cur = conn.cursor()
 
     migrations = [
+        # Add user_id & driver_phone to trips table
+        """
+        ALTER TABLE trips 
+        ADD COLUMN IF NOT EXISTS user_id INTEGER DEFAULT NULL
+        """,
+        """
+        ALTER TABLE trips 
+        ADD COLUMN IF NOT EXISTS driver_phone VARCHAR DEFAULT NULL
+        """,
         # Add price_per_kg to trips table
         """
         ALTER TABLE trips 

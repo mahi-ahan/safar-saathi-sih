@@ -263,6 +263,14 @@ def complete_user_profile(
     if profile.user_type == 'driver' and profile.aadhaar_doc and profile.license_doc:
         profile.is_verified = True
         
+    # Sync updated phone number across driver's trips in database
+    if profile.phone_number:
+        db.query(models.TripModel).filter(
+            (models.TripModel.user_id == current_user.id) |
+            (models.TripModel.owner == profile.full_name) |
+            (models.TripModel.owner == current_user.username)
+        ).update({"driver_phone": profile.phone_number, "user_id": current_user.id}, synchronize_session=False)
+
     db.commit()
     db.refresh(profile)
     
@@ -382,6 +390,14 @@ def update_user_profile(
         if profile.user_type == 'driver' and (not profile.aadhaar_doc or not profile.license_doc):
             profile.is_verified = False
             
+    # Sync updated phone number across driver's trips in database
+    if profile.phone_number:
+        db.query(models.TripModel).filter(
+            (models.TripModel.user_id == current_user.id) |
+            (models.TripModel.owner == profile.full_name) |
+            (models.TripModel.owner == current_user.username)
+        ).update({"driver_phone": profile.phone_number, "user_id": current_user.id}, synchronize_session=False)
+
     db.commit()
     db.refresh(profile)
     

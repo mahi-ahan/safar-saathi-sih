@@ -3326,10 +3326,14 @@ export function OfferTrip() {
           {filteredTrips.length > 0 ? (
             <div className="grid md:grid-cols-2 gap-5">
               {filteredTrips.map(trip => {
-                const isTripLive = trip.id === activeLiveTripId || trip.status === 'in_transit' || trip.is_live;
-                const isPendingConfirmation = trip.status === 'pending_passenger_confirmation';
+                const activePartners = trip.partners ? trip.partners.filter(p => ['accepted', 'in_transit', 'pending', 'pending_passenger_confirmation', 'completed'].includes(p.status)) : [];
+                const undeliveredPartners = activePartners.filter(p => ['accepted', 'in_transit', 'pending'].includes(p.status));
+                const allPartnersDelivered = activePartners.length > 0 && undeliveredPartners.length === 0;
+
                 const isCompleted = trip.status === 'completed';
+                const isPendingConfirmation = trip.status === 'pending_passenger_confirmation' || (allPartnersDelivered && !isCompleted);
                 const isCancelled = trip.status === 'cancelled' || trip.status === 'cancelled_by_driver';
+                const isTripLive = !isCompleted && !isPendingConfirmation && !isCancelled && (trip.is_live || trip.status === 'in_transit' || activeLiveTripId === trip.id);
                 const usedPct = trip.space_used_percentage !== undefined ? trip.space_used_percentage : (trip.pct || 0);
                 const freeKg = trip.available_space_kg !== undefined ? trip.available_space_kg : Math.max(0, (trip.total_kg || 1000) - (trip.total_booked_kg || 0));
 
@@ -3374,7 +3378,7 @@ export function OfferTrip() {
                           {isTripLive
                             ? '🔴 IN-TRANSIT'
                             : isPendingConfirmation
-                              ? '⏳ PENDING CONFIRMATION'
+                              ? '⏳ WAITING CONFIRMATION'
                               : isCompleted
                                 ? '✓ COMPLETED'
                                 : isCancelled
@@ -3504,8 +3508,8 @@ export function OfferTrip() {
                         </div>
                       )}
 
-                      {/* DRIVER DELIVERY PROOF PHOTO PREVIEW */}
-                      {trip.delivery_proof_image_url && (
+                      {/* STANDALONE DRIVER DELIVERY PROOF PHOTO PREVIEW (Only for non-pooled trips without partners list) */}
+                      {trip.delivery_proof_image_url && (!trip.partners || trip.partners.length === 0) && (
                         <div className="rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 p-3 shadow-xs mb-3">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
@@ -3541,7 +3545,7 @@ export function OfferTrip() {
                       {isCompleted ? (
                         <div className="w-full bg-emerald-100/80 border border-emerald-300 p-2.5 rounded-xl">
                           <div className="text-xs text-emerald-900 font-bold flex items-center justify-between">
-                            <span>✔ Ride Completed & Confirmation Done</span>
+                            <span>✔ Ride Completed & All Shippers Confirmed!</span>
                             <span className="text-sm">🎉</span>
                           </div>
                           <p className="text-[11px] text-emerald-800 mt-0.5">
@@ -3549,13 +3553,18 @@ export function OfferTrip() {
                           </p>
                         </div>
                       ) : isPendingConfirmation ? (
-                        <div className="w-full space-y-1.5 bg-amber-100/80 border border-amber-300 p-2.5 rounded-xl">
+                        <div className="w-full space-y-1.5 bg-amber-50/90 border border-amber-300 p-3 rounded-2xl">
                           <div className="text-xs text-amber-950 font-bold flex items-center justify-between">
-                            <span>⏳ Waiting for passenger confirmation...</span>
-                            <span className="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span>
+                            <span className="flex items-center gap-1.5">
+                              <span>⏳</span>
+                              <span>All Drop-offs Delivered ({activePartners.length > 0 ? activePartners.length : 'All'} Shippers)</span>
+                            </span>
+                            <span className="text-[10px] bg-amber-600 text-white px-2.5 py-0.5 rounded-full font-mono font-semibold animate-pulse">
+                              Waiting Ratings
+                            </span>
                           </div>
-                          <p className="text-[11px] text-amber-900">
-                            Passengers are reviewing their Ton-Km share breakdown and rating the delivery.
+                          <p className="text-[11px] text-amber-900 leading-relaxed">
+                            Verified drop-off photos were dispatched to all recipients via WhatsApp. Waiting for passengers to verify and rate in their apps.
                           </p>
                         </div>
                       ) : isCancelled ? (
@@ -3591,13 +3600,19 @@ export function OfferTrip() {
                             </span>
                             <span className="w-2.5 h-2.5 rounded-full bg-green-600 animate-ping"></span>
                           </div>
-                          <button
-                            onClick={() => driverCompleteTrip(trip.id)}
-                            className="w-full py-2.5 bg-green-deep hover:bg-green text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <span>🏁</span>
-                            <span>Complete Ride & Request Passenger Confirmation</span>
-                          </button>
+                          {undeliveredPartners.length > 0 ? (
+                            <p className="text-[11px] text-green-soft text-center italic">
+                              Deliver each cargo at its respective drop-off hub above using the "📸 Deliver Cargo" button.
+                            </p>
+                          ) : (
+                            <button
+                              onClick={() => driverCompleteTrip(trip.id)}
+                              className="w-full py-2.5 bg-green-deep hover:bg-green text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <span>🏁</span>
+                              <span>Complete Ride & Request Passenger Confirmation</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

@@ -287,10 +287,11 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
 def check_and_finalize_trip_completion(trip: models.TripModel, db: Session) -> bool:
     """
     Validates and finalizes trip completion based on exact active bookings count:
-    ONLY finalize a trip if it has been marked complete / pending confirmation or all active bookings confirmed.
-    A published/scheduled trip with 0 bookings is OPEN and AVAILABLE for all farmers, NOT completed.
+    1. If all active bookings are confirmed/completed, marks trip as 'completed' and is_live = False.
+    2. If all active bookings have received their individual delivery proofs (pending_passenger_confirmation or completed),
+       automatically marks the trip as 'pending_passenger_confirmation' and stops live GPS broadcasting.
     """
-    if trip.status not in ["pending_passenger_confirmation", "in_transit"]:
+    if trip.status not in ["pending_passenger_confirmation", "in_transit", "scheduled"]:
         return False
 
     route_patterns = get_trip_route_patterns(trip)
@@ -301,11 +302,25 @@ def check_and_finalize_trip_completion(trip: models.TripModel, db: Session) -> b
     ).all()
 
     total_active = len(active_requests)
-    confirmed_count = sum(1 for req in active_requests if req.status == "completed")
+    if total_active == 0:
+        return False
 
-    if total_active > 0 and confirmed_count == total_active:
-        if trip.status != "completed":
+    confirmed_count = sum(1 for req in active_requests if req.status == "completed")
+    delivered_count = sum(1 for req in active_requests if req.status in ["pending_passenger_confirmation", "completed"])
+
+    # 1. All active shippers have confirmed & rated
+    if confirmed_count == total_active:
+        if trip.status != "completed" or trip.is_live:
             trip.status = "completed"
+            trip.is_live = False
+            db.commit()
+            db.refresh(trip)
+        return True
+
+    # 2. All active shippers have received individual drop-off proofs
+    if delivered_count == total_active:
+        if trip.status != "pending_passenger_confirmation" or trip.is_live:
+            trip.status = "pending_passenger_confirmation"
             trip.is_live = False
             db.commit()
             db.refresh(trip)

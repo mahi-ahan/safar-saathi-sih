@@ -2708,23 +2708,9 @@ export function OfferTrip() {
       });
       if (res.ok) {
         setMyTrips(prev => prev.map(t => t.id === proofModal.tripId ? { ...t, status: 'pending_passenger_confirmation', is_live: false } : t));
-        notify("✔ Delivery proof verified! Trip marked complete, waiting for passenger confirmation & rating.");
+        notify("✔ Delivery proof verified! WhatsApp delivery alerts sent with photos to all shippers.");
         setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false });
         
-        // Trigger real WhatsApp delivery notification to connected farmer
-        if (incomingRequests && incomingRequests.length > 0) {
-          const targetReq = incomingRequests.find(r => r.farmer_phone);
-          if (targetReq && targetReq.farmer_phone) {
-            sendDeliveryCompleteWhatsApp({
-              farmerPhone: targetReq.farmer_phone,
-              farmerName: targetReq.farmer_name,
-              driverName: profile.full_name || "Driver",
-              route: targetReq.route || "Mandi Route",
-              weight: targetReq.goods_weight_kg || targetReq.kg || 400,
-              lang
-            });
-          }
-        }
         fetchMyTrips();
         const reqRes = await fetch("http://localhost:8000/api/requests/incoming", {
           headers
@@ -4749,12 +4735,76 @@ export function OfferTrip() {
                 Upload Delivery Proof
               </h3>
               <p className="text-xs text-green-soft mt-1 leading-relaxed">
-                Stage 2 Verification: Transporters must upload a clear photo of the delivered cargo at the destination before completing the ride.
+                Stage 2 Verification: Transporters can upload individual drop-off photos for each recipient, or a photo below to finalize the ride.
               </p>
             </div>
 
+            {/* CARGO SHIPPERS ON THIS TRIP LIST */}
+            {(() => {
+              const activeTrip = myTrips.find(t => t.id === proofModal.tripId);
+              if (!activeTrip || !activeTrip.partners || activeTrip.partners.length === 0) return null;
+
+              return (
+                <div className="mt-4 text-left rounded-2xl bg-emerald-50/70 border border-emerald-300 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                      <span>📦</span>
+                      <span>Individual Cargo Drop-offs ({activeTrip.partners.length})</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-semibold font-mono">Individual Verification</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800">
+                    Upload an individual photo for each recipient upon their respective drop-off:
+                  </p>
+                  <div className="space-y-1.5 mt-1 max-h-40 overflow-y-auto pr-1">
+                    {activeTrip.partners.map(p => {
+                      const isDelivered = p.status === 'pending_passenger_confirmation' || p.status === 'completed';
+                      return (
+                        <div key={p.id} className="bg-white/90 p-2 rounded-xl border border-emerald-200 flex items-center justify-between text-xs gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold text-emerald-950 truncate">👤 {p.farmer_name}</p>
+                            <p className="text-[10.5px] text-emerald-700">{p.goods_weight_kg} kg · {p.pickup_place || 'Drop-off'}</p>
+                          </div>
+                          {isDelivered ? (
+                            <span className="text-[10.5px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 shrink-0 flex items-center gap-1">
+                              <span>✔</span>
+                              <span>Photo Sent</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fullReq = incomingRequests.find(r => r.id === p.id) || {
+                                  id: p.id,
+                                  farmer_name: p.farmer_name,
+                                  goods_weight_kg: p.goods_weight_kg,
+                                  route: p.route || `${activeTrip.from_loc || activeTrip.from} → ${activeTrip.to_loc || activeTrip.to}`,
+                                  pickup_place: p.pickup_place
+                                };
+                                setProofModal(prev => ({ ...prev, isOpen: false }));
+                                setDeliverModal({
+                                  isOpen: true,
+                                  req: fullReq,
+                                  proofUrl: null,
+                                  uploading: false
+                                });
+                              }}
+                              className="px-2.5 py-1 bg-green-deep hover:bg-green text-cream font-bold text-[10.5px] rounded-lg shadow-2xs transition shrink-0 flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>📸</span>
+                              <span>Send Drop-off Photo</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* UPLOAD DROPZONE */}
-            <div className="mt-5 space-y-3">
+            <div className="mt-4 space-y-3">
               <label className="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-gold/50 hover:border-green-deep rounded-2xl bg-cream/30 hover:bg-gold/5 cursor-pointer transition text-center">
                 <Upload size={24} className="text-gold" />
                 <span className="text-xs font-bold text-green-deep">

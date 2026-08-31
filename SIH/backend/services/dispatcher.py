@@ -134,12 +134,23 @@ def send_local_gateway_whatsapp(phone: str, message: str, media_path: Optional[s
 
     if media_path:
         clean_path = str(media_path).strip()
+        # Strip domain if full localhost URL was passed e.g. http://localhost:8000/uploads/...
+        if "://" in clean_path:
+            parts = clean_path.split("://", 1)[1]
+            if "/" in parts:
+                clean_path = "/" + parts.split("/", 1)[1]
+        
         if clean_path.startswith("/") or clean_path.startswith("\\"):
-            # Resolve relative server upload path (e.g., /static/uploads/...)
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             abs_path = os.path.normpath(os.path.join(base_dir, clean_path.lstrip("/\\")))
             if os.path.exists(abs_path):
                 payload["media_path"] = abs_path
+            else:
+                alt_path = os.path.normpath(os.path.join(base_dir, "static", clean_path.lstrip("/\\")))
+                if os.path.exists(alt_path):
+                    payload["media_path"] = alt_path
+                else:
+                    logger.warning(f"[Dispatcher] Notice: Media file not found on disk at '{abs_path}' or '{alt_path}'")
         elif os.path.exists(clean_path):
             payload["media_path"] = os.path.abspath(clean_path)
 

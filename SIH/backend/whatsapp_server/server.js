@@ -395,26 +395,7 @@ async function startWhatsAppClient() {
       console.error('❌ [WhatsApp Gateway] Authentication Failure:', msg);
     });
 
-    client.on('message', async (msg) => {
-      try {
-        const fromNum = msg.from ? msg.from.replace('@c.us', '') : 'Unknown';
-        console.log(`📩 [WhatsApp Gateway] Incoming message from ${fromNum}: "${msg.body}"`);
-        
-        // Forward incoming message to backend webhook if configured
-        try {
-          const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-          await fetch('http://127.0.0.1:8000/api/notifications/webhook', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: fromNum, body: msg.body, timestamp: msg.timestamp })
-          });
-        } catch (webhookErr) {
-          // Backend webhook notice silently logged
-        }
-      } catch (err) {
-        console.log(`[WhatsApp Gateway] Notice processing incoming message: ${err.message}`);
-      }
-    });
+    // Note: Incoming message listener removed to ensure zero logging of personal chats or statuses
 
     client.on('disconnected', async (reason) => {
       isReady = false;

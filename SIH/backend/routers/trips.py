@@ -335,6 +335,8 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
             "goods_weight_kg": r.goods_weight_kg if r.goods_weight_kg is not None else (r.kg or 0),
             "status": r.status,
             "pickup_place": r.pickup_place or r.route,
+            "route": r.route,
+            "distance_km": r.distance_km or 150,
             "pickup_cargo_image_url": r.pickup_cargo_image_url,
             "delivery_proof_image_url": r.delivery_proof_image_url
         }

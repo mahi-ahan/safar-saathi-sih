@@ -897,6 +897,116 @@ def confirm_request_completion(
 
 
 # ==================================================
+# INDIVIDUAL SHIPPER DELIVERY PROOF (STAGE 2 DROP-OFF)
+# ==================================================
+
+@router.post("/upload-delivery-proof")
+def upload_request_delivery_proof(
+    file: UploadFile = File(...)
+):
+    """
+    Accepts and verifies a mandatory delivery proof photo for an individual cargo drop-off.
+    Returns the persisted static delivery proof image URL.
+    """
+    image_url = save_uploaded_image(file, subfolder="delivery_proofs")
+    return {
+        "delivery_proof_image_url": image_url,
+        "filename": file.filename,
+        "status": "success",
+        "message": "Delivery proof photo verified and uploaded successfully."
+    }
+
+
+@router.post("/{request_id}/deliver-proof", response_model=schemas.RequestResponse)
+def deliver_individual_request_proof(
+    request_id: str,
+    background_tasks: BackgroundTasks,
+    delivery_proof_image_url: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    lang: Optional[str] = "hi",
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("user", "driver", "admin"))
+):
+    """
+    Driver marks an individual shipper's cargo delivered at their specific drop-off location
+    with a mandatory Stage 2 delivery proof photo.
+    1. Validates request existence and active state.
+    2. Stores the delivery photo uniquely on this request.
+    3. Sets request.status = 'pending_passenger_confirmation'.
+    4. Dispatches an automated WhatsApp message WITH PHOTO ATTACHMENT ONLY to this specific shipper.
+    5. Dispatches drop-off confirmation to the driver.
+    6. Automatically updates linked trip state and evaluates completion.
+    """
+    request = db.query(models.RequestModel).filter(models.RequestModel.id == request_id).first()
+    if not request:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    if request.status in ["completed", "cancelled", "cancelled_by_driver"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot deliver cargo. This booking is already {request.status}."
+        )
+
+    final_proof_url = None
+    if file is not None and file.filename:
+        final_proof_url = save_uploaded_image(file, subfolder="delivery_proofs")
+    elif delivery_proof_image_url and str(delivery_proof_image_url).strip():
+        final_proof_url = str(delivery_proof_image_url).strip()
+
+    if not final_proof_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Mandatory Delivery Proof Required: Transporter must upload a verified delivery photo of the goods at drop-off."
+        )
+
+    request.delivery_proof_image_url = final_proof_url
+    request.status = "pending_passenger_confirmation"
+    db.commit()
+    db.refresh(request)
+
+    # Check and update linked trip
+    linked_trip = None
+    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
+    for t in all_trips:
+        patterns = get_trip_route_patterns(t)
+        if request.route in patterns or f"{t.from_loc} → {t.to_loc}" == request.route or f"{t.from_loc} -> {t.to_loc}" == request.route:
+            if not t.delivery_proof_image_url:
+                t.delivery_proof_image_url = final_proof_url
+            check_and_finalize_trip_completion(t, db)
+            recalculate_trip_cost_shares(t, db)
+            linked_trip = t
+            break
+
+    db.refresh(request)
+
+    # Automated Targeted Dispatch ONLY for this specific shipper and driver
+    if background_tasks:
+        driver_user_id = getattr(linked_trip, "user_id", None) if linked_trip else None
+        driver_phone, driver_lang = resolve_user_contact_and_lang(db, user_id=driver_user_id, username_or_name=request.owner, default_lang=lang or 'hi')
+        farmer_phone, farmer_lang = resolve_user_contact_and_lang(db, user_id=request.user_id, username_or_name=request.farmer_name, default_lang=lang or 'hi')
+
+        if farmer_phone:
+            f_msg = msgs.msg_delivery_proof_shipper(
+                shipper_name=request.farmer_name or 'Shipper',
+                driver_name=request.owner or 'Driver',
+                weight=request.goods_weight_kg or request.kg or 0,
+                route=request.route or 'Mandi Route',
+                lang=farmer_lang
+            )
+            background_tasks.add_task(dispatch_automated_alert, farmer_phone, f_msg, media_path=final_proof_url)
+
+        if driver_phone:
+            d_msg = msgs.msg_delivery_proof_driver(
+                driver_name=request.owner or 'Driver',
+                route=request.route or 'Mandi Route',
+                lang=driver_lang
+            )
+            background_tasks.add_task(dispatch_automated_alert, driver_phone, d_msg, media_path=final_proof_url)
+
+    return serialize_request_with_cost(request, db)
+
+
+# ==================================================
 # CANCEL REQUEST BY DRIVER
 # DRIVER + ADMIN
 # ==================================================

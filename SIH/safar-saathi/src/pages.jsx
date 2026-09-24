@@ -18,7 +18,9 @@ import {
   ArrowLeft,
   Info,
   Volume2,
-  VolumeX
+  VolumeX,
+  Play,
+  Share2
 } from 'lucide-react'
 
 import { useLang, VEHICLE_CAPACITY_SPECS, getVehicleCapacitySpec } from './lib'
@@ -42,13 +44,17 @@ import {
   haversineDistance,
   calculateHighwayTortuosityKm,
   isPassengerOnRoute,
+  isDirectionAligned,
+  isPickupBeforeDropAlongRoute,
+  getOptimizedMultiStopTrip,
   calculateRouteAwarePrice,
   calculateStrictFare,
   getOsrmDistanceKm,
   AiPriceGuardrail,
   PtlUserPricingCard,
   ComponentErrorBoundary,
-  distanceToSegmentKm
+  distanceToSegmentKm,
+  getCorridorMatchDetails
 } from './ui'
 
 import Maps from './Maps'
@@ -222,6 +228,15 @@ export function Home() {
                 >
                   {t('cta.offer', 'Offer a Trip')}
                 </button>
+
+                {/* Logistics Operations Button */}
+                <button
+                  onClick={() => navigate('/logistics')}
+                  className="bg-emerald-600 text-white px-6 py-3.5 rounded-xl font-semibold hover:bg-emerald-500 border border-emerald-400/30 transition-all shadow-lg hover:-translate-y-0.5 cursor-pointer flex items-center gap-2"
+                >
+                  <span>🛡️</span>
+                  <span>{t('cta.logistics', 'Logistics Operations')}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -263,6 +278,28 @@ export function Home() {
             ))}
           </div>
         </div>
+
+        {/* LOGISTICS & COLD-CHAIN PILLAR SPOTLIGHT */}
+        <div className="max-w-7xl mx-auto mt-12 rounded-3xl bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="max-w-xl text-left">
+            <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-mono font-bold uppercase tracking-wider inline-block mb-2">
+              🛡️ Ground Quality & Cold-Chain Protocol
+            </span>
+            <h3 className="font-display font-bold text-2xl text-white">
+              Every Transit Halt Checked. Perishables Kept Chilled.
+            </h3>
+            <p className="text-emerald-100/80 text-xs sm:text-sm mt-2 leading-relaxed">
+              Verified ground logistics officers inspect cargo security seals at every highway halt, verify tare weight at loading (pickup), replenish crushed ice for perishable goods, and supervise certified unloading at delivery (drop).
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/logistics')}
+            className="px-6 py-3.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl shadow-lg hover:-translate-y-0.5 transition flex items-center gap-2 cursor-pointer shrink-0"
+          >
+            <span>Enter Logistics Desk</span>
+            <span>→</span>
+          </button>
+        </div>
       </section>
 
       {/* FROSTED-GLASS AUTH POPUP MODAL */}
@@ -281,18 +318,40 @@ export function Home() {
 ========================================================= */
 
 
+export const CARGO_CATEGORIES = [
+  'Independent / General Cargo',
+  'Perishable Goods',
+  'Dedicated / Isolated Cargo'
+];
+
+export const DEDICATED_PURPOSE_SUB_CATEGORIES = [
+  'Pharmaceuticals & Vaccines',
+  'Pure Vegetarian Food / FMCG',
+  'Non-Veg / Meat, Poultry & Seafood',
+  'Sensitive Electronics & Instruments',
+  'Fragile Glassware & Ceramics',
+  'Chemicals & Hazardous Goods (HazMat)',
+  'Heavy Machinery & Industrial Tools',
+  'Exclusive Single-Client Private Load'
+];
+
+export const PERISHABLE_COOLING_TYPES = [
+  'Crushed Flake Ice Boxes (Logistics Provided)',
+  'Dry-Ice & Gel Packs (Sub-Zero Cold Chain)',
+  'Refrigerated Chiller (0°C to 4°C)',
+  'Ventilated Ambient (Fresh Produce)'
+];
+
 const GOODS_CATEGORIES = [
-  'Parcel / Package',
-  'Furniture',
-  'Household Goods',
-  'Business / Commercial Goods',
-  'Construction Materials',
-  'Agricultural Products',
-  'Industrial Goods',
-  'Vehicle / Equipment',
-  'Personal Items',
-  'Other'
-]
+  'Agricultural Produce / Grains',
+  'Fruits & Vegetables',
+  'Dairy & Perishables',
+  'Pharmaceuticals & Medical',
+  'Textiles & Garments',
+  'Hardware & Construction',
+  'Electronics & Hardware',
+  'General Merchandise'
+];
 
 export function FindVehicles() {
   const { lang, t } = useLang()
@@ -306,6 +365,7 @@ export function FindVehicles() {
   const [f, setF] = useState({
     state: '',
     veh: '',
+    cargoCategory: '',
     sort: 'free',
     ver: false,
     pickupSearch: ''
@@ -372,7 +432,7 @@ export function FindVehicles() {
     if (type === 'pickup') {
       notify(`📍 Focusing Pickup Location: ${targetName}`);
     } else {
-      notify(`🚛 Tracking Live Driver (${targetName}) · Speed: ${trip.speed || 35} km/h`);
+      notify(`🚛 Tracking Live Driver (${targetName})`);
     }
 
     if (mapContainerRef.current) {
@@ -417,7 +477,27 @@ export function FindVehicles() {
           lng: trip.lng,
           status: trip.status || 'scheduled',
           is_live: trip.is_live || false,
-          speed: trip.speed || 0
+          speed: trip.speed || 0,
+          is_return_leg: Boolean(trip.is_return_leg),
+          return_discount_pct: trip.return_discount_pct || 0,
+          return_trip_id: trip.return_trip_id || null,
+          is_booking_open: trip.is_booking_open !== false,
+          booking_lock_reason: trip.booking_lock_reason || null,
+          outbound_trip_status: trip.outbound_trip_status || null,
+          can_start_trip: trip.can_start_trip !== false,
+          start_lock_reason: trip.start_lock_reason || null,
+          cargo_category: trip.cargo_category || 'Independent / General Cargo',
+          dedicated_sub_category: trip.dedicated_sub_category || null,
+          is_dedicated: Boolean(trip.is_dedicated),
+          seal_number: trip.seal_number || null,
+          seal_status: trip.seal_status || null,
+          cooling_type: trip.cooling_type || null,
+          last_weigh_in_kg: trip.last_weigh_in_kg || null,
+          weight_compliant: trip.weight_compliant,
+          has_perishables: Boolean(trip.has_perishables),
+          ice_handling_supported: trip.ice_handling_supported !== false,
+          current_checkpoint: trip.current_checkpoint || null,
+          checkpoints: trip.checkpoints || []
         }));
 
 
@@ -575,6 +655,7 @@ export function FindVehicles() {
         (!f.state || trip.state === f.state) &&
         (!f.veh || getVehicleCapacitySpec(trip.vehicle).name === getVehicleCapacitySpec(f.veh).name) &&
         (!f.ver || trip.verified) &&
+        (!f.cargoCategory || (f.cargoCategory === 'Perishable Goods' ? (trip.cargo_category === 'Perishable Goods' || trip.has_perishables) : (f.cargoCategory === 'Dedicated / Isolated Cargo' ? trip.is_dedicated : !trip.is_dedicated))) &&
         (!f.pickupSearch ||
           (trip.pickup || '').toLowerCase().includes(f.pickupSearch.toLowerCase()) ||
           (trip.from || '').toLowerCase().includes(f.pickupSearch.toLowerCase()) ||
@@ -617,21 +698,30 @@ export function FindVehicles() {
       setSelectedTripId(trip.id);
     }
 
-    if (!requests[trip.id]) {
-      setRequests(prev => ({
-        ...prev,
+    const tripCargoCategory = trip.cargo_category || (trip.is_dedicated ? 'Dedicated / Isolated Cargo' : (trip.has_perishables ? 'Perishable Goods' : 'Independent / General Cargo'));
+    const isPerishable = tripCargoCategory === 'Perishable Goods' || Boolean(trip.has_perishables);
+    const isDedicated = tripCargoCategory === 'Dedicated / Isolated Cargo' || Boolean(trip.is_dedicated);
 
-        [trip.id]: {
-          category: '',
-          weight: '',
-          pickupLocation: '',
-          deliveryLocation: '',
-          description: '',
-          photo: null
-        }
-      }))
-    }
-  }
+    setRequests(prev => ({
+      ...prev,
+      [trip.id]: {
+        ...(prev[trip.id] || {}),
+        cargo_category: tripCargoCategory,
+        dedicated_sub_category: trip.dedicated_sub_category || (isDedicated ? 'Pharmaceuticals & Vaccines' : null),
+        cooling_type: trip.cooling_type || (isPerishable ? 'Crushed Flake Ice Boxes (Logistics Provided)' : null),
+        is_perishable: isPerishable,
+        is_dedicated: isDedicated,
+        ice_handling_required: isPerishable && (trip.ice_handling_supported !== false),
+        commodity_name: prev[trip.id]?.commodity_name || '',
+        category: prev[trip.id]?.category || 'Agricultural Produce / Grains',
+        weight: prev[trip.id]?.weight || '',
+        pickupLocation: prev[trip.id]?.pickupLocation || '',
+        deliveryLocation: prev[trip.id]?.deliveryLocation || '',
+        description: prev[trip.id]?.description || '',
+        photo: prev[trip.id]?.photo || null
+      }
+    }));
+  };
 
 
   const updateRequest = (
@@ -662,13 +752,12 @@ export function FindVehicles() {
     )
 
     if (
-      !r?.category ||
       !r?.weight ||
       !r?.pickupLocation ||
       !r?.deliveryLocation
     ) {
       notify(
-        '⚠ Please fill all required request details.'
+        '⚠ Please fill in the required weight and pickup/delivery locations.'
       )
       setSubmittingTripId(null);
       return
@@ -718,26 +807,10 @@ export function FindVehicles() {
       return;
     }
 
-    // Intercity Route Corridor Validation (5 km start/dest buffer + intermediate stop leverage)
+    // High-Precision Route Corridor Validation
     const tripStart = { lat: trip.pickup_lat || trip.lat || 0, lng: trip.pickup_lng || trip.lng || 0 };
     const tripDest = { lat: trip.dest_lat || trip.destLat || 0, lng: trip.dest_lng || trip.destLng || 0 };
     const driverRoute = [tripStart, tripDest].filter(c => c.lat !== 0 || c.lng !== 0);
-
-    if (driverRoute.length >= 2) {
-      const isPickupOnRoute = isPassengerOnRoute(pickupCoords, driverRoute);
-      if (!isPickupOnRoute) {
-        notify(`❌ Route Mismatch: Requested pickup (${r.pickupLocation}) is not along the driver's route (${trip.from} → ${trip.to}). Booking blocked.`);
-        setSubmittingTripId(null);
-        return;
-      }
-
-      const isDeliveryOnRoute = isPassengerOnRoute(deliveryCoords, driverRoute);
-      if (!isDeliveryOnRoute) {
-        notify(`❌ Route Mismatch: Requested drop-off (${r.deliveryLocation}) is not along the driver's route (${trip.from} → ${trip.to}). Booking blocked.`);
-        setSubmittingTripId(null);
-        return;
-      }
-    }
 
     // Calculate travel distance between user pickup and delivery locations instantly (0ms)
     let estimatedDist = trip.distance_km || 150;
@@ -765,6 +838,8 @@ export function FindVehicles() {
         headers: reqHeaders,
         body: JSON.stringify({
           id: requestId,
+          trip_id: trip.id,
+          trip_date: trip.date,
           route: `${trip.from} → ${trip.to}`,
           vehicle: trip.vehicle,
           owner: trip.owner,
@@ -779,7 +854,17 @@ export function FindVehicles() {
           delivery_lat: r.deliveryCoords?.lat || 0,
           delivery_lng: r.deliveryCoords?.lng || 0,
           pickup_cargo_image_url: r.pickup_cargo_image_url,
-          lang: activeLang
+          lang: activeLang,
+          cargo_category: trip.cargo_category || 'Independent / General Cargo',
+          dedicated_sub_category: (trip.cargo_category === 'Dedicated / Isolated Cargo' || trip.is_dedicated) ? (trip.dedicated_sub_category || 'Pharmaceuticals & Vaccines') : null,
+          is_dedicated: trip.cargo_category === 'Dedicated / Isolated Cargo' || Boolean(trip.is_dedicated),
+          cooling_type: (trip.cargo_category === 'Perishable Goods' || trip.has_perishables) ? (trip.cooling_type || 'Crushed Flake Ice Boxes (Logistics Provided)') : null,
+          is_perishable: trip.cargo_category === 'Perishable Goods' || Boolean(trip.has_perishables),
+          cargo_type: r.commodity_name || (trip.cargo_category === 'Dedicated / Isolated Cargo' ? `${trip.dedicated_sub_category}` : 'General Goods'),
+          ice_handling_required: (trip.cargo_category === 'Perishable Goods' || Boolean(trip.has_perishables)) && (trip.ice_handling_supported !== false),
+          current_temp_c: (trip.cargo_category === 'Perishable Goods' || trip.has_perishables) ? 3.8 : null,
+          loading_status: 'pending',
+          ice_boxes_count: (trip.cargo_category === 'Perishable Goods' || trip.has_perishables) ? 2 : 0
         })
       });
 
@@ -845,13 +930,23 @@ export function FindVehicles() {
   const totalAvailableKgAcrossTrips = list.reduce((acc, t) => acc + (t.available_space_kg !== undefined ? t.available_space_kg : Math.max(0, t.totalKg - (t.total_booked_kg || 0))), 0);
   const verifiedDriversCount = list.filter(t => t.verified).length;
 
-  const filteredMyRequests = myRequests.filter(req => {
-    if (myBookingFilter === 'pending') return req.status === 'pending';
-    if (myBookingFilter === 'accepted') return req.status === 'accepted' || req.status === 'in_transit';
-    if (myBookingFilter === 'pending_conf') return req.status === 'pending_passenger_confirmation';
-    if (myBookingFilter === 'completed') return req.status === 'completed';
-    return true;
-  });
+  const filteredMyRequests = useMemo(() => {
+    let filtered = myRequests.filter(req => {
+      if (myBookingFilter === 'pending') return req.status === 'pending';
+      if (myBookingFilter === 'accepted') return req.status === 'accepted' || req.status === 'in_transit';
+      if (myBookingFilter === 'pending_conf') return req.status === 'pending_passenger_confirmation';
+      if (myBookingFilter === 'completed') return req.status === 'completed';
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      // Prioritize action required first
+      if (a.status === 'pending_passenger_confirmation' && b.status !== 'pending_passenger_confirmation') return -1;
+      if (b.status === 'pending_passenger_confirmation' && a.status !== 'pending_passenger_confirmation') return 1;
+      // Sort newest / latest completed at the top
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
+  }, [myRequests, myBookingFilter]);
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -1041,7 +1136,18 @@ export function FindVehicles() {
               />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1">
+              <select
+                className={`${inputCls} py-2 text-xs`}
+                value={f.cargoCategory}
+                onChange={e => setF({ ...f, cargoCategory: e.target.value })}
+              >
+                <option value="">All Cargo Categories</option>
+                <option value="Independent / General Cargo">📦 Independent / General</option>
+                <option value="Perishable Goods">❄️ Perishable Goods</option>
+                <option value="Dedicated / Isolated Cargo">🔒 Dedicated / Isolated</option>
+              </select>
+
               <select
                 className={`${inputCls} py-2 text-xs`}
                 value={f.state}
@@ -1055,6 +1161,7 @@ export function FindVehicles() {
                 <option>Gujarat</option>
                 <option>Rajasthan</option>
                 <option>Tamil Nadu</option>
+                <option>Odisha</option>
               </select>
 
               <select
@@ -1135,6 +1242,35 @@ export function FindVehicles() {
                             <p className="text-xs text-green-soft font-mono mt-0.5">
                               📅 {trip.date} · 🚛 {trip.vehicle} · 📍 {trip.state}
                             </p>
+
+                            {/* CARGO SPECIALIZATION & SECURITY SEAL BADGES */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              {trip.is_dedicated ? (
+                                <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 font-bold text-[10.5px] border border-purple-200 flex items-center gap-1">
+                                  🔒 Dedicated: {trip.dedicated_sub_category || 'Isolated'}
+                                </span>
+                              ) : trip.cargo_category === 'Perishable Goods' || trip.has_perishables ? (
+                                <span className="px-2.5 py-0.5 rounded-full bg-cyan-100 text-cyan-900 font-bold text-[10.5px] border border-cyan-200 flex items-center gap-1">
+                                  ❄️ Perishable ({trip.cooling_type || 'Ice Ready'})
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[10.5px] border border-slate-200">
+                                  📦 Independent Cargo
+                                </span>
+                              )}
+
+                              {trip.seal_number && (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-mono font-bold text-[10.5px] border border-emerald-300 flex items-center gap-1">
+                                  🔐 Seal #{trip.seal_number} ({trip.seal_status === 'verified_intact' ? 'Intact' : trip.seal_status || 'Applied'})
+                                </span>
+                              )}
+
+                              {trip.last_weigh_in_kg && (
+                                <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-800 font-mono font-bold text-[10.5px] border border-teal-300">
+                                  ⚖ Weighed: {trip.last_weigh_in_kg} kg
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -1142,6 +1278,12 @@ export function FindVehicles() {
                               textToRead={`${trip.from} to ${trip.to}. Vehicle ${trip.vehicle}. Available free capacity ${free} kilograms. Departure date ${trip.date}. Total load fare rupees ${trip.total_driver_amount || trip.totalDriverAmount || (trip.pricePerKg * trip.totalKg) || 0}.`}
                               size={13}
                             />
+                            {trip.is_return_leg && (
+                              <span className="bg-indigo-700 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                <span>🔄</span>
+                                <span>Return Backhaul · {trip.return_discount_pct || 20}% OFF</span>
+                              </span>
+                            )}
                             {isTripLive && (
                               <span className="animate-pulse bg-green-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
                                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
@@ -1158,7 +1300,7 @@ export function FindVehicles() {
                         {isTripLive && (
                           <div className="mb-3 rounded-xl bg-green-50 border border-green-300 p-2.5 flex items-center justify-between">
                             <div className="text-xs text-green-900 font-medium flex items-center gap-1.5">
-                              <span>📡 Driver is live on route! Speed: {trip.speed || 35} km/h</span>
+                              <span>📡 Driver is live on route!</span>
                             </div>
                             <button
                               onClick={() => handleFocusLocation(trip, 'live_driver')}
@@ -1392,6 +1534,26 @@ export function FindVehicles() {
                                 </div>
                               )}
                             </div>
+                        ) : trip.is_return_leg && !trip.is_booking_open ? (
+                          <div className="space-y-2">
+                            <div className="rounded-xl bg-amber-50 border border-amber-300 p-2.5 text-xs text-amber-900 flex items-start gap-2">
+                              <span className="text-base shrink-0">🔒</span>
+                              <div>
+                                <p className="font-bold text-amber-950 text-xs">Return Leg Booking Locked</p>
+                                <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                  {trip.booking_lock_reason || "Booking for this return backhaul trip will automatically open once the driver starts the outbound journey."}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              disabled
+                              className="w-full py-2.5 bg-gray-100 text-gray-500 font-semibold text-xs rounded-xl border border-dashed border-gray-300 flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-80"
+                              title={trip.booking_lock_reason || "Booking opens once driver starts outbound trip"}
+                            >
+                              <span>🔒</span>
+                              <span>Booking Opens When Driver Starts Outbound Journey</span>
+                            </button>
+                          </div>
                         ) : (
                           <div>
                             <button
@@ -1416,31 +1578,104 @@ export function FindVehicles() {
                               </button>
                             </div>
 
-                            <div className="grid sm:grid-cols-2 gap-3">
-                              <Field label={t('form.goods_category', 'Goods Category')}>
-                                <select
-                                  className={`${inputCls} py-1.5 text-xs`}
-                                  value={r.category || ''}
-                                  onChange={e => updateRequest(trip.id, 'category', e.target.value)}
-                                >
-                                  <option value="">{t('form.select_category', 'Select goods category')}</option>
-                                  {GOODS_CATEGORIES.map(category => (
-                                    <option key={category} value={category}>{category}</option>
-                                  ))}
-                                </select>
-                              </Field>
+                            {/* CARGO SPECIALIZATION & CLASSIFICATION (PRE-DECIDED BY TRIP OFFERER) */}
+                            <div className="rounded-2xl border border-emerald-300/80 bg-white p-3.5 space-y-3 shadow-2xs">
+                              <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-100">
+                                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                  <span>🏷️</span>
+                                  <span>{t('form.cargo_type_header', 'Vehicle Cargo Type (Decided by Trip Offerer)')}</span>
+                                </span>
+                                <span className="text-[10px] font-mono uppercase font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                  🔒 Fixed by Transporter
+                                </span>
+                              </div>
 
-                              <Field label={t('form.goods_weight', 'Goods Weight (kg)')}>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max={free}
-                                  className={`${inputCls} py-1.5 text-xs`}
-                                  value={r.weight || ''}
-                                  placeholder={`Max ${free} kg`}
-                                  onChange={e => updateRequest(trip.id, 'weight', e.target.value)}
-                                />
-                              </Field>
+                              {/* PRE-DECIDED CARGO BADGE & DETAILS */}
+                              {trip.is_dedicated || trip.cargo_category === 'Dedicated / Isolated Cargo' ? (
+                                <div className="p-3 bg-purple-50/80 border border-purple-200 rounded-xl space-y-1.5 animate-[fadeIn_0.2s_ease]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                                      <span>🔒</span>
+                                      <span>Dedicated / Isolated Cargo (Private Single-Client Vehicle)</span>
+                                    </span>
+                                    <span className="text-[10px] font-mono uppercase font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full">
+                                      Exclusive Run
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-purple-900 bg-white/80 p-2 rounded-lg border border-purple-200/80 flex items-center gap-1.5">
+                                    <span className="font-semibold text-purple-950">Mandatory Sub-Category:</span>
+                                    <span className="font-bold text-purple-800">{trip.dedicated_sub_category || 'Pharmaceuticals & Vaccines'}</span>
+                                  </div>
+                                  <p className="text-[11px] text-purple-800">
+                                    ✔ Exclusive Vehicle Allocation: Reserved exclusively for this dedicated cargo category. Cargo will NOT be mixed with other clients' goods.
+                                  </p>
+                                </div>
+                              ) : trip.cargo_category === 'Perishable Goods' || trip.has_perishables ? (
+                                <div className="p-3 bg-cyan-50/80 border border-cyan-200 rounded-xl space-y-1.5 animate-[fadeIn_0.2s_ease]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-cyan-950 flex items-center gap-1.5">
+                                      <span>❄️</span>
+                                      <span>Perishable Goods (Cold-Chain Highway Monitored)</span>
+                                    </span>
+                                    <span className="text-[10px] font-mono uppercase font-bold text-cyan-800 bg-cyan-100 px-2 py-0.5 rounded-full">
+                                      Cold-Chain
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-cyan-900 bg-white/80 p-2 rounded-lg border border-cyan-200/80 flex items-center gap-1.5">
+                                    <span className="font-semibold text-cyan-950">Preservation Facility:</span>
+                                    <span className="font-bold text-cyan-800">{trip.cooling_type || 'Crushed Flake Ice Boxes (Logistics Provided)'}</span>
+                                  </div>
+                                  <p className="text-[11px] text-cyan-800">
+                                    ✔ Ground logistics officers inspect cold storage, record temperature, and replenish coolant at designated highway checkpoints.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-1.5 animate-[fadeIn_0.2s_ease]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                                      <span>📦</span>
+                                      <span>Independent / General Cargo (Shared Multi-Purpose Cargo Space)</span>
+                                    </span>
+                                    <span className="text-[10px] font-mono uppercase font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                                      Shared Pool
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-emerald-800">
+                                    ✔ Multi-shipper shared cargo space with dynamic fair Ton-Km pricing split. Suitable for dry goods, agricultural produce, packaged merchandise, and general freight.
+                                  </p>
+                                </div>
+                              )}
+
+                              <div className="grid sm:grid-cols-2 gap-3 pt-1">
+                                <Field label="Commodity / Cargo Item Details">
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder={
+                                      trip.is_dedicated || trip.cargo_category === 'Dedicated / Isolated Cargo'
+                                        ? `e.g. ${trip.dedicated_sub_category || 'Dedicated Cargo'} (Batch details & packing)`
+                                        : (trip.cargo_category === 'Perishable Goods' || trip.has_perishables)
+                                        ? "e.g. Tomatoes (40 crates), Amul Butter, Fresh Fish"
+                                        : "e.g. Wheat Sacks, Cotton textiles, General merchandise"
+                                    }
+                                    className={`${inputCls} py-1.5 text-xs`}
+                                    value={r.commodity_name || ''}
+                                    onChange={e => updateRequest(trip.id, 'commodity_name', e.target.value)}
+                                  />
+                                </Field>
+
+                                <Field label={t('form.goods_weight', 'Goods Weight (kg)')}>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max={free}
+                                    className={`${inputCls} py-1.5 text-xs font-mono font-bold`}
+                                    value={r.weight || ''}
+                                    placeholder={`Max ${free} kg`}
+                                    onChange={e => updateRequest(trip.id, 'weight', e.target.value)}
+                                  />
+                                </Field>
+                              </div>
                             </div>
 
                             {/* DYNAMIC ROUTE CORRIDOR & SEGMENT PRICING PREVIEW */}
@@ -1452,9 +1687,16 @@ export function FindVehicles() {
 
                               const hasPickup = Boolean(r.pickupCoords?.lat && r.pickupCoords?.lng);
                               const hasDelivery = Boolean(r.deliveryCoords?.lat && r.deliveryCoords?.lng);
-                              const isPickupOnRoute = !hasPickup || driverRoute.length < 2 || isPassengerOnRoute(r.pickupCoords, driverRoute);
-                              const isDeliveryOnRoute = !hasDelivery || driverRoute.length < 2 || isPassengerOnRoute(r.deliveryCoords, driverRoute);
-                              const isRouteValid = isPickupOnRoute && isDeliveryOnRoute;
+                              const isPickupOnRoute = !hasPickup || driverRoute.length < 2 || isPassengerOnRoute(r.pickupCoords, driverRoute, 3.8);
+                              const isDeliveryOnRoute = !hasDelivery || driverRoute.length < 2 || isPassengerOnRoute(r.deliveryCoords, driverRoute, 3.8);
+                              const isDirectionOk = !hasPickup || !hasDelivery || driverRoute.length < 2 || isDirectionAligned(driverRoute[0], driverRoute[1], r.pickupCoords, r.deliveryCoords);
+                              const isSequenceOk = !hasPickup || !hasDelivery || driverRoute.length < 2 || isPickupBeforeDropAlongRoute(r.pickupCoords, r.deliveryCoords, driverRoute);
+                              const isRouteValid = isPickupOnRoute && isDeliveryOnRoute && isDirectionOk && isSequenceOk;
+
+                              const pMatch = hasPickup ? getCorridorMatchDetails(r.pickupCoords, driverRoute) : null;
+                              const dMatch = hasDelivery ? getCorridorMatchDetails(r.deliveryCoords, driverRoute) : null;
+                              const isMicroDetour = (pMatch?.tier === 'micro_detour' || dMatch?.tier === 'micro_detour');
+                              const maxDetourVal = Math.max(pMatch?.detourKm || 0, dMatch?.detourKm || 0);
 
                               const weightNum = Number(r.weight || 0);
                               const tripCap = trip.totalKg || 1000;
@@ -1480,19 +1722,29 @@ export function FindVehicles() {
                                   {(hasPickup || hasDelivery) && (
                                     <div className={`rounded-xl p-2.5 text-xs font-semibold flex items-center justify-between border ${
                                       isRouteValid
-                                        ? 'bg-green-50 text-green-800 border-green-300'
+                                        ? isMicroDetour
+                                          ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                          : 'bg-emerald-50 text-emerald-900 border-emerald-300'
                                         : 'bg-red-50 text-red-800 border-red-300 animate-pulse'
                                     }`}>
                                       <span className="flex items-center gap-1.5">
-                                        <span>{isRouteValid ? '✔' : '❌'}</span>
+                                        <span>{isRouteValid ? (isMicroDetour ? '📍' : '✔') : '❌'}</span>
                                         <span>
                                           {isRouteValid
-                                            ? t('corridor.valid', 'Route Corridor Validated (Start, destination, or valid intermediate stop)')
-                                            : t('corridor.invalid', "Route Mismatch: Selected location is outside the vehicle's transit corridor")}
+                                            ? isMicroDetour
+                                              ? `Smart Elastic Corridor Match (${maxDetourVal.toFixed(1)} km Micro-Detour Accepted)`
+                                              : t('corridor.valid', 'Direct Highway Corridor Match (NH 316)')
+                                            : t('corridor.invalid', "Route Mismatch: Selected location is outside the vehicle's transit corridor (> 3.8 km)")}
                                         </span>
                                       </span>
-                                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-white/70">
-                                        {isRouteValid ? t('corridor.valid_stop', 'Valid Stop') : t('corridor.off_route', 'Off-Route')}
+                                      <span className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded-full ${
+                                        isRouteValid
+                                          ? isMicroDetour
+                                            ? 'bg-amber-200 text-amber-900 font-bold'
+                                            : 'bg-emerald-200 text-emerald-900 font-bold'
+                                          : 'bg-white/70 text-red-700'
+                                      }`}>
+                                        {isRouteValid ? (isMicroDetour ? 'Micro-Detour' : 'Direct Route') : t('corridor.off_route', 'Off-Route')}
                                       </span>
                                     </div>
                                   )}
@@ -1551,6 +1803,8 @@ export function FindVehicles() {
                                 />
                               </Field>
                             </div>
+
+
 
                             <Field label="📸 Cargo Photo Proof (Mandatory Verification)">
                               <div className="space-y-2">
@@ -1746,61 +2000,100 @@ export function FindVehicles() {
             </div>
           </div>
 
+          {/* CATEGORIZED COMPLETED SHIPMENTS BANNER */}
+          {myBookingFilter === 'completed' && filteredMyRequests.length > 0 && (
+            <div className="rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-cream border border-emerald-300 p-4 shadow-2xs flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center text-xl shadow-xs">
+                  🏁
+                </div>
+                <div>
+                  <h4 className="font-display font-bold text-sm text-emerald-950 flex items-center gap-2">
+                    <span>Verified Completed Deliveries</span>
+                    <span className="text-[10px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full font-mono font-bold">
+                      Latest at Top
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-emerald-800">
+                    All fulfilled shipments with photo proof of delivery, shipper ratings, and verified fair Ton-Km fares.
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-emerald-700 text-white font-mono font-bold text-xs rounded-full shadow-2xs">
+                {filteredMyRequests.length} Delivered
+              </span>
+            </div>
+          )}
+
           {/* BOOKINGS CARD GRID */}
           {filteredMyRequests.length > 0 ? (
             <div className="grid md:grid-cols-2 gap-5">
-              {filteredMyRequests.map(req => {
+              {filteredMyRequests.map((req, idx) => {
                 const isPending = req.status === 'pending';
                 const isAccepted = req.status === 'accepted' || req.status === 'in_transit';
                 const isWaitingConf = req.status === 'pending_passenger_confirmation';
                 const isCompleted = req.status === 'completed';
                 const isCancelled = req.status === 'cancelled_by_driver' || req.status === 'cancelled';
+                const isTopCompleted = isCompleted && idx === 0 && myBookingFilter === 'completed';
 
                 return (
                   <div
                     key={req.id}
-                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isWaitingConf
-                        ? 'bg-amber-50/80 border-amber-400 shadow-md ring-1 ring-amber-400/50'
-                        : isAccepted
-                          ? 'bg-green-50/60 border-green-300'
-                          : isCompleted
-                            ? 'bg-emerald-50/50 border-emerald-300'
-                            : isCancelled
-                              ? 'bg-red-50/40 border-red-200 opacity-75'
-                              : 'bg-paper border-gold/30'
+                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isTopCompleted
+                        ? 'bg-gradient-to-br from-emerald-50/90 via-cream to-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
+                        : isWaitingConf
+                          ? 'bg-amber-50/80 border-amber-400 shadow-md ring-1 ring-amber-400/50'
+                          : isAccepted
+                            ? 'bg-green-50/60 border-green-300'
+                            : isCompleted
+                              ? 'bg-emerald-50/50 border-emerald-300'
+                              : isCancelled
+                                ? 'bg-red-50/40 border-red-200 opacity-75'
+                                : 'bg-paper border-gold/30'
                       }`}
                   >
                     <div>
                       {/* HEADER */}
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div>
-                          <p className="font-display font-bold text-base text-green-deep">
-                            {req.route || 'Cargo Route'}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-display font-bold text-base text-green-deep">
+                              {req.route || 'Cargo Route'}
+                            </p>
+                            {isTopCompleted && (
+                              <span className="text-[10px] bg-emerald-600 text-white font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                                ✨ Latest
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-green-soft mt-0.5">
                             👤 Transporter: <strong>{req.owner || 'Captain'}</strong> · 🚚 {req.vehicle || 'Truck'}
                           </p>
                         </div>
 
-                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${isPending
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 flex items-center gap-1 ${isPending
                             ? 'bg-gold/20 text-soil'
                             : isAccepted
                               ? 'bg-green-600 text-white'
                               : isWaitingConf
                                 ? 'bg-amber-500 text-white animate-pulse'
-                                : isCompleted
-                                  ? 'bg-emerald-600 text-white'
-                                  : 'bg-red-500 text-white'
+                                : isTopCompleted
+                                  ? 'bg-emerald-700 text-white shadow-2xs'
+                                  : isCompleted
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-red-500 text-white'
                           }`}>
                           {isWaitingConf
                             ? 'CONFIRMATION REQUIRED'
-                            : (req.status ? req.status.toUpperCase() : 'PENDING')
+                            : isTopCompleted
+                              ? '✨ LATEST COMPLETED'
+                              : (req.status ? req.status.toUpperCase() : 'PENDING')
                           }
                         </span>
                       </div>
 
-                      {/* SPECS */}
-                      <div className="bg-cream rounded-xl border border-gold/20 p-3 space-y-1.5 text-xs mb-3">
+                      {/* SPECS & CARGO SPECIALIZATION */}
+                      <div className="bg-cream rounded-xl border border-gold/20 p-3 space-y-2 text-xs mb-3">
                         <div className="flex justify-between items-center">
                           <span className="text-green-soft">⚖ Cargo Weight:</span>
                           <span className="font-bold text-green-deep">{req.goods_weight_kg || req.kg} kg</span>
@@ -1815,6 +2108,88 @@ export function FindVehicles() {
                             <span className="font-medium text-green-deep text-right truncate max-w-[200px]">{req.pickup_place}</span>
                           </div>
                         )}
+
+                        {/* CARGO SPECIALIZATION BADGES */}
+                        <div className="pt-2 border-t border-gold/15 space-y-1.5">
+                          <div className="flex items-center justify-between gap-1 flex-wrap">
+                            <span className="text-green-soft">Category:</span>
+                            {req.cargo_category === 'Dedicated / Isolated Cargo' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300">
+                                <span>🔒 Dedicated Private</span>
+                                {req.dedicated_sub_category && <span>· {req.dedicated_sub_category}</span>}
+                              </span>
+                            ) : req.cargo_category === 'Perishable Goods' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-900 border border-cyan-300">
+                                <span>❄ Perishable</span>
+                                {req.cooling_type && <span>· {req.cooling_type}</span>}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                <span>📦 General Shared</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {req.commodity && (
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-green-soft">Commodity:</span>
+                              <span className="font-semibold text-green-deep">{req.commodity}</span>
+                            </div>
+                          )}
+
+                          {/* SECURITY SEAL BADGE */}
+                          <div className="flex items-center justify-between text-[11px] pt-1">
+                            <span className="text-green-soft flex items-center gap-1">
+                              <span>🔐</span>
+                              <span>Security Seal:</span>
+                            </span>
+                            {req.seal_number ? (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[10.5px] font-bold border ${
+                                req.seal_status === 'tampered_broken'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                  : req.seal_status === 'verified_intact'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : 'bg-blue-100 text-blue-800 border-blue-300'
+                              }`}>
+                                <span>#{req.seal_number}</span>
+                                <span>({req.seal_status ? req.seal_status.replace('_', ' ').toUpperCase() : 'APPLIED'})</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-amber-700 italic bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                Pending Hub Seal Assignment
+                              </span>
+                            )}
+                          </div>
+
+                          {/* WEIGHBRIDGE & CHECKPOINT INSPECTION */}
+                          {(req.verified_weight_kg || req.last_weigh_in_kg || req.current_checkpoint) && (
+                            <div className="bg-white/80 rounded-lg p-2 border border-gold/20 space-y-1 mt-1 text-[10.5px]">
+                              {req.current_checkpoint && (
+                                <div className="flex items-center justify-between text-green-deep">
+                                  <span className="font-medium text-green-soft">🚩 Checkpoint:</span>
+                                  <span className="font-semibold">{req.current_checkpoint}</span>
+                                </div>
+                              )}
+                              {(req.verified_weight_kg || req.last_weigh_in_kg) && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-green-soft">⚖ Scale Weigh-in:</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono font-bold text-green-deep">{req.verified_weight_kg || req.last_weigh_in_kg} kg</span>
+                                    {req.weight_compliant === false ? (
+                                      <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                                        ⚠️ Discrepancy
+                                      </span>
+                                    ) : req.weight_compliant === true ? (
+                                      <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">
+                                        ✅ Verified
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* TON-KM DYNAMIC SHARE HIGHLIGHT */}
@@ -2413,7 +2788,15 @@ export function OfferTrip() {
     price: '',
     totalDriverAmount: '',
     pickup: '',
-    pickupCoords: null
+    pickupCoords: null,
+    includeReturnTrip: false,
+    returnDate: '',
+    returnDiscountPct: 20,
+    returnPickup: '',
+    iceHandlingSupported: true,
+    cargoCategory: 'Independent / General Cargo',
+    dedicatedSubCategory: 'Pharmaceuticals & Vaccines',
+    coolingType: 'Crushed Flake Ice Boxes (Logistics Provided)'
   })
 
   const [docs, setDocs] = useState({
@@ -2431,6 +2814,7 @@ export function OfferTrip() {
   const [activeLiveTripId, setActiveLiveTripId] = useState(null)
   const [proofModal, setProofModal] = useState({ isOpen: false, tripId: null, proofUrl: null, uploading: false })
   const [deliverModal, setDeliverModal] = useState({ isOpen: false, req: null, proofUrl: null, uploading: false })
+  const [itineraryModal, setItineraryModal] = useState({ isOpen: false, trip: null, result: null, loading: false })
   const liveIntervalRef = useRef(null)
   const isLiveActiveRef = useRef(false)
 
@@ -2470,19 +2854,19 @@ export function OfferTrip() {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8000/api/trips/my", {
+      const res = await fetch("http://localhost:8000/api/trips/my?include_completed=true", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (res.ok) {
         const data = await res.json();
-        // Remove completed and cancelled trips from "My Published Trips"
-        const activeTrips = data.filter(t => t.status !== 'completed' && t.status !== 'cancelled' && t.status !== 'cancelled_by_driver');
-        setMyTrips(activeTrips);
-        const liveTrip = activeTrips.find(t => t.status === 'in_transit' || t.is_live);
-        if (liveTrip) {
-          setActiveLiveTripId(liveTrip.id);
-        } else {
-          setActiveLiveTripId(null);
+        if (Array.isArray(data)) {
+          setMyTrips(data);
+          const liveTrip = data.find(t => t.status === 'in_transit' || t.is_live);
+          if (liveTrip) {
+            setActiveLiveTripId(liveTrip.id);
+          } else {
+            setActiveLiveTripId(null);
+          }
         }
       }
     } catch (err) {
@@ -2801,6 +3185,99 @@ export function OfferTrip() {
     }
   };
 
+  const handleViewOptimalItinerary = async (trip) => {
+    setItineraryModal({ isOpen: true, trip, result: null, loading: true });
+    const token = localStorage.getItem("access_token");
+    const headers = { "Content-Type": "application/json" };
+    if (token && token !== "null" && token !== "undefined") {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const originLat = trip.pickup_lat || trip.lat || 20.4625;
+    const originLng = trip.pickup_lng || trip.lng || 85.8828;
+    const destLat = trip.dest_lat || trip.destLat || 20.2961;
+    const destLng = trip.dest_lng || trip.destLng || 85.8245;
+
+    const intermediateStops = [];
+    const activePartners = trip.partners ? trip.partners.filter(p => ['accepted', 'in_transit', 'pending', 'pending_passenger_confirmation', 'completed'].includes(p.status)) : [];
+
+    activePartners.forEach((p, pIdx) => {
+      const fullReq = incomingRequests.find(r => r.id === p.id) || p;
+      const pickupPlace = p.pickup_place || fullReq.pickup_place || fullReq.pickup_location || fullReq.from_loc || fullReq.from || p.from || `${trip.from_loc?.split(',')[0] || trip.from || 'Origin'} Hub`;
+      const deliveryPlace = p.delivery_place || fullReq.delivery_place || fullReq.delivery_location || fullReq.dropoff_place || fullReq.to_loc || fullReq.to || p.to || `${trip.to_loc?.split(',')[0] || trip.to || 'Destination'} Hub`;
+
+      const pLat = Number(p.pickup_lat || fullReq.pickup_lat || (originLat + (destLat - originLat) * ((pIdx + 1) / (activePartners.length + 2))));
+      const pLng = Number(p.pickup_lng || fullReq.pickup_lng || (originLng + (destLng - originLng) * ((pIdx + 1) / (activePartners.length + 2))));
+      const dLat = Number(p.delivery_lat || fullReq.delivery_lat || (originLat + (destLat - originLat) * ((pIdx + 1.5) / (activePartners.length + 2))));
+      const dLng = Number(p.delivery_lng || fullReq.delivery_lng || (originLng + (destLng - originLng) * ((pIdx + 1.5) / (activePartners.length + 2))));
+      const weight = Number(p.goods_weight_kg || fullReq.goods_weight_kg || p.kg || fullReq.kg || 0);
+
+      // Add Pickup Stop
+      intermediateStops.push({
+        id: `p_${p.id}`,
+        name: `${p.farmer_name || 'Shipper'} (Pickup: ${pickupPlace})`,
+        lat: pLat,
+        lng: pLng,
+        type: 'pickup',
+        weight_kg: weight,
+        booking_id: String(p.id)
+      });
+
+      // Add Delivery Stop
+      intermediateStops.push({
+        id: `d_${p.id}`,
+        name: `${p.farmer_name || 'Shipper'} (Delivery: ${deliveryPlace})`,
+        lat: dLat,
+        lng: dLng,
+        type: 'delivery',
+        weight_kg: weight,
+        booking_id: String(p.id)
+      });
+    });
+
+    const payload = {
+      trip_id: trip.id,
+      vehicle_capacity_kg: Number(trip.total_kg || 1000),
+      origin: {
+        id: 'origin',
+        name: `${trip.from_loc || trip.from || 'Origin'} (Trip Start)`,
+        lat: Number(originLat),
+        lng: Number(originLng),
+        type: 'origin',
+        weight_kg: 0
+      },
+      destination: {
+        id: 'dest',
+        name: `${trip.to_loc || trip.to || 'Destination'} (Final Stop)`,
+        lat: Number(destLat),
+        lng: Number(destLng),
+        type: 'destination',
+        weight_kg: 0
+      },
+      intermediate_stops: intermediateStops,
+      max_detour_km: 1.0
+    };
+
+    try {
+      const res = await fetch("http://localhost:8000/api/trips/optimize-stops", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setItineraryModal({ isOpen: true, trip, result: data, loading: false });
+      } else {
+        notify(data.detail || data.notes || "Could not calculate optimal stop sequence.");
+        setItineraryModal({ isOpen: true, trip, result: null, loading: false });
+      }
+    } catch (err) {
+      console.error("Failed to fetch optimal stops", err);
+      notify("Could not connect to route optimization engine.");
+      setItineraryModal({ isOpen: false, trip: null, result: null, loading: false });
+    }
+  };
+
 
   // Fetch logged-in driver profile details + incoming requests + my trips
   useEffect(() => {
@@ -2843,7 +3320,20 @@ export function OfferTrip() {
     };
     fetchStatus();
     fetchMyTrips();
+    const pollInterval = setInterval(() => {
+      fetchMyTrips();
+      const token = localStorage.getItem("access_token");
+      if (token) {
+        fetch("http://localhost:8000/api/requests/incoming", {
+          headers: { "Authorization": `Bearer ${token}` }
+        }).then(r => r.json()).then(d => {
+          if (Array.isArray(d)) setIncomingRequests(d);
+        }).catch(() => {});
+      }
+    }, 3000);
+
     return () => {
+      clearInterval(pollInterval);
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
     };
   }, []);
@@ -3040,14 +3530,76 @@ export function OfferTrip() {
           dest_lng: toResolved.lng,
           pickup_lat: tripLat,
           pickup_lng: tripLng,
-          lang: activeLang
+          lang: activeLang,
+          ice_handling_supported: o.iceHandlingSupported !== false,
+          has_perishables: o.cargoCategory === 'Perishable Goods',
+          cargo_category: o.cargoCategory,
+          dedicated_sub_category: o.cargoCategory === 'Dedicated / Isolated Cargo' ? o.dedicatedSubCategory : null,
+          is_dedicated: o.cargoCategory === 'Dedicated / Isolated Cargo',
+          cooling_type: o.cargoCategory === 'Perishable Goods' ? o.coolingType : null
         })
       });
 
       if (res.ok) {
         const createdTrip = await res.json();
         setPublished(true);
-        notify(`✔ Trip published successfully: ${fromResolved.shortName || fromResolved.state || o.from} → ${toResolved.shortName || toResolved.state || o.to}`);
+
+        // If Return Backhaul Trip option is enabled, automatically publish the reverse corridor trip!
+        if (o.includeReturnTrip && createdTrip && createdTrip.id) {
+          try {
+            const retDiscount = Number(o.returnDiscountPct) || 20;
+            const returnFare = Math.round(desiredPrice * (1 - retDiscount / 100));
+            const returnRes = await fetch("http://localhost:8000/api/trips", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                state: toResolved.state || toResolved.shortName || o.to,
+                from_loc: toResolved.shortName ? `${toResolved.shortName}, ${toResolved.state || 'India'}` : o.to,
+                to_loc: fromResolved.shortName ? `${fromResolved.shortName}, ${fromResolved.state || 'India'}` : o.from,
+                date: o.returnDate || o.date,
+                vehicle: o.vehicle,
+                owner: profile.full_name || 'Driver',
+                verified: profile.is_verified || (!!hasIdentity && !!hasLicense),
+                pct: taken,
+                total_kg: Number(o.total),
+                price_per_kg: Number(o.price) || 0,
+                total_driver_amount: returnFare,
+                pickup: o.returnPickup || `Return pickup at ${toResolved.shortName || o.to}`,
+                lat: toResolved.lat,
+                lng: toResolved.lng,
+                dest_lat: fromResolved.lat,
+                dest_lng: fromResolved.lng,
+                pickup_lat: toResolved.lat,
+                pickup_lng: toResolved.lng,
+                lang: activeLang,
+                is_return_leg: true,
+                return_trip_id: createdTrip.id,
+                return_discount_pct: retDiscount,
+                ice_handling_supported: o.iceHandlingSupported !== false,
+                has_perishables: o.cargoCategory === 'Perishable Goods',
+                cargo_category: o.cargoCategory,
+                dedicated_sub_category: o.cargoCategory === 'Dedicated / Isolated Cargo' ? o.dedicatedSubCategory : null,
+                is_dedicated: o.cargoCategory === 'Dedicated / Isolated Cargo',
+                cooling_type: o.cargoCategory === 'Perishable Goods' ? o.coolingType : null
+              })
+            });
+            if (returnRes.ok) {
+              const createdReturnTrip = await returnRes.json();
+              if (createdReturnTrip && createdReturnTrip.id) {
+                setMyTrips(prev => [createdReturnTrip, createdTrip, ...prev.filter(t => t.id !== createdTrip.id && t.id !== createdReturnTrip.id)]);
+              }
+              notify(`✔ Outbound & Return Backhaul (${toResolved.shortName || o.to} → ${fromResolved.shortName || o.from} at ${retDiscount}% OFF) published successfully!`);
+            }
+          } catch (retErr) {
+            console.error("Failed to publish linked return trip", retErr);
+          }
+        } else {
+          notify(`✔ Trip published successfully: ${fromResolved.shortName || fromResolved.state || o.from} → ${toResolved.shortName || toResolved.state || o.to}`);
+        }
+
         // Reset form state
         setO({
           from: '',
@@ -3062,7 +3614,15 @@ export function OfferTrip() {
           price: '',
           totalDriverAmount: '',
           pickup: '',
-          pickupCoords: null
+          pickupCoords: null,
+          includeReturnTrip: false,
+          returnDate: '',
+          returnDiscountPct: 20,
+          returnPickup: '',
+          iceHandlingSupported: true,
+          cargoCategory: 'Independent / General Cargo',
+          dedicatedSubCategory: 'Pharmaceuticals & Vaccines',
+          coolingType: 'Crushed Flake Ice Boxes (Logistics Provided)'
         });
         if (createdTrip && createdTrip.id) {
           setMyTrips(prev => [createdTrip, ...prev.filter(t => t.id !== createdTrip.id)]);
@@ -3070,7 +3630,7 @@ export function OfferTrip() {
         await fetchMyTrips();
         // Immediately redirect to published trips list
         setActiveTab('trips');
-        setTripFilter('all');
+        setTripFilter('active');
       } else {
         const data = await res.json();
         notify(data.detail || "Failed to publish trip.");
@@ -3083,30 +3643,84 @@ export function OfferTrip() {
     }
   };
 
+  const handleCreateReturnTrip = (trip) => {
+    const origFrom = trip.from_loc || trip.from || '';
+    const origTo = trip.to_loc || trip.to || '';
+    const origAmount = Number(trip.total_driver_amount) || Number(trip.price_per_kg * trip.total_kg) || 4000;
+    const discountedAmount = Math.round(origAmount * 0.8);
+
+    setO({
+      from: origTo,
+      fromCoords: trip.dest_lat && trip.dest_lng ? { lat: trip.dest_lat, lng: trip.dest_lng, shortName: origTo.split(',')[0], state: trip.state } : null,
+      to: origFrom,
+      toCoords: trip.lat && trip.lng ? { lat: trip.lat, lng: trip.lng, shortName: origFrom.split(',')[0], state: trip.state } : null,
+      date: trip.date || '',
+      vehicle: trip.vehicle || 'Mini-Truck',
+      total: trip.total_kg || 800,
+      cap: trip.total_kg || 800,
+      fare: 'driver',
+      price: String(discountedAmount),
+      totalDriverAmount: String(discountedAmount),
+      pickup: `Return pickup at ${origTo.split(',')[0]}`,
+      pickupCoords: null,
+      includeReturnTrip: false,
+      returnDate: '',
+      returnDiscountPct: 20,
+      returnPickup: '',
+      iceHandlingSupported: true
+    });
+
+    setActiveTab('publish');
+    notify(`✔ Return Route Loaded (${origTo.split(',')[0]} → ${origFrom.split(',')[0]}) with 20% Backhaul Discount!`);
+  };
+
   const [activeTab, setActiveTab] = useState('trips'); // 'trips' | 'requests' | 'publish' | 'profile'
   const [requestFilter, setRequestFilter] = useState('all'); // 'all' | 'pending' | 'accepted' | 'completed'
-  const [tripFilter, setTripFilter] = useState('all'); // 'all' | 'live' | 'scheduled' | 'pending' | 'completed'
+  const [tripFilter, setTripFilter] = useState('active'); // 'active' | 'live' | 'scheduled' | 'pending' | 'completed' | 'all'
 
   const pendingRequestsCount = incomingRequests.filter(r => r.status === 'pending').length;
   const activeTripsCount = myTrips.filter(t => t.status === 'in_transit' || t.is_live || t.status === 'scheduled' || t.status === 'pending_passenger_confirmation').length;
   const completedTripsCount = myTrips.filter(t => t.status === 'completed').length;
   const liveTripsCount = myTrips.filter(t => t.status === 'in_transit' || t.is_live).length;
-  const totalRevenuePotential = myTrips.reduce((acc, t) => acc + (t.total_driver_amount || t.totalDriverAmount || (t.price_per_kg * t.total_kg) || 0), 0);
+  const totalRevenuePotential = myTrips.filter(t => t.status !== 'cancelled' && t.status !== 'cancelled_by_driver').reduce((acc, t) => acc + (t.total_driver_amount || t.totalDriverAmount || (t.price_per_kg * t.total_kg) || 0), 0);
 
-  const filteredRequests = incomingRequests.filter(req => {
-    if (requestFilter === 'pending') return req.status === 'pending';
-    if (requestFilter === 'accepted') return req.status === 'accepted';
-    if (requestFilter === 'completed') return req.status === 'completed' || req.status === 'pending_passenger_confirmation';
-    return true;
-  });
+  const filteredRequests = useMemo(() => {
+    let list = incomingRequests.filter(req => {
+      if (requestFilter === 'pending') return req.status === 'pending';
+      if (requestFilter === 'accepted') return req.status === 'accepted';
+      if (requestFilter === 'completed') return req.status === 'completed' || req.status === 'pending_passenger_confirmation';
+      return true;
+    });
 
-  const filteredTrips = myTrips.filter(trip => {
-    if (tripFilter === 'live') return trip.status === 'in_transit' || trip.is_live;
-    if (tripFilter === 'scheduled') return trip.status === 'scheduled';
-    if (tripFilter === 'pending') return trip.status === 'pending_passenger_confirmation';
-    if (tripFilter === 'completed') return trip.status === 'completed';
-    return true;
-  });
+    return list.sort((a, b) => String(b.id || '').localeCompare(String(a.id || '')));
+  }, [incomingRequests, requestFilter]);
+
+  const filteredTrips = useMemo(() => {
+    let list = myTrips.filter(trip => {
+      if (tripFilter === 'active') return trip.status !== 'completed' && trip.status !== 'cancelled' && trip.status !== 'cancelled_by_driver';
+      if (tripFilter === 'live') return trip.status === 'in_transit' || trip.is_live;
+      if (tripFilter === 'scheduled') return trip.status === 'scheduled';
+      if (tripFilter === 'pending') return trip.status === 'pending_passenger_confirmation';
+      if (tripFilter === 'completed') return trip.status === 'completed';
+      return true;
+    });
+
+    return list.sort((a, b) => {
+      if (tripFilter === 'completed') {
+        // Most recently completed trips at the very top
+        return (Number(b.id) || 0) - (Number(a.id) || 0);
+      }
+      const getPriority = (t) => {
+        if (t.is_live || t.status === 'in_transit') return 4;
+        if (t.status === 'pending_passenger_confirmation') return 3;
+        if (t.status === 'scheduled') return 2;
+        return 1;
+      };
+      const diff = getPriority(b) - getPriority(a);
+      if (diff !== 0) return diff;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
+  }, [myTrips, tripFilter, activeLiveTripId]);
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -3127,9 +3741,9 @@ export function OfferTrip() {
           </div>
           <div className="flex items-center gap-3">
             <h1 className="font-display font-bold text-2xl sm:text-3xl text-green-deep mt-1">
-              {t('nav_offer_trip', 'Driver & Logistics Dashboard')}
+              {t('nav_offer_trip', 'Driver Trip Management Dashboard')}
             </h1>
-            <TTSButton textToRead={`${t('nav_offer_trip', 'Driver & Logistics Dashboard')}. ${t('offer.subtitle', 'Share the available space in your vehicle with people who need to transport goods.')}`} />
+            <TTSButton textToRead={`${t('nav_offer_trip', 'Driver Trip Management Dashboard')}. ${t('offer.subtitle', 'Share the available space in your vehicle with people who need to transport goods.')}`} />
           </div>
           <p className="text-sm text-green-soft mt-1">
             {t('offer.subtitle', 'Share the available space in your vehicle with people who need to transport goods.')}
@@ -3161,7 +3775,7 @@ export function OfferTrip() {
       {/* 4-CARD QUICK METRICS OVERVIEW */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div
-          onClick={() => { setActiveTab('trips'); setTripFilter('all'); }}
+          onClick={() => { setActiveTab('trips'); setTripFilter('active'); }}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
@@ -3191,13 +3805,13 @@ export function OfferTrip() {
         </div>
 
         <div
-          onClick={() => setActiveTab('trips')}
+          onClick={() => { setActiveTab('trips'); setTripFilter('active'); }}
           className="rounded-2xl bg-paper border border-gold/30 p-4 shadow-sm hover:border-green-deep/40 transition cursor-pointer flex items-center justify-between"
         >
           <div>
             <p className="text-[11px] font-mono text-green-soft uppercase tracking-wide">{t('metric.revenue_potential', 'Total Load Potential')}</p>
             <p className="font-display font-bold text-2xl text-green-deep mt-0.5">₹{totalRevenuePotential.toLocaleString('en-IN')}</p>
-            <p className="text-[11px] text-green-soft mt-0.5">Across {myTrips.length} published trip{myTrips.length !== 1 ? 's' : ''}</p>
+            <p className="text-[11px] text-green-soft mt-0.5">Across {activeTripsCount} active published trip{activeTripsCount !== 1 ? 's' : ''}</p>
           </div>
           <div className="w-11 h-11 rounded-2xl bg-gold/10 border border-gold/30 text-soil flex items-center justify-center text-xl font-bold shadow-inner">
             ₹
@@ -3226,7 +3840,7 @@ export function OfferTrip() {
       {/* MODERN TAB NAVIGATION BAR */}
       <div className="flex items-center gap-2 border-b border-gold/30 mb-6 overflow-x-auto no-scrollbar pb-1">
         <button
-          onClick={() => setActiveTab('trips')}
+          onClick={() => { setActiveTab('trips'); setTripFilter('active'); }}
           className={`px-5 py-3 rounded-2xl font-display font-bold text-sm transition-all flex items-center gap-2 shrink-0 cursor-pointer ${activeTab === 'trips'
               ? 'bg-green-deep text-cream shadow-md'
               : 'text-green-deep hover:bg-gold/10'
@@ -3235,7 +3849,7 @@ export function OfferTrip() {
           <Truck size={17} />
           <span>{t('tab.driver_trips', 'My Published Trips')}</span>
           <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold ${activeTab === 'trips' ? 'bg-cream text-green-deep' : 'bg-green-deep/10 text-green-deep'}`}>
-            {myTrips.length}
+            {activeTripsCount}
           </span>
         </button>
 
@@ -3292,7 +3906,7 @@ export function OfferTrip() {
             <div>
               <h3 className="font-display font-bold text-lg text-green-deep flex items-center gap-2">
                 <Truck size={20} className="text-green-deep" />
-                Published Trip Loads ({myTrips.length})
+                Published Trip Loads ({activeTripsCount})
               </h3>
               <p className="text-xs text-green-soft mt-0.5">
                 Control active trips, share live GPS locations, and mark loads complete.
@@ -3302,11 +3916,12 @@ export function OfferTrip() {
             {/* FILTER PILLS */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
-                ['all', `All (${myTrips.length})`],
+                ['active', `Active (${activeTripsCount})`],
                 ['live', `Live (${liveTripsCount})`],
-                ['pending', `Pending Conf. (${myTrips.filter(t => t.status === 'pending_passenger_confirmation').length})`],
                 ['scheduled', `Scheduled (${myTrips.filter(t => t.status === 'scheduled').length})`],
-                ['completed', `Completed (${completedTripsCount})`]
+                ['pending', `Pending Conf. (${myTrips.filter(t => t.status === 'pending_passenger_confirmation').length})`],
+                ['completed', `Completed Archive (${completedTripsCount})`],
+                ['all', `All (${myTrips.length})`]
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -3322,68 +3937,126 @@ export function OfferTrip() {
             </div>
           </div>
 
+          {/* CATEGORIZED COMPLETED TRIPS BANNER */}
+          {tripFilter === 'completed' && filteredTrips.length > 0 && (
+            <div className="rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-cream border border-emerald-300 p-4 shadow-2xs flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center text-xl shadow-xs">
+                  🏆
+                </div>
+                <div>
+                  <h4 className="font-display font-bold text-sm text-emerald-950 flex items-center gap-2">
+                    <span>Completed Trip Runs Archive</span>
+                    <span className="text-[10px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full font-mono font-bold">
+                      Latest Completed at Top
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-emerald-800">
+                    All fulfilled runs with verified recipient drop-offs, full load revenue receipts, and passenger ratings.
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-emerald-700 text-white font-mono font-bold text-xs rounded-full shadow-2xs">
+                {filteredTrips.length} Completed Runs
+              </span>
+            </div>
+          )}
+
           {/* TRIPS CARD GRID */}
           {filteredTrips.length > 0 ? (
             <div className="grid md:grid-cols-2 gap-5">
-              {filteredTrips.map(trip => {
+              {filteredTrips.map((trip, idx) => {
                 const activePartners = trip.partners ? trip.partners.filter(p => ['accepted', 'in_transit', 'pending', 'pending_passenger_confirmation', 'completed'].includes(p.status)) : [];
                 const undeliveredPartners = activePartners.filter(p => ['accepted', 'in_transit', 'pending'].includes(p.status));
                 const allPartnersDelivered = activePartners.length > 0 && undeliveredPartners.length === 0;
 
-                const isCompleted = trip.status === 'completed';
-                const isPendingConfirmation = trip.status === 'pending_passenger_confirmation' || (allPartnersDelivered && !isCompleted);
+                const isCompleted = trip.status === 'completed' || (activePartners.length > 0 && activePartners.every(p => p.status === 'completed'));
+                const isPendingConfirmation = !isCompleted && activePartners.length > 0 && undeliveredPartners.length === 0;
                 const isCancelled = trip.status === 'cancelled' || trip.status === 'cancelled_by_driver';
-                const isTripLive = !isCompleted && !isPendingConfirmation && !isCancelled && (trip.is_live || trip.status === 'in_transit' || activeLiveTripId === trip.id);
+                const isTripLive = !isCompleted && !isPendingConfirmation && !isCancelled && (trip.is_live || trip.status === 'in_transit' || activeLiveTripId === trip.id || undeliveredPartners.length > 0);
+                const hasLinkedReturnTrip = trip.is_return_leg ||
+                  Boolean(trip.has_return_leg) ||
+                  Boolean(trip.return_trip_id) ||
+                  myTrips.some(t =>
+                    t.id !== trip.id &&
+                    (t.return_trip_id === trip.id || (t.is_return_leg && (
+                      (t.from === trip.to && t.to === trip.from) ||
+                      (t.from_loc && trip.to_loc && t.from_loc.split(',')[0].trim().toLowerCase() === trip.to_loc.split(',')[0].trim().toLowerCase())
+                    ))) &&
+                    t.status !== 'cancelled' &&
+                    t.status !== 'cancelled_by_driver'
+                  );
+
+                const isTopCompleted = isCompleted && idx === 0 && tripFilter === 'completed';
                 const usedPct = trip.space_used_percentage !== undefined ? trip.space_used_percentage : (trip.pct || 0);
                 const freeKg = trip.available_space_kg !== undefined ? trip.available_space_kg : Math.max(0, (trip.total_kg || 1000) - (trip.total_booked_kg || 0));
 
                 return (
                   <div
                     key={trip.id}
-                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isTripLive
-                        ? 'bg-green-50/80 border-green-400 shadow-md ring-1 ring-green-400/50'
-                        : isPendingConfirmation
-                          ? 'bg-amber-50/80 border-amber-400 shadow-md ring-1 ring-amber-400/50'
-                          : isCompleted
-                            ? 'bg-emerald-50/50 border-emerald-300'
-                            : isCancelled
-                              ? 'bg-red-50/40 border-red-200 opacity-75'
-                              : 'bg-paper border-gold/30 hover:border-gold'
+                    className={`rounded-2xl border p-5 transition-all shadow-sm flex flex-col justify-between ${isTopCompleted
+                        ? 'bg-gradient-to-br from-emerald-50/90 via-cream to-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
+                        : isTripLive
+                          ? 'bg-green-50/80 border-green-400 shadow-md ring-1 ring-green-400/50'
+                          : isPendingConfirmation
+                            ? 'bg-amber-50/80 border-amber-400 shadow-md ring-1 ring-amber-400/50'
+                            : isCompleted
+                              ? 'bg-emerald-50/50 border-emerald-300'
+                              : isCancelled
+                                ? 'bg-red-50/40 border-red-200 opacity-75'
+                                : 'bg-paper border-gold/30 hover:border-gold'
                       }`}
                   >
                     <div>
                       {/* CARD TOP ROW */}
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div>
-                          <p className="font-display font-bold text-lg text-green-deep flex items-center gap-1.5">
-                            <span>{trip.from_loc || trip.from}</span>
-                            <span className="text-gold">→</span>
-                            <span>{trip.to_loc || trip.to}</span>
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-display font-bold text-lg text-green-deep flex items-center gap-1.5">
+                              <span>{trip.from_loc || trip.from}</span>
+                              <span className="text-gold">→</span>
+                              <span>{trip.to_loc || trip.to}</span>
+                            </p>
+                            {trip.is_return_leg && (
+                              <span className="text-[10px] bg-indigo-700 text-white font-bold px-2.5 py-0.5 rounded-full shadow-2xs flex items-center gap-1">
+                                <span>🔄</span>
+                                <span>Return Backhaul ({trip.return_discount_pct || 20}% OFF)</span>
+                              </span>
+                            )}
+                            {isTopCompleted && (
+                              <span className="text-[10px] bg-emerald-600 text-white font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                                ✨ Latest Run
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-green-soft font-mono mt-0.5">
                             📅 {trip.date} · 🚛 {trip.vehicle} · ⚖ Max {trip.total_kg || trip.totalKg} kg
                           </p>
                         </div>
 
-                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${isTripLive
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 flex items-center gap-1 ${isTripLive
                             ? 'bg-green-600 text-white animate-pulse'
                             : isPendingConfirmation
                               ? 'bg-amber-500 text-white animate-pulse'
-                              : isCompleted
-                                ? 'bg-emerald-600 text-white'
-                                : isCancelled
-                                  ? 'bg-red-500 text-white'
-                                  : 'bg-gray-200 text-gray-700'
+                              : isTopCompleted
+                                ? 'bg-emerald-700 text-white shadow-2xs'
+                                : isCompleted
+                                  ? 'bg-emerald-600 text-white'
+                                  : isCancelled
+                                    ? 'bg-red-500 text-white'
+                                    : 'bg-gray-200 text-gray-700'
                           }`}>
                           {isTripLive
                             ? '🔴 IN-TRANSIT'
                             : isPendingConfirmation
                               ? '⏳ WAITING CONFIRMATION'
-                              : isCompleted
-                                ? '✓ COMPLETED'
-                                : isCancelled
-                                  ? '✖ CANCELLED'
-                                  : (trip.status || 'SCHEDULED').toUpperCase()
+                              : isTopCompleted
+                                ? '✨ LATEST COMPLETED'
+                                : isCompleted
+                                  ? '✓ COMPLETED'
+                                  : isCancelled
+                                    ? '✖ CANCELLED'
+                                    : (trip.status || 'SCHEDULED').toUpperCase()
                           }
                         </span>
                       </div>
@@ -3432,6 +4105,80 @@ export function OfferTrip() {
                         </p>
                       )}
 
+                      {/* GROUND LOGISTICS, SECURITY SEALS & WEIGHBRIDGE STATUS */}
+                      <div className="bg-gradient-to-r from-sky-50/90 via-cream to-slate-50 border border-sky-300/80 rounded-xl p-3 mb-3 space-y-2 text-xs">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {trip.cargo_category === 'Dedicated / Isolated Cargo' ? (
+                              <span className="bg-purple-700 text-white font-bold px-2.5 py-0.5 rounded-full text-[10.5px] flex items-center gap-1 shadow-2xs">
+                                <span>🔒 Dedicated Private:</span>
+                                <span>{trip.dedicated_sub_category || 'Exclusive Cargo'}</span>
+                              </span>
+                            ) : trip.cargo_category === 'Perishable Goods' || trip.has_perishables ? (
+                              <span className="bg-cyan-700 text-white font-bold px-2.5 py-0.5 rounded-full text-[10.5px] flex items-center gap-1 shadow-2xs">
+                                <span>❄️ Perishable:</span>
+                                <span>{trip.cooling_type || 'Cold-Chain Monitored'}</span>
+                              </span>
+                            ) : (
+                              <span className="bg-emerald-700 text-white font-bold px-2.5 py-0.5 rounded-full text-[10.5px] flex items-center gap-1 shadow-2xs">
+                                <span>📦 General Shared Cargo Space</span>
+                              </span>
+                            )}
+
+                            {trip.ice_handling_supported && trip.cargo_category !== 'Dedicated / Isolated Cargo' && (
+                              <span className="bg-sky-600 text-white font-semibold px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1">
+                                🧊 Ice Support Active
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* SECURITY SEAL & WEIGHBRIDGE TELEMETRY */}
+                        <div className="pt-2 border-t border-sky-200/60 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-700">🔐 Security Seal:</span>
+                            {trip.seal_number ? (
+                              <span className={`font-mono font-bold px-2 py-0.5 rounded-md border text-[10.5px] ${
+                                trip.seal_status === 'tampered_broken'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                  : trip.seal_status === 'verified_intact'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : 'bg-blue-100 text-blue-800 border-blue-300'
+                              }`}>
+                                #{trip.seal_number} ({trip.seal_status ? trip.seal_status.replace('_', ' ').toUpperCase() : 'APPLIED'})
+                              </span>
+                            ) : (
+                              <span className="text-amber-800 italic bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[10px]">
+                                Awaiting Checkpoint Seal
+                              </span>
+                            )}
+                          </div>
+
+                          {trip.last_weigh_in_kg && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-slate-700">⚖ Scale Weigh-in:</span>
+                              <span className="font-mono font-bold text-green-deep">{trip.last_weigh_in_kg} kg</span>
+                              {trip.weight_compliant === false ? (
+                                <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                                  ⚠️ Discrepancy Flagged
+                                </span>
+                              ) : trip.weight_compliant === true ? (
+                                <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">
+                                  ✅ Scale Compliant
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
+
+                          {trip.current_checkpoint && (
+                            <div className="w-full text-slate-600 font-mono text-[10.5px] flex items-center gap-1 mt-0.5">
+                              <span>🚩</span>
+                              <span>Last Verified Checkpoint: <strong>{trip.current_checkpoint}</strong> ({trip.checkpoint_count || 1} inspection logs recorded)</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                       {/* CONNECTED ACCEPTED PASSENGERS / CARGO */}
                       {trip.partners && trip.partners.length > 0 && (
                         <div className="bg-emerald-50/80 border border-emerald-300/80 rounded-xl p-2.5 mb-3">
@@ -3445,7 +4192,8 @@ export function OfferTrip() {
                             {trip.partners.map(p => {
                               const isPartnerPendingConf = p.status === 'pending_passenger_confirmation';
                               const isPartnerCompleted = p.status === 'completed';
-                              const canDeliver = ['accepted', 'in_transit', 'pending'].includes(p.status);
+                              const canDeliver = isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status);
+                              const isAcceptedWaitingStart = !isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status);
 
                               return (
                                 <div key={p.id} className="text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between bg-white/90 p-2 rounded-xl border border-emerald-200 shadow-2xs gap-2">
@@ -3457,13 +4205,22 @@ export function OfferTrip() {
                                         ? 'bg-emerald-600 text-white'
                                         : isPartnerPendingConf
                                           ? 'bg-amber-500 text-white animate-pulse'
-                                          : 'bg-emerald-100 text-emerald-800'
+                                          : isAcceptedWaitingStart
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : 'bg-emerald-100 text-emerald-800'
                                     }`}>
-                                      {isPartnerPendingConf ? 'Waiting Rating' : isPartnerCompleted ? 'Delivered' : p.status}
+                                      {isPartnerPendingConf ? 'Waiting Rating' : isPartnerCompleted ? 'Delivered' : isAcceptedWaitingStart ? 'Accepted' : p.status}
                                     </span>
                                   </div>
 
                                   <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                                    {isAcceptedWaitingStart && (
+                                      <span className="text-[10px] text-green-soft font-semibold italic flex items-center gap-1">
+                                        <span>⏳</span>
+                                        <span>Start trip to deliver</span>
+                                      </span>
+                                    )}
+
                                     {canDeliver && (
                                       <button
                                         onClick={() => {
@@ -3481,7 +4238,7 @@ export function OfferTrip() {
                                             uploading: false
                                           });
                                         }}
-                                        className="px-2.5 py-1 bg-green-deep hover:bg-green text-cream font-bold text-[10.5px] rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer"
+                                        className="px-2.5 py-1 bg-green-deep hover:bg-green text-cream font-bold text-[10.5px] rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer animate-pulse"
                                         title={`Deliver ${p.farmer_name}'s cargo with drop-off proof photo`}
                                       >
                                         <span>📸</span>
@@ -3505,6 +4262,15 @@ export function OfferTrip() {
                               );
                             })}
                           </div>
+                          
+                          <button
+                            type="button"
+                            onClick={() => handleViewOptimalItinerary(trip)}
+                            className="w-full mt-2.5 py-1.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <span>🗺️</span>
+                            <span>Optimal Multi-Stop Stop Sequence & Payload</span>
+                          </button>
                         </div>
                       )}
 
@@ -3541,7 +4307,7 @@ export function OfferTrip() {
                     </div>
 
                     {/* CARD ACTIONS AREA */}
-                    <div className="pt-3 border-t border-gold/20 mt-2">
+                    <div className="pt-3 border-t border-gold/20 mt-2 space-y-2">
                       {isCompleted ? (
                         <div className="w-full bg-emerald-100/80 border border-emerald-300 p-2.5 rounded-xl">
                           <div className="text-xs text-emerald-900 font-bold flex items-center justify-between">
@@ -3572,23 +4338,60 @@ export function OfferTrip() {
                           ✖ This trip was cancelled.
                         </div>
                       ) : !isTripLive ? (
-                        <div className="flex gap-2 w-full">
-                          <button
-                            onClick={() => startLiveTrip(trip)}
-                            className="flex-1 py-2.5 bg-green-deep hover:bg-green text-cream font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <MapPin size={15} />
-                            Start Trip & Share GPS
-                          </button>
-                          {(trip.status === 'scheduled' || trip.status === 'pending' || !trip.status) && (
-                            <button
-                              onClick={() => cancelTrip(trip.id)}
-                              className="px-3.5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
-                              title="Cancel this scheduled trip"
-                            >
-                              <X size={15} />
-                              Cancel
-                            </button>
+                        <div className="space-y-2">
+                          {trip.is_return_leg && (trip.can_start_trip === false || (trip.return_trip_id && !['confirmed', 'return_enabled', 'return_started', 'completed'].includes(myTrips.find(t => t.id === trip.return_trip_id)?.goods_area_status) && myTrips.find(t => t.id === trip.return_trip_id)?.status !== 'completed')) ? (
+                            <div className="space-y-2">
+                              <div className="rounded-xl bg-amber-50 border border-amber-300 p-2.5 text-xs text-amber-900 flex items-start gap-2">
+                                <span className="text-base shrink-0">🔒</span>
+                                <div>
+                                  <p className="font-bold text-amber-950 text-xs">Return Leg Start Locked</p>
+                                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                    {trip.start_lock_reason || "Return trip is locked until the primary outbound journey reaches the Goods Area and confirms arrival."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 w-full flex-wrap">
+                                <button
+                                  disabled
+                                  className="flex-1 min-w-[140px] py-2.5 bg-gray-100 text-gray-400 font-semibold text-xs rounded-xl border border-gray-300 flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-80"
+                                  title={trip.start_lock_reason || "Outbound run must reach & confirm Goods Area first to unlock"}
+                                >
+                                  <span>🔒</span>
+                                  <span>Outbound Goods Area Pending</span>
+                                </button>
+                                {(trip.status === 'scheduled' || trip.status === 'pending' || !trip.status) && (
+                                  <button
+                                    onClick={() => cancelTrip(trip.id)}
+                                    className="px-3.5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                                    title="Cancel this scheduled trip"
+                                  >
+                                    <X size={15} />
+                                    Cancel
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2 w-full flex-wrap">
+                              <button
+                                onClick={() => startLiveTrip(trip)}
+                                className="flex-1 min-w-[140px] py-2.5 bg-green-deep hover:bg-green text-cream font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                title="Start this trip and begin live GPS broadcasting"
+                              >
+                                <Play size={15} className="fill-current" />
+                                <span>Start Trip</span>
+                              </button>
+                              {(trip.status === 'scheduled' || trip.status === 'pending' || !trip.status) && (
+                                <button
+                                  onClick={() => cancelTrip(trip.id)}
+                                  className="px-3.5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                                  title="Cancel this scheduled trip"
+                                >
+                                  <X size={15} />
+                                  Cancel
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       ) : (
@@ -3596,15 +4399,70 @@ export function OfferTrip() {
                           <div className="text-xs text-green-900 font-semibold bg-green-100 border border-green-300 p-2.5 rounded-xl flex items-center justify-between">
                             <span className="flex items-center gap-1.5 font-bold">
                               <span>📡</span>
-                              <span>Live GPS Broadcasting ({trip.speed || 35} km/h)</span>
+                              <span>Live GPS Broadcasting Active</span>
                             </span>
                             <span className="w-2.5 h-2.5 rounded-full bg-green-600 animate-ping"></span>
                           </div>
+                          <button
+                            onClick={() => {
+                              const trackingUrl = `${window.location.origin}/#maps`;
+                              navigator.clipboard?.writeText?.(trackingUrl);
+                              notify("✔ Live GPS Tracking Link copied! Share with your cargo senders.");
+                            }}
+                            className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                            title="Copy and share live GPS radar tracking link with cargo senders"
+                          >
+                            <Share2 size={14} className="text-emerald-700" />
+                            <span>Share Live GPS Tracking Link</span>
+                          </button>
+                          {/* SEQUENCED GOODS AREA CONFIRMATION (OUTBOUND RUN) */}
+                          {!trip.is_return_leg && (
+                            <div className="pt-1">
+                              {trip.goods_area_status === 'confirmed' || trip.goods_area_status === 'return_enabled' || trip.goods_area_status === 'return_started' ? (
+                                <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-900 flex items-center justify-between font-semibold shadow-2xs">
+                                  <span className="flex items-center gap-1.5">
+                                    <span>✔</span>
+                                    <span>Goods Area Arrival Confirmed</span>
+                                  </span>
+                                  <span className="text-[10px] bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
+                                    Return Unlocked
+                                  </span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const token = localStorage.getItem("access_token");
+                                      const res = await fetch(`http://localhost:8000/api/trips/${trip.id}/goods-area/confirm`, {
+                                        method: 'POST',
+                                        headers: { 'Authorization': `Bearer ${token}` }
+                                      });
+                                      if (res.ok) {
+                                        notify("✔ Goods Area arrival confirmed! Return backhaul is now enabled.");
+                                        fetchMyTrips();
+                                      } else {
+                                        const err = await res.json().catch(() => ({}));
+                                        notify(err.detail || "Could not confirm Goods Area arrival.");
+                                      }
+                                    } catch (e) {
+                                      notify("Connection error confirming Goods Area arrival.");
+                                    }
+                                  }}
+                                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <span>📍</span>
+                                  <span>Mark / Confirm Reached Goods Area</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
                           {undeliveredPartners.length > 0 ? (
                             <p className="text-[11px] text-green-soft text-center italic">
                               Deliver each cargo at its respective drop-off hub above using the "📸 Deliver Cargo" button.
                             </p>
-                          ) : (
+                          ) : activePartners.length > 0 ? (
                             <button
                               onClick={() => driverCompleteTrip(trip.id)}
                               className="w-full py-2.5 bg-green-deep hover:bg-green text-white font-semibold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -3612,8 +4470,36 @@ export function OfferTrip() {
                               <span>🏁</span>
                               <span>Complete Ride & Request Passenger Confirmation</span>
                             </button>
+                          ) : (
+                            <div className="space-y-1.5">
+                              <div className="p-2.5 bg-gold/10 border border-gold/30 rounded-xl text-center">
+                                <p className="text-xs text-soil font-semibold">
+                                  ⏳ No cargo booked yet. Senders can book while you drive.
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => cancelTrip(trip.id)}
+                                className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                                title="End this empty journey"
+                              >
+                                <span>🛑</span>
+                                <span>End Empty Run</span>
+                              </button>
+                            </div>
                           )}
                         </div>
+                      )}
+
+                      {/* QUICK OFFER RETURN BACKHAUL ACTION - ONLY SHOWN IF NO RETURN TRIP HAS BEEN PUBLISHED YET */}
+                      {!hasLinkedReturnTrip && !trip.is_return_leg && trip.status !== 'cancelled' && trip.status !== 'cancelled_by_driver' && (
+                        <button
+                          onClick={() => handleCreateReturnTrip(trip)}
+                          className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 hover:border-indigo-400 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                          title="Offer return backhaul run for this route with 20% discount"
+                        >
+                          <span>🔄</span>
+                          <span>Offer Return Backhaul Run ({trip.to_loc?.split(',')[0] || trip.to} → {trip.from_loc?.split(',')[0] || trip.from} · 20% OFF)</span>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -3629,17 +4515,30 @@ export function OfferTrip() {
                 No trips found in this category
               </h4>
               <p className="text-xs text-green-soft max-w-md mx-auto">
-                {tripFilter === 'all'
-                  ? "You haven't published any trips yet. Share your vehicle's available space and start earning."
-                  : `There are currently no trips matching the "${tripFilter}" filter.`}
+                {tripFilter === 'active'
+                  ? "You have no active published trips right now. Share your vehicle's available space to start earning."
+                  : tripFilter === 'all'
+                    ? "You haven't published any trips yet. Share your vehicle's available space and start earning."
+                    : `There are currently no trips matching the "${tripFilter}" filter.`}
               </p>
-              <button
-                onClick={() => setActiveTab('publish')}
-                className="px-5 py-2.5 bg-green-deep hover:bg-green text-cream font-semibold text-xs rounded-xl shadow-sm transition cursor-pointer inline-flex items-center gap-1.5"
-              >
-                <span>➕</span>
-                <span>Publish a New Trip</span>
-              </button>
+              <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                <button
+                  onClick={() => setActiveTab('publish')}
+                  className="px-5 py-2.5 bg-green-deep hover:bg-green text-cream font-semibold text-xs rounded-xl shadow-sm transition cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <span>➕</span>
+                  <span>Publish a New Trip</span>
+                </button>
+                {tripFilter === 'active' && completedTripsCount > 0 && (
+                  <button
+                    onClick={() => setTripFilter('completed')}
+                    className="px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-semibold text-xs rounded-xl transition cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <span>🏆</span>
+                    <span>View {completedTripsCount} Completed Run{completedTripsCount !== 1 ? 's' : ''} Archive</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -3694,6 +4593,9 @@ export function OfferTrip() {
                 const isCompleted = req.status === 'completed';
                 const isCancelled = req.status === 'cancelled_by_driver' || req.status === 'cancelled';
 
+                const linkedTrip = myTrips.find(t => (req.trip_id && t.id === req.trip_id) || (t.partners && t.partners.some(p => p.id === req.id)));
+                const isLinkedTripLive = linkedTrip ? (linkedTrip.is_live || linkedTrip.status === 'in_transit' || activeLiveTripId === linkedTrip.id) : (activeLiveTripId !== null);
+
                 return (
                   <div
                     key={req.id}
@@ -3723,7 +4625,7 @@ export function OfferTrip() {
                         <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${isPending
                             ? 'bg-amber-500 text-white animate-pulse'
                             : isAccepted
-                              ? 'bg-green-600 text-white'
+                              ? (isLinkedTripLive ? 'bg-green-600 text-white animate-pulse' : 'bg-blue-600 text-white')
                               : isWaitingConf
                                 ? 'bg-amber-600 text-white animate-pulse'
                                 : isCompleted
@@ -3732,7 +4634,9 @@ export function OfferTrip() {
                           }`}>
                           {isWaitingConf
                             ? 'WAITING PASSENGER CONF.'
-                            : (req.status ? req.status.toUpperCase() : 'PENDING')
+                            : isAccepted
+                              ? (isLinkedTripLive ? '🟢 IN-TRANSIT' : '✔ ACCEPTED (SCHEDULED)')
+                              : (req.status ? req.status.toUpperCase() : 'PENDING')
                           }
                         </span>
                       </div>
@@ -3842,6 +4746,7 @@ export function OfferTrip() {
                                   );
                                   const reqData = await reqRes.json();
                                   if (reqRes.ok && Array.isArray(reqData)) setIncomingRequests(reqData);
+                                  fetchMyTrips();
                                 } else {
                                   notify("⚠ Failed to accept request.");
                                 }
@@ -3873,6 +4778,7 @@ export function OfferTrip() {
                                   );
                                   const reqData = await reqRes.json();
                                   if (reqRes.ok && Array.isArray(reqData)) setIncomingRequests(reqData);
+                                  fetchMyTrips();
                                 } else {
                                   notify("⚠ Failed to reject request.");
                                 }
@@ -3889,54 +4795,115 @@ export function OfferTrip() {
 
                       {isAccepted && (
                         <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <button
-                              onClick={() => {
-                                setDeliverModal({
-                                  isOpen: true,
-                                  req: req,
-                                  proofUrl: null,
-                                  uploading: false
-                                });
-                              }}
-                              className="flex-1 py-2.5 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <span>📸</span>
-                              <span>Deliver Cargo & Upload Drop-off Proof</span>
-                            </button>
-                            <button
-                              onClick={async () => {
-                                if (!window.confirm(`Are you sure you want to cancel the accepted ride for ${req.farmer_name}?`)) return;
-                                const token = localStorage.getItem("access_token");
-                                try {
-                                  const res = await fetch(
-                                    `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has cancelled this ride.")}`,
-                                    {
-                                      method: "PUT",
-                                      headers: { "Authorization": `Bearer ${token}` }
-                                    }
-                                  );
-                                  if (res.ok) {
-                                    notify(`✖ Cancelled ride for ${req.farmer_name}. Passenger notified.`);
-                                    const reqRes = await fetch(
-                                      "http://localhost:8000/api/requests/incoming",
-                                      { headers: { "Authorization": `Bearer ${token}` } }
+                          {isLinkedTripLive ? (
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <button
+                                onClick={() => {
+                                  setDeliverModal({
+                                    isOpen: true,
+                                    req: req,
+                                    proofUrl: null,
+                                    uploading: false
+                                  });
+                                }}
+                                className="flex-1 py-2.5 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
+                              >
+                                <span>📸</span>
+                                <span>Deliver Cargo & Upload Drop-off Proof</span>
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`Are you sure you want to cancel the accepted ride for ${req.farmer_name}?`)) return;
+                                  const token = localStorage.getItem("access_token");
+                                  try {
+                                    const res = await fetch(
+                                      `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has cancelled this ride.")}`,
+                                      {
+                                        method: "PUT",
+                                        headers: { "Authorization": `Bearer ${token}` }
+                                      }
                                     );
-                                    const reqData = await reqRes.json();
-                                    if (reqRes.ok && Array.isArray(reqData)) setIncomingRequests(reqData);
-                                  } else {
-                                    notify("⚠ Failed to cancel request.");
+                                    if (res.ok) {
+                                      notify(`✖ Cancelled ride for ${req.farmer_name}. Passenger notified.`);
+                                      const reqRes = await fetch(
+                                        "http://localhost:8000/api/requests/incoming",
+                                        { headers: { "Authorization": `Bearer ${token}` } }
+                                      );
+                                      const reqData = await reqRes.json();
+                                      if (reqRes.ok && Array.isArray(reqData)) setIncomingRequests(reqData);
+                                      fetchMyTrips();
+                                    } else {
+                                      notify("⚠ Failed to cancel request.");
+                                    }
+                                  } catch (err) {
+                                    notify("Could not connect to backend.");
                                   }
-                                } catch (err) {
-                                  notify("Could not connect to backend.");
-                                }
-                              }}
-                              className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition cursor-pointer"
-                              title="Cancel this cargo booking"
-                            >
-                              Cancel
-                            </button>
-                          </div>
+                                }}
+                                className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition cursor-pointer"
+                                title="Cancel this cargo booking"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-blue-50/90 border border-blue-200 rounded-xl text-xs space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-base">🕒</span>
+                                  <div>
+                                    <p className="font-bold text-blue-950">Trip Scheduled (Waiting Departure)</p>
+                                    <p className="text-[11px] text-blue-800">
+                                      You accepted this cargo. Drop-off delivery unlocks once you start the trip and share live GPS.
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setActiveTab('trips');
+                                    setTripFilter('all');
+                                  }}
+                                  className="px-3 py-1.5 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow-xs transition shrink-0 cursor-pointer flex items-center gap-1"
+                                >
+                                  <span>🚀</span>
+                                  <span>Go to Trips</span>
+                                </button>
+                              </div>
+                              <div className="pt-1.5 border-t border-blue-200/60 flex justify-end">
+                                <button
+                                  onClick={async () => {
+                                    if (!window.confirm(`Are you sure you want to cancel the accepted booking for ${req.farmer_name}?`)) return;
+                                    const token = localStorage.getItem("access_token");
+                                    try {
+                                      const res = await fetch(
+                                        `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has cancelled this ride.")}`,
+                                        {
+                                          method: "PUT",
+                                          headers: { "Authorization": `Bearer ${token}` }
+                                        }
+                                      );
+                                      if (res.ok) {
+                                        notify(`✖ Cancelled ride for ${req.farmer_name}. Passenger notified.`);
+                                        const reqRes = await fetch(
+                                          "http://localhost:8000/api/requests/incoming",
+                                          { headers: { "Authorization": `Bearer ${token}` } }
+                                        );
+                                        const reqData = await reqRes.json();
+                                        if (reqRes.ok && Array.isArray(reqData)) setIncomingRequests(reqData);
+                                        fetchMyTrips();
+                                      } else {
+                                        notify("⚠ Failed to cancel request.");
+                                      }
+                                    } catch (err) {
+                                      notify("Could not connect to backend.");
+                                    }
+                                  }}
+                                  className="text-[10.5px] text-red-600 hover:text-red-700 font-semibold cursor-pointer"
+                                >
+                                  Cancel Accepted Booking
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -4302,6 +5269,256 @@ export function OfferTrip() {
               />
             </div>
 
+            {/* =========================================================
+               RETURN TRIP / BACKHAUL MONETIZATION ENGINE
+            ========================================================= */}
+            <div className="rounded-2xl border-2 border-indigo-300 bg-gradient-to-br from-indigo-50/70 via-cream to-white p-4 space-y-3 shadow-xs">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-700 text-white flex items-center justify-center text-xl shadow-xs shrink-0">
+                    🔄
+                  </div>
+                  <div>
+                    <p className="font-display font-bold text-sm text-indigo-950 flex items-center gap-2">
+                      <span>{t('driver.return_engine_title', 'Return Backhaul Trip Engine (वापसी फेरा / रिटर्न ट्रिप)')}</span>
+                      <span className="text-[10px] bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded-full font-mono font-bold">
+                        Zero Empty Miles
+                      </span>
+                    </p>
+                    <p className="text-xs text-indigo-800 mt-0.5">
+                      {t('driver.return_engine_sub', 'Monetize your return journey by automatically listing a discounted reverse corridor trip.')}
+                    </p>
+                  </div>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={o.includeReturnTrip}
+                    onChange={e => setO(prev => ({ ...prev, includeReturnTrip: e.target.checked, returnDate: prev.returnDate || prev.date }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-700"></div>
+                </label>
+              </div>
+
+              {o.includeReturnTrip && (
+                <div className="pt-3 border-t border-indigo-200/80 space-y-3 animate-[fadeIn_0.2s_ease]">
+                  {/* REVERSED ROUTE SUMMARY */}
+                  <div className="bg-white/90 p-3 rounded-xl border border-indigo-200 flex items-center justify-between flex-wrap gap-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-indigo-700 uppercase tracking-wide">Return Route:</span>
+                      <span className="font-bold text-green-deep font-display">
+                        {o.to || 'Destination City'} <span className="text-indigo-600">→</span> {o.from || 'Origin City'}
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-mono font-bold text-[11px]">
+                      Reverse Corridor Auto-Generated
+                    </span>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {/* RETURN DEPARTURE DATE */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-indigo-950 flex items-center gap-1">
+                        <span>📅</span> {t('driver.return_date', 'Return Departure Date (वापसी प्रस्थान तिथि)')}
+                      </label>
+                      <input
+                        type="date"
+                        min={o.date || new Date().toISOString().split('T')[0]}
+                        value={o.returnDate}
+                        onChange={e => setO(prev => ({ ...prev, returnDate: e.target.value }))}
+                        className={`${inputCls} bg-white`}
+                      />
+                    </div>
+
+                    {/* RETURN BACKHAUL DISCOUNT SLIDER */}
+                    <div className="space-y-1 bg-white/80 p-2.5 rounded-xl border border-indigo-200">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-indigo-950">
+                          🏷️ {t('driver.return_discount', 'Backhaul Discount')}:
+                        </span>
+                        <span className="font-mono font-bold text-indigo-800 bg-indigo-100 px-2 py-0.5 rounded-md">
+                          {o.returnDiscountPct || 20}% OFF
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="50"
+                        step="5"
+                        value={o.returnDiscountPct || 20}
+                        onChange={e => setO(prev => ({ ...prev, returnDiscountPct: Number(e.target.value) }))}
+                        className="w-full accent-indigo-700 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] font-mono text-indigo-700">
+                        <span>0% (Full Price)</span>
+                        <span className="font-bold">20% Recommended</span>
+                        <span>50% Max Saver</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* LIVE RETURN FARE EARNINGS PREVIEW */}
+                  <div className="bg-indigo-950 text-white rounded-xl p-3 flex items-center justify-between flex-wrap gap-2 text-xs">
+                    <div>
+                      <p className="text-indigo-200 text-[11px]">Return Backhaul Fare (After {o.returnDiscountPct || 20}% Discount):</p>
+                      <p className="font-display font-bold text-base text-gold">
+                        ₹{Math.round((Number(o.price) || 0) * (1 - (o.returnDiscountPct || 20) / 100)).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-indigo-200 text-[11px]">Round-Trip Total Earning:</p>
+                      <p className="font-display font-bold text-base text-emerald-400">
+                        ₹{Math.round((Number(o.price) || 0) + (Number(o.price) || 0) * (1 - (o.returnDiscountPct || 20) / 100)).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* =========================================================
+               CARGO SPECIALIZATION & DIRECT CATEGORY SELECTION
+            ========================================================= */}
+            <div className="bg-gradient-to-br from-cream via-white to-gold/10 border-2 border-gold/30 rounded-2xl p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-green-deep text-cream flex items-center justify-center font-bold text-lg shadow-sm">
+                    🏷️
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-green-deep flex items-center gap-1.5">
+                      <span>Cargo Specialization & Category</span>
+                      <span className="text-[10px] bg-gold/20 text-soil font-bold px-2 py-0.5 rounded-full font-mono">
+                        DIRECT SELECTION
+                      </span>
+                    </p>
+                    <p className="text-xs text-green-soft">
+                      Specify the dedicated handling, cold-chain, or shared cargo rules for this vehicle run.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* DIRECT DROPDOWN FOR CARGO CATEGORY */}
+              <div>
+                <label className="block text-xs font-bold text-green-deep mb-1.5">
+                  Vehicle Cargo Category (सामान की श्रेणी):
+                </label>
+                <select
+                  className={`${inputCls} font-semibold`}
+                  value={o.cargoCategory}
+                  onChange={e => setO(prev => ({
+                    ...prev,
+                    cargoCategory: e.target.value
+                  }))}
+                >
+                  {CARGO_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>
+                      {cat === 'Dedicated / Isolated Cargo'
+                        ? '🔒 Dedicated / Isolated Cargo (Private Single-Client Vehicle)'
+                        : cat === 'Perishable Goods'
+                        ? '❄ Perishable Goods (Cold-Chain Highway Logistics Monitored)'
+                        : '📦 Independent / General Cargo (Shared Multi-Purpose Cargo Space)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* CONDITIONAL SUB-CATEGORY: DEDICATED / ISOLATED CARGO */}
+              {o.cargoCategory === 'Dedicated / Isolated Cargo' && (
+                <div className="bg-purple-50/90 border border-purple-300 rounded-xl p-3.5 space-y-3 animate-[fadeIn_0.2s_ease]">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-xl">🔒</span>
+                    <div>
+                      <p className="text-xs font-bold text-purple-950">
+                        Dedicated Private Vehicle Mode Activated
+                      </p>
+                      <p className="text-[11px] text-purple-900 leading-relaxed mt-0.5">
+                        This vehicle will be reserved exclusively for a single client with no co-loading, mixed cargo, or unrelated stops.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-purple-950 mb-1">
+                      Mandatory Purpose / Cargo Sub-Category (समर्पित उद्देश्य):
+                    </label>
+                    <select
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white border border-purple-300 rounded-xl text-purple-950 outline-none focus:ring-2 focus:ring-purple-400"
+                      value={o.dedicatedSubCategory}
+                      onChange={e => setO(prev => ({ ...prev, dedicatedSubCategory: e.target.value }))}
+                    >
+                      {DEDICATED_PURPOSE_SUB_CATEGORIES.map(sub => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* CONDITIONAL SUB-CATEGORY: PERISHABLE GOODS */}
+              {o.cargoCategory === 'Perishable Goods' && (
+                <div className="bg-cyan-50/90 border border-cyan-300 rounded-xl p-3.5 space-y-3 animate-[fadeIn_0.2s_ease]">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-xl">❄️</span>
+                    <div>
+                      <p className="text-xs font-bold text-cyan-950">
+                        Perishable Goods Cold-Chain Transport
+                      </p>
+                      <p className="text-[11px] text-cyan-900 leading-relaxed mt-0.5">
+                        Highway logistics officers will inspect temperature and replenish coolant at designated route checkpoints.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-cyan-950 mb-1">
+                      Cooling Facility & Preservation Method (शीतलन सुविधा):
+                    </label>
+                    <select
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white border border-cyan-300 rounded-xl text-cyan-950 outline-none focus:ring-2 focus:ring-cyan-400"
+                      value={o.coolingType}
+                      onChange={e => setO(prev => ({ ...prev, coolingType: e.target.value }))}
+                    >
+                      {PERISHABLE_COOLING_TYPES.map(cool => (
+                        <option key={cool} value={cool}>{cool}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-cyan-200">
+                    <span className="text-[11px] text-cyan-950 font-medium">
+                      Enable Active Ice Replenishment by Logistics Officers:
+                    </span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={o.iceHandlingSupported !== false}
+                        onChange={e => setO(prev => ({ ...prev, iceHandlingSupported: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* CONDITIONAL SUB-CATEGORY: INDEPENDENT / GENERAL CARGO */}
+              {o.cargoCategory === 'Independent / General Cargo' && (
+                <div className="bg-emerald-50/80 border border-emerald-300 rounded-xl p-3 flex items-start gap-2.5 text-xs text-emerald-950">
+                  <span className="text-lg">📦</span>
+                  <div>
+                    <p className="font-bold">Multi-Purpose Shared Cargo Pool</p>
+                    <p className="text-[11px] text-emerald-800 mt-0.5">
+                      Standard multi-shipper shared space with automatic fair Ton-Km split across all booked cargo batches.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* PICKUP INSTRUCTIONS */}
             <Field label={t('driver.pickup_landmark', 'Pickup Instructions & Landmarks for Senders (पिकअप निर्देश / लैंडमार्क)')}>
               <input
@@ -4374,6 +5591,24 @@ export function OfferTrip() {
                   <p className="text-xs text-green-soft mt-1">
                     {o.date || 'Select date'} · {o.vehicle}
                   </p>
+                  {/* CARGO SPECIALIZATION PREVIEW CHIP */}
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    {o.cargoCategory === 'Dedicated / Isolated Cargo' ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300 flex items-center gap-1">
+                        <span>🔒 Dedicated Private:</span>
+                        <span>{o.dedicatedSubCategory}</span>
+                      </span>
+                    ) : o.cargoCategory === 'Perishable Goods' ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900 border border-cyan-300 flex items-center gap-1">
+                        <span>❄ Perishable:</span>
+                        <span>{o.coolingType}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
+                        📦 General Shared Cargo Space
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -4400,6 +5635,26 @@ export function OfferTrip() {
                 </p>
               </div>
 
+              {o.includeReturnTrip && (
+                <div className="rounded-2xl border-2 border-indigo-300 bg-indigo-50/70 p-4 space-y-2 animate-[fadeIn_0.2s_ease]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-950 flex items-center gap-1">
+                      <span>🔄</span>
+                      <span>Linked Return Backhaul</span>
+                    </span>
+                    <span className="text-[10px] bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded-full font-mono font-bold">
+                      {o.returnDiscountPct || 20}% OFF
+                    </span>
+                  </div>
+                  <p className="font-display font-bold text-sm text-indigo-900 truncate">
+                    {o.to || 'Destination'} → {o.from || 'Origin'}
+                  </p>
+                  <p className="text-[11px] text-indigo-800 font-mono">
+                    📅 {o.returnDate || o.date || 'Same date'} · Fare: <strong className="text-indigo-950 font-bold">₹{Math.round((Number(o.price) || 0) * (1 - (o.returnDiscountPct || 20) / 100)).toLocaleString('en-IN')}</strong>
+                  </p>
+                </div>
+              )}
+
               {published && (
                 <div className="rounded-2xl bg-green-deep text-cream p-5 shadow-lg space-y-3 animate-[fadeIn_0.3s_ease]">
                   <div className="flex items-center justify-between">
@@ -4413,7 +5668,7 @@ export function OfferTrip() {
                     Your trip is live on the marketplace. Senders can now book cargo space.
                   </p>
                   <button
-                    onClick={() => { setActiveTab('trips'); setTripFilter('all'); }}
+                    onClick={() => { setActiveTab('trips'); setTripFilter('active'); }}
                     className="w-full py-2 bg-cream text-green-deep font-bold text-xs rounded-xl shadow transition"
                   >
                     View in My Published Trips
@@ -4872,6 +6127,151 @@ export function OfferTrip() {
                 <span>{proofModal.uploading ? 'Uploading...' : 'Confirm & Complete'}</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MULTI-STOP OPTIMAL ITINERARY MODAL */}
+      {itineraryModal.isOpen && (
+        <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-[fadeIn_.2s_ease]">
+          <div className="bg-white rounded-3xl border border-gold/40 shadow-2xl max-w-lg w-full p-6 animate-[scaleIn_.25s_ease] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3 mb-4 border-b border-gold/20 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl shadow-inner">
+                  🗺️
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-xl text-green-deep">
+                    Optimal Stop Itinerary
+                  </h3>
+                  <p className="text-xs text-green-soft">
+                    AI Sequenced multi-stop route with strict &lt; 1 km detour limit
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setItineraryModal({ isOpen: false, trip: null, result: null, loading: false })}
+                className="w-8 h-8 rounded-full bg-cream hover:bg-gold/20 text-green-deep flex items-center justify-center transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {itineraryModal.loading ? (
+              <div className="py-12 text-center space-y-3">
+                <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs font-semibold text-green-deep">
+                  Computing Traveling Salesperson stop order via OSRM...
+                </p>
+              </div>
+            ) : itineraryModal.result ? (
+              <div className="space-y-4 text-xs">
+                {/* METRICS SUMMARY */}
+                <div className="grid grid-cols-3 gap-2 bg-emerald-50/80 border border-emerald-300 p-3 rounded-2xl">
+                  <div>
+                    <p className="text-[10px] font-mono uppercase text-emerald-800">Total Distance</p>
+                    <p className="font-display font-bold text-base text-emerald-950">
+                      {itineraryModal.result.total_distance_km} km
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-mono uppercase text-emerald-800">Total Duration</p>
+                    <p className="font-display font-bold text-base text-emerald-950">
+                      ~{itineraryModal.result.total_duration_mins} mins
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-mono uppercase text-emerald-800">Peak Payload</p>
+                    <p className="font-display font-bold text-base text-emerald-950">
+                      {itineraryModal.result.max_payload_kg} kg
+                    </p>
+                  </div>
+                </div>
+
+                {/* STOP BY STOP SEQUENCE */}
+                <div className="space-y-2">
+                  <p className="font-bold text-green-deep text-xs flex items-center justify-between">
+                    <span>📍 Ordered Stop Sequence ({itineraryModal.result.ordered_stops?.length || 0} stops):</span>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-semibold">
+                      ✔ &lt; 1 km Corridor Validated
+                    </span>
+                  </p>
+
+                  <div className="relative pl-6 space-y-3 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-emerald-300">
+                    {itineraryModal.result.ordered_stops?.map((stop, sIdx) => {
+                      const isOrigin = stop.type === 'origin';
+                      const isDest = stop.type === 'destination';
+                      const isPickup = stop.type === 'pickup';
+
+                      return (
+                        <div key={sIdx} className="relative bg-cream/70 border border-gold/30 rounded-xl p-3 shadow-2xs">
+                          {/* Pin dot */}
+                          <div className={`absolute -left-6 top-3 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-bold text-white shadow-xs ${
+                            isOrigin ? 'bg-blue-600' : isDest ? 'bg-red-600' : isPickup ? 'bg-emerald-600' : 'bg-amber-600'
+                          }`}>
+                            {stop.sequence}
+                          </div>
+
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-bold text-green-deep text-xs">
+                                {stop.name}
+                              </p>
+                              <p className="text-[11px] text-green-soft">
+                                {isOrigin ? '🚀 Starting Trip Origin' : isDest ? '🏁 Final Trip Destination' : isPickup ? `📦 Cargo Pickup (+${stop.weight_kg} kg)` : `🚚 Cargo Delivery (-${stop.weight_kg} kg)`}
+                              </p>
+                            </div>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0 ${
+                              isOrigin ? 'bg-blue-100 text-blue-800' : isDest ? 'bg-red-100 text-red-800' : isPickup ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {stop.type}
+                            </span>
+                          </div>
+
+                          {stop.distance_from_prev_km > 0 && (
+                            <div className="mt-2 pt-1.5 border-t border-gold/15 flex items-center justify-between text-[10.5px] text-green-soft">
+                              <span>Leg Distance: <strong>{stop.distance_from_prev_km} km</strong> (~{stop.duration_from_prev_mins}m)</span>
+                              <span>Truck Load: <strong className={stop.is_capacity_exceeded ? 'text-red-600' : 'text-emerald-800'}>{stop.cumulative_payload_kg} kg</strong></span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* NOTES / VALIDATION */}
+                {itineraryModal.result.notes && (
+                  <p className="text-[11px] text-green-soft italic bg-paper p-2.5 rounded-xl border border-gold/20">
+                    ℹ {itineraryModal.result.notes}
+                  </p>
+                )}
+
+                {/* ACTION BUTTONS */}
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      setItineraryModal({ isOpen: false, trip: null, result: null, loading: false });
+                      navigate('/maps');
+                    }}
+                    className="flex-1 py-2.5 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span>📡</span>
+                    <span>Open Live Radar Map</span>
+                  </button>
+                  <button
+                    onClick={() => setItineraryModal({ isOpen: false, trip: null, result: null, loading: false })}
+                    className="px-4 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-xs text-green-soft">
+                Could not load itinerary.
+              </div>
+            )}
           </div>
         </div>
       )}

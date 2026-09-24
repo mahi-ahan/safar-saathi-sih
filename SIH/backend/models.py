@@ -33,12 +33,37 @@ class TripModel(Base):
   speed = Column(Float, default=0.0)
   delivery_proof_image_url = Column(String, nullable=True)
   preferred_lang = Column(String, default="hi")
+  return_trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True, index=True)
+  is_return_leg = Column(Boolean, default=False)
+  return_discount_pct = Column(Integer, default=0)
+  has_perishables = Column(Boolean, default=False)
+  ice_handling_supported = Column(Boolean, default=True)
+  current_checkpoint = Column(String, nullable=True)
+  checkpoint_count = Column(Integer, default=0)
+  cargo_category = Column(String, default="general")
+  dedicated_sub_category = Column(String, nullable=True)
+  is_dedicated = Column(Boolean, default=False)
+  seal_number = Column(String, nullable=True)
+  seal_status = Column(String, default="Pending")
+  last_weigh_in_kg = Column(Float, nullable=True)
+  weight_compliant = Column(Boolean, default=True)
+  cooling_type = Column(String, nullable=True)
+  target_temp_c = Column(Float, nullable=True)
+  # State Machine lifecycle fields
+  inspection_status = Column(String, default="not_started")  # not_started, in_progress, completed
+  inspection_completed = Column(Boolean, default=False)
+  goods_area_status = Column(String, default="not_started")  # not_started, travelling, reached, confirmed, return_enabled, return_started
+  goods_area_reached_at = Column(String, nullable=True)
+  goods_area_confirmed_at = Column(String, nullable=True)
+  return_started_at = Column(String, nullable=True)
 
 
 class RequestModel(Base):
   __tablename__ = "requests"
 
   id = Column(String, primary_key=True, index=True)
+  trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True, index=True)
+  trip_date = Column(String, nullable=True)
   status = Column(String, default="pending")
   route = Column(String)
   vehicle = Column(String)
@@ -64,6 +89,52 @@ class RequestModel(Base):
   rating = Column(Integer, nullable=True)
   feedback = Column(String, nullable=True)
   preferred_lang = Column(String, default="hi")
+  is_perishable = Column(Boolean, default=False)
+  cargo_type = Column(String, nullable=True)
+  ice_handling_required = Column(Boolean, default=False)
+  current_temp_c = Column(Float, nullable=True)
+  loading_status = Column(String, default="pending")  # pending, loaded, unloaded
+  loaded_at = Column(String, nullable=True)
+  loaded_by = Column(String, nullable=True)
+  unloaded_at = Column(String, nullable=True)
+  unloaded_by = Column(String, nullable=True)
+  ice_boxes_count = Column(Integer, default=0)
+  cargo_category = Column(String, default="general")
+  dedicated_sub_category = Column(String, nullable=True)
+  is_dedicated = Column(Boolean, default=False)
+  seal_number = Column(String, nullable=True)
+  seal_status = Column(String, default="Pending")
+  verified_weight_kg = Column(Float, nullable=True)
+  weight_compliant = Column(Boolean, default=True)
+  cooling_type = Column(String, nullable=True)
+  target_temp_c = Column(Float, nullable=True)
+
+
+class LogisticsCheckpointModel(Base):
+  __tablename__ = "logistics_checkpoints"
+
+  id = Column(Integer, primary_key=True, index=True)
+  trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True, index=True)
+  checkpoint_name = Column(String, index=True)
+  officer_name = Column(String)
+  officer_phone = Column(String, nullable=True)
+  timestamp = Column(String)
+  cargo_seal_intact = Column(Boolean, default=True)
+  cargo_condition = Column(String, default="Good")
+  ice_status = Column(String, default="Adequate")
+  temp_celsius = Column(Float, nullable=True)
+  notes = Column(String, nullable=True)
+  proof_image_url = Column(String, nullable=True)
+  action_taken = Column(String, nullable=True)
+  seal_number = Column(String, nullable=True)
+  seal_status = Column(String, default="Verified & Intact")
+  measured_weight_kg = Column(Float, nullable=True)
+  declared_weight_kg = Column(Float, nullable=True)
+  weight_discrepancy_kg = Column(Float, nullable=True)
+  weight_compliant = Column(Boolean, default=True)
+  safety_parameters_status = Column(String, default="Compliant")
+  cooling_status = Column(String, nullable=True)
+  checkpoint_type = Column(String, default="Highway Toll Plaza")
 
 
 class RoutePricingCache(Base):
@@ -98,12 +169,9 @@ class PtlCostDistributionCache(Base):
 
 
 
-  
-  
-  
 from enum import Enum
 
-from sqlalchemy import Column, Integer, String, Enum as SQLEnum,ForeignKey
+from sqlalchemy import Column, Integer, String, Enum as SQLEnum, ForeignKey
 from database import Base
 from sqlalchemy.orm import relationship
 
@@ -137,6 +205,8 @@ class User(Base):
         default=UserRole.USER
     )
     profile = relationship("UserProfile", back_populates="user", uselist=False)
+
+
 class UserProfile(Base):
     __tablename__ = "user_profiles"
 
@@ -148,6 +218,10 @@ class UserProfile(Base):
     gender = Column(String, nullable=True)
     aadhaar_doc = Column(String, nullable=True)
     license_doc = Column(String, nullable=True)
+    id_proof_doc = Column(String, nullable=True)
+    assigned_station = Column(String, nullable=True)
+    station_lat = Column(Float, nullable=True)
+    station_lng = Column(Float, nullable=True)
     is_verified = Column(Boolean, default=False)
     preferred_lang = Column(String, default="hi")
 

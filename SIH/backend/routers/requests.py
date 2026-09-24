@@ -13,9 +13,12 @@ from services.dispatcher import dispatch_automated_alert, resolve_user_contact_a
 import services.messages as msgs
 from routers.trips import (
     recalculate_trip_cost_shares,
+    get_trip_requests,
     calculate_haversine_km,
     check_and_finalize_trip_completion,
     is_passenger_on_route,
+    is_direction_aligned,
+    is_pickup_before_drop,
     calculate_route_aware_price,
     get_trip_route_patterns
 )
@@ -164,7 +167,26 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
         delivery_proof_image_url=req.delivery_proof_image_url,
         reason=req.reason,
         rating=req.rating,
-        feedback=req.feedback
+        feedback=req.feedback,
+        is_perishable=bool(req.is_perishable),
+        cargo_type=req.cargo_type or "General",
+        ice_handling_required=bool(req.ice_handling_required),
+        current_temp_c=req.current_temp_c,
+        loading_status=req.loading_status or "pending",
+        loaded_at=req.loaded_at,
+        loaded_by=req.loaded_by,
+        unloaded_at=req.unloaded_at,
+        unloaded_by=req.unloaded_by,
+        ice_boxes_count=req.ice_boxes_count or 0,
+        cargo_category=req.cargo_category or "general",
+        dedicated_sub_category=req.dedicated_sub_category,
+        is_dedicated=bool(req.is_dedicated),
+        seal_number=req.seal_number,
+        seal_status=req.seal_status or "Pending",
+        verified_weight_kg=req.verified_weight_kg,
+        weight_compliant=bool(req.weight_compliant if req.weight_compliant is not None else True),
+        cooling_type=req.cooling_type,
+        target_temp_c=req.target_temp_c
     )
 
 
@@ -212,16 +234,37 @@ def create_request(
 
     weight = req.goods_weight_kg if req.goods_weight_kg is not None else req.kg
     
-    # 1. Locate linked trip
+    # 1. Locate linked trip specifically by trip_id or active owner route
     trip = None
-    if req.owner and req.route:
-        all_trips = db.query(models.TripModel).filter(models.TripModel.owner == req.owner).all()
+    if req.trip_id:
+        trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first()
+    
+    if not trip and req.owner and req.route:
+        all_trips = db.query(models.TripModel).filter(
+            models.TripModel.owner == req.owner,
+            models.TripModel.status.in_(["scheduled", "pending", "in_transit"])
+        ).order_by(models.TripModel.id.desc()).all()
         for t in all_trips:
-            if f"{t.from_loc} → {t.to_loc}" == req.route:
+            if f"{t.from_loc} → {t.to_loc}" == req.route or f"{t.from_loc} -> {t.to_loc}" == req.route:
                 trip = t
                 break
 
-    # 2. Strict Route Proximity Check (5 km start/dest buffer & intermediate corridor check)
+    # 2. Return Trip Booking Lock Enforcement
+    if trip and bool(getattr(trip, "is_return_leg", False)) and getattr(trip, "return_trip_id", None):
+        outbound = db.query(models.TripModel).filter(models.TripModel.id == trip.return_trip_id).first()
+        if outbound:
+            if outbound.status in ["scheduled", "pending"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Booking Not Open: Shippers cannot book this return backhaul trip until the driver starts the primary outbound journey ({outbound.from_loc} → {outbound.to_loc})."
+                )
+            if outbound.status in ["cancelled", "cancelled_by_driver"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Return Trip Unavailable: The primary outbound journey was cancelled by the driver."
+                )
+
+    # 3. Strict Route Proximity Check (5 km start/dest buffer & intermediate corridor check)
     if trip:
         driver_start_lat = trip.pickup_lat if (trip.pickup_lat and trip.pickup_lat != 0.0) else trip.lat
         driver_start_lng = trip.pickup_lng if (trip.pickup_lng and trip.pickup_lng != 0.0) else trip.lng
@@ -235,19 +278,14 @@ def create_request(
             driver_route_coords.append((float(driver_dest_lat), float(driver_dest_lng)))
 
         if len(driver_route_coords) >= 2:
-            # Verify Passenger Pickup
-            if req.pickup_lat and req.pickup_lng and (req.pickup_lat != 0.0 or req.pickup_lng != 0.0):
-                if not is_passenger_on_route((float(req.pickup_lat), float(req.pickup_lng)), driver_route_coords):
+            if (req.pickup_lat and req.pickup_lng and req.delivery_lat and req.delivery_lng and
+                (req.pickup_lat != 0.0 or req.pickup_lng != 0.0) and (req.delivery_lat != 0.0 or req.delivery_lng != 0.0)):
+                req_p = (float(req.pickup_lat), float(req.pickup_lng))
+                req_d = (float(req.delivery_lat), float(req.delivery_lng))
+                if not is_direction_aligned(driver_route_coords[0], driver_route_coords[-1], req_p, req_d):
                     raise HTTPException(
                         status_code=400,
-                        detail="Route Mismatch: Requested pickup location is not along the driver's route corridor."
-                    )
-            # Verify Passenger Dropoff
-            if req.delivery_lat and req.delivery_lng and (req.delivery_lat != 0.0 or req.delivery_lng != 0.0):
-                if not is_passenger_on_route((float(req.delivery_lat), float(req.delivery_lng)), driver_route_coords):
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Route Mismatch: Requested drop-off location is not along the driver's route corridor."
+                        detail="Direction Mismatch: Requested transit vector opposes the vehicle travel direction."
                     )
 
     # 3. Calculate exact on-route passenger distance & route-aware segment pricing
@@ -262,8 +300,17 @@ def create_request(
 
     user_id_val = current_user.id if current_user else None
 
-    # PREVENT DUPLICATE ACTIVE BOOKING REQUESTS FROM THE SAME USER ON THE SAME ROUTE / TRIP
-    if user_id_val and req.owner and req.route:
+    # PREVENT DUPLICATE ACTIVE BOOKING REQUESTS FROM THE SAME USER ON THE SAME SPECIFIC TRIP
+    if user_id_val and trip:
+        existing_active = db.query(models.RequestModel).filter(
+            models.RequestModel.user_id == user_id_val,
+            models.RequestModel.trip_id == trip.id,
+            models.RequestModel.status.in_(["pending", "accepted", "assigned", "in_transit", "pending_passenger_confirmation"])
+        ).first()
+
+        if existing_active:
+            return serialize_request_with_cost(existing_active, db)
+    elif user_id_val and req.owner and req.route:
         existing_active = db.query(models.RequestModel).filter(
             models.RequestModel.user_id == user_id_val,
             models.RequestModel.owner == req.owner,
@@ -275,8 +322,26 @@ def create_request(
             return serialize_request_with_cost(existing_active, db)
 
     try:
+        # Enforce trip's pre-decided cargo category and specializations from Offer a Trip
+        if trip:
+            final_cargo_category = getattr(trip, "cargo_category", None) or "Independent / General Cargo"
+            final_is_perishable = bool(getattr(trip, "has_perishables", False)) or (final_cargo_category == "Perishable Goods")
+            final_is_dedicated = bool(getattr(trip, "is_dedicated", False)) or (final_cargo_category == "Dedicated / Isolated Cargo")
+            final_dedicated_sub = getattr(trip, "dedicated_sub_category", None) if final_is_dedicated else None
+            final_cooling_type = getattr(trip, "cooling_type", None) if final_is_perishable else None
+            final_ice_required = final_is_perishable and (getattr(trip, "ice_handling_supported", True) is not False)
+        else:
+            final_cargo_category = req.cargo_category or "Independent / General Cargo"
+            final_is_perishable = bool(req.is_perishable)
+            final_is_dedicated = bool(req.is_dedicated)
+            final_dedicated_sub = req.dedicated_sub_category
+            final_cooling_type = req.cooling_type
+            final_ice_required = bool(req.ice_handling_required)
+
         db_req = models.RequestModel(
             id=req.id,
+            trip_id=trip.id if trip else req.trip_id,
+            trip_date=trip.date if trip else req.trip_date,
             route=req.route,
             vehicle=req.vehicle,
             owner=req.owner,
@@ -295,7 +360,19 @@ def create_request(
             pickup_cargo_image_url=str(req.pickup_cargo_image_url).strip(),
             delivery_proof_image_url=None,
             status="pending",
-            user_id=user_id_val
+            user_id=user_id_val,
+            is_perishable=final_is_perishable,
+            cargo_type=req.cargo_type or "General",
+            ice_handling_required=final_ice_required,
+            current_temp_c=req.current_temp_c,
+            loading_status=req.loading_status or "pending",
+            cargo_category=final_cargo_category,
+            dedicated_sub_category=final_dedicated_sub,
+            is_dedicated=final_is_dedicated,
+            seal_number=req.seal_number,
+            seal_status=req.seal_status or "Pending",
+            cooling_type=final_cooling_type,
+            target_temp_c=req.target_temp_c
         )
 
         db.add(db_req)
@@ -307,11 +384,7 @@ def create_request(
         if trip:
             recalculate_trip_cost_shares(trip, db)
             db.refresh(db_req)
-            active_requests = db.query(models.RequestModel).filter(
-                models.RequestModel.owner == trip.owner,
-                models.RequestModel.route == f"{trip.from_loc} → {trip.to_loc}",
-                models.RequestModel.status.in_(["pending", "accepted", "in_transit"])
-            ).all()
+            active_requests = get_trip_requests(trip, db, ["pending", "accepted", "in_transit"])
 
         total_vehicle_amt = float(trip.total_driver_amount) if (trip and trip.total_driver_amount) else (float(trip.price) if (trip and trip.price) else 3000.0)
         sharers_count = len(active_requests) if active_requests else 1
@@ -468,7 +541,7 @@ def get_my_requests(
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
     if not current_user:
-        requests = db.query(models.RequestModel).all()
+        requests = db.query(models.RequestModel).order_by(models.RequestModel.id.desc()).all()
         return [serialize_request_with_cost(r, db) for r in requests]
 
     requests = (
@@ -477,9 +550,11 @@ def get_my_requests(
             models.RequestModel.user_id
             == current_user.id
         )
+        .order_by(models.RequestModel.id.desc())
         .all()
     )
     return [serialize_request_with_cost(r, db) for r in requests]
+
 
 
 
@@ -502,7 +577,7 @@ def get_incoming_requests(
     from models import UserProfile, TripModel
 
     if not current_user:
-        requests = db.query(models.RequestModel).all()
+        requests = db.query(models.RequestModel).order_by(models.RequestModel.id.desc()).all()
         return [serialize_request_with_cost(r, db) for r in requests]
 
     profile = (
@@ -538,6 +613,7 @@ def get_incoming_requests(
         .filter(
             models.RequestModel.owner.in_(owner_names)
         )
+        .order_by(models.RequestModel.id.desc())
         .all()
     )
     return [serialize_request_with_cost(r, db) for r in requests]

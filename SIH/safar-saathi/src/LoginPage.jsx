@@ -152,7 +152,7 @@ export function LoginPage() {
         </div>
 
         {/* ROLE SELECTOR TABS */}
-        <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 rounded-2xl bg-green-deep/5 border border-gold/30">
+        <div className="grid grid-cols-2 p-1.5 rounded-2xl bg-black/5 border border-gold/30 mb-6 gap-1">
           <button
             type="button"
             onClick={() => {
@@ -160,14 +160,14 @@ export function LoginPage() {
               setRoleError(null);
               localStorage.setItem('login_intent', 'find');
             }}
-            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               intent === 'find'
-                ? 'bg-green-deep text-cream shadow-md scale-[1.02]'
+                ? 'bg-green-deep text-cream shadow-md'
                 : 'text-green-soft hover:text-green-deep hover:bg-white/50'
             }`}
           >
-            <Package size={16} className={intent === 'find' ? 'text-gold-light' : 'text-soil'} />
-            <span>{t('nav.find', 'Find a Vehicle')}</span>
+            <Package size={15} className={intent === 'find' ? 'text-gold-light' : 'text-soil'} />
+            <span className="truncate">{t('nav.find', 'Find Vehicle')}</span>
           </button>
 
           <button
@@ -177,14 +177,14 @@ export function LoginPage() {
               setRoleError(null);
               localStorage.setItem('login_intent', 'offer');
             }}
-            className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               intent === 'offer'
-                ? 'bg-green-deep text-cream shadow-md scale-[1.02]'
+                ? 'bg-green-deep text-cream shadow-md'
                 : 'text-green-soft hover:text-green-deep hover:bg-white/50'
             }`}
           >
-            <Truck size={16} className={intent === 'offer' ? 'text-gold-light' : 'text-soil'} />
-            <span>{t('nav.offer', 'Offer a Trip')}</span>
+            <Truck size={15} className={intent === 'offer' ? 'text-gold-light' : 'text-soil'} />
+            <span className="truncate">{t('nav.offer', 'Offer Trip')}</span>
           </button>
         </div>
 

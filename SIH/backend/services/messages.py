@@ -1504,3 +1504,56 @@ def msg_cancelled_by_shipper_driver(driver_name: str, shipper_name: str, weight:
             f"*{shipper_name}* ने [ {route} ] के लिए अपनी *{weight} kg* माल बुकिंग रद्द कर दी है।\n"
             f"_आपकी वाहन क्षमता अन्य ग्राहकों के लिए पुनः उपलब्ध कर दी गई है।_"
         )
+
+
+# =========================================================================
+# 28. CHECKPOINT INSPECTION PASSED (To Shipper & Driver)
+# =========================================================================
+def msg_checkpoint_verified(user_name: str, checkpoint_name: str, officer_name: str, condition: str, temp_c: Optional[float] = None, lang: str = "hi") -> str:
+    l = normalize_lang(lang)
+    temp_str = f" | ❄️ Temp: {temp_c}°C" if temp_c is not None else ""
+    if l == "en":
+        return (
+            f"🛡️ *Safar-Saathi: Checkpoint Inspection Passed*\n\n"
+            f"Hello *{user_name}*,\n"
+            f"Your transit shipment just completed an official quality inspection at *{checkpoint_name}*.\n\n"
+            f"👮 *Inspected By:* Officer {officer_name}\n"
+            f"📦 *Cargo Condition:* {condition}{temp_str}\n"
+            f"🔒 *Security Seal:* Intact & Verified\n\n"
+            f"_Ground logistics officers are actively monitoring your cargo to ensure safe delivery._"
+        )
+    else:  # hi
+        return (
+            f"🛡️ *सफ़र-साथी: चेकपॉइंट निरीक्षण सफल*\n\n"
+            f"नमस्ते *{user_name}* जी,\n"
+            f"आपके सामान का *{checkpoint_name}* पर आधिकारिक गुणवत्ता निरीक्षण सफलता पूर्वक पूरा हुआ।\n\n"
+            f"👮 *निरीक्षक:* अधिकारी {officer_name}\n"
+            f"📦 *सामान की स्थिति:* {condition}{temp_str}\n"
+            f"🔒 *सुरक्षा सील:* सुरक्षित एवं सत्यापित\n\n"
+            f"_सफ़र-साथी ग्राउंड लॉजिस्टिक्स टीम आपके सामान की निरंतर निगरानी कर रही है।_"
+        )
+
+
+# =========================================================================
+# 29. COLD-CHAIN ICE REPLENISHED (To Perishable Shipper)
+# =========================================================================
+def msg_ice_replenished(shipper_name: str, commodity: str, ice_kg: float, ice_type: str, temp_c: float, lang: str = "hi") -> str:
+    l = normalize_lang(lang)
+    if l == "en":
+        return (
+            f"❄️ *Safar-Saathi: Cold-Chain Ice Replenished*\n\n"
+            f"Hello *{shipper_name}*,\n"
+            f"Cold-chain preservation service has topped up *{ice_kg} kg* of *{ice_type}* for your *{commodity}*.\n\n"
+            f"🌡️ *Stabilized Temperature:* {temp_c}°C (Chilled & Fresh)\n"
+            f"⏳ *Safe Window Extended:* ~6 to 8 hours\n\n"
+            f"_Your perishable goods are protected against spoilage until destination arrival._"
+        )
+    else:  # hi
+        return (
+            f"❄️ *सफ़र-साथी: कोल्ड-चेन बर्फ पुनःपूर्ति सफल*\n\n"
+            f"नमस्ते *{shipper_name}* जी,\n"
+            f"आपके *{commodity}* के लिए ग्राउंड टीम द्वारा *{ice_kg} kg* *{ice_type}* डाली गई है।\n\n"
+            f"🌡️ *स्थिर तापमान:* {temp_c}°C (ताजा एवं सुरक्षित)\n"
+            f"⏳ *सुरक्षित समय:* आगामी 6 से 8 घंटे\n\n"
+            f"_सफ़र-साथी कोल्ड-चेन टीम आपके सामान को खराब होने से सुरक्षित रख रही है।_"
+        )

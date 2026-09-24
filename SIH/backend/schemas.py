@@ -177,6 +177,22 @@ class TripCreate(BaseModel):
     pickup_cargo_image_url: Optional[str] = None
     delivery_proof_image_url: Optional[str] = None
     lang: Optional[str] = "hi"
+    return_trip_id: Optional[int] = None
+    is_return_leg: Optional[bool] = False
+    return_discount_pct: Optional[int] = 0
+    has_perishables: Optional[bool] = False
+    ice_handling_supported: Optional[bool] = True
+    current_checkpoint: Optional[str] = None
+    checkpoint_count: Optional[int] = 0
+    cargo_category: Optional[str] = "Independent / General Cargo"
+    dedicated_sub_category: Optional[str] = None
+    is_dedicated: Optional[bool] = False
+    seal_number: Optional[str] = None
+    seal_status: Optional[str] = None
+    last_weigh_in_kg: Optional[float] = None
+    weight_compliant: Optional[bool] = None
+    cooling_type: Optional[str] = None
+    target_temp_c: Optional[float] = None
 
 
 class TripResponse(TripCreate):
@@ -192,9 +208,82 @@ class TripResponse(TripCreate):
     pickup_cargo_image_url: Optional[str] = None
     delivery_proof_image_url: Optional[str] = None
     driver_phone: Optional[str] = None
+    is_booking_open: Optional[bool] = True
+    booking_lock_reason: Optional[str] = None
+    outbound_trip_status: Optional[str] = None
+    can_start_trip: Optional[bool] = True
+    start_lock_reason: Optional[str] = None
+    has_return_leg: Optional[bool] = False
+    has_perishables: Optional[bool] = False
+    ice_handling_supported: Optional[bool] = True
+    current_checkpoint: Optional[str] = None
+    checkpoint_count: Optional[int] = 0
+    cargo_category: Optional[str] = "Independent / General Cargo"
+    dedicated_sub_category: Optional[str] = None
+    is_dedicated: Optional[bool] = False
+    seal_number: Optional[str] = None
+    seal_status: Optional[str] = None
+    last_weigh_in_kg: Optional[float] = None
+    weight_compliant: Optional[bool] = None
+    cooling_type: Optional[str] = None
+    target_temp_c: Optional[float] = None
+    # State Machine lifecycle fields
+    inspection_status: Optional[str] = "not_started"
+    inspection_completed: Optional[bool] = False
+    goods_area_status: Optional[str] = "not_started"
+    goods_area_reached_at: Optional[str] = None
+    goods_area_confirmed_at: Optional[str] = None
+    return_started_at: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class TripInspectionStartRequest(BaseModel):
+    officer_name: Optional[str] = None
+    station_name: Optional[str] = None
+
+
+class TripInspectionCompleteRequest(BaseModel):
+    officer_name: Optional[str] = "Officer"
+    seal_number: Optional[str] = None
+    seal_status: Optional[str] = "verified_intact"
+    measured_weight_kg: Optional[float] = None
+    cargo_condition: Optional[str] = "Good"
+    notes: Optional[str] = "Inspection confirmed and stamped."
+
+
+class TripGoodsAreaReachRequest(BaseModel):
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class TripGoodsAreaConfirmRequest(BaseModel):
+    confirmed_by: Optional[str] = "Driver"
+    notes: Optional[str] = None
+
+
+class TripReturnStartRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class TripStateMachineResponse(BaseModel):
+    trip_id: int
+    inspection_status: str
+    inspection_completed: bool
+    can_start_inspection: bool
+    goods_area_status: str
+    trip_started: bool
+    vehicle_travelling: bool
+    vehicle_reaches_goods_area: bool
+    goods_area_confirmed: bool
+    return_trip_enabled: bool
+    return_trip_started: bool
+    goods_area_reached_at: Optional[str] = None
+    goods_area_confirmed_at: Optional[str] = None
+    return_started_at: Optional[str] = None
+    message: Optional[str] = None
 
 
 
@@ -213,6 +302,8 @@ class TripLocationUpdate(BaseModel):
 
 class RequestCreate(BaseModel):
     id: str
+    trip_id: Optional[int] = None
+    trip_date: Optional[str] = None
     route: Optional[str] = ""
     vehicle: Optional[str] = ""
     owner: Optional[str] = ""
@@ -230,6 +321,26 @@ class RequestCreate(BaseModel):
     pickup_cargo_image_url: Optional[str] = None
     delivery_proof_image_url: Optional[str] = None
     lang: Optional[str] = "hi"
+    is_perishable: Optional[bool] = False
+    cargo_type: Optional[str] = "General"
+    ice_handling_required: Optional[bool] = False
+    current_temp_c: Optional[float] = None
+    loading_status: Optional[str] = "pending"
+    loaded_at: Optional[str] = None
+    loaded_by: Optional[str] = None
+    unloaded_at: Optional[str] = None
+    unloaded_by: Optional[str] = None
+    ice_boxes_count: Optional[int] = 0
+    cargo_category: Optional[str] = "Independent / General Cargo"
+    dedicated_sub_category: Optional[str] = None
+    is_dedicated: Optional[bool] = False
+    commodity: Optional[str] = None
+    seal_number: Optional[str] = None
+    seal_status: Optional[str] = None
+    verified_weight_kg: Optional[float] = None
+    weight_compliant: Optional[bool] = None
+    cooling_type: Optional[str] = None
+    target_temp_c: Optional[float] = None
 
 
 class RequestResponse(RequestCreate):
@@ -257,6 +368,16 @@ class RequestResponse(RequestCreate):
     reason: Optional[str] = None
     rating: Optional[int] = None
     feedback: Optional[str] = None
+    is_perishable: Optional[bool] = False
+    cargo_type: Optional[str] = "General"
+    ice_handling_required: Optional[bool] = False
+    current_temp_c: Optional[float] = None
+    loading_status: Optional[str] = "pending"
+    loaded_at: Optional[str] = None
+    loaded_by: Optional[str] = None
+    unloaded_at: Optional[str] = None
+    unloaded_by: Optional[str] = None
+    ice_boxes_count: Optional[int] = 0
 
     class Config:
         from_attributes = True
@@ -375,3 +496,150 @@ class RequestStatusUpdate(BaseModel):
     status: Optional[str] = None
     reason: Optional[str] = None
     lang: Optional[str] = "hi"
+
+
+# ==================================================
+# MULTI-STOP ROUTE OPTIMIZATION & PRIM'S MST SCHEMAS
+# ==================================================
+
+class WaypointStopSchema(BaseModel):
+    id: Optional[str] = None
+    name: str
+    lat: float
+    lng: float
+    type: str = "pickup"  # "origin", "pickup", "delivery", "destination"
+    weight_kg: float = 0.0
+    booking_id: Optional[str] = None
+
+
+class OptimizeRouteRequest(BaseModel):
+    trip_id: Optional[int] = None
+    vehicle_capacity_kg: Optional[float] = 1000.0
+    origin: WaypointStopSchema
+    destination: WaypointStopSchema
+    intermediate_stops: list[WaypointStopSchema] = []
+    max_detour_km: Optional[float] = 1.0
+
+
+class MstEdgeSchema(BaseModel):
+    from_node: str
+    to_node: str
+    distance_km: float
+
+
+class OrderedStopSchema(BaseModel):
+    sequence: int
+    id: Optional[str] = None
+    name: str
+    lat: float
+    lng: float
+    type: str
+    weight_kg: float
+    booking_id: Optional[str] = None
+    distance_from_prev_km: float = 0.0
+    duration_from_prev_mins: float = 0.0
+    cumulative_payload_kg: float = 0.0
+    is_capacity_exceeded: bool = False
+
+
+class OptimizeRouteResponse(BaseModel):
+    success: bool
+    algorithm: str = "KD-Tree Spatial Indexer + A* Goal-Directed Heuristic Optimizer"
+    execution_time_ms: float = 0.0
+    total_distance_km: float
+    total_duration_mins: float
+    ordered_stops: list[OrderedStopSchema]
+    mst_total_weight_km: float = 0.0
+    mst_edges: list[MstEdgeSchema] = []
+    max_payload_kg: float
+    is_valid_route: bool
+    notes: Optional[str] = None
+
+
+# ==================================================
+# LOGISTICS OPERATIONS & COLD-CHAIN SCHEMAS
+# ==================================================
+
+class LogisticsRegisterRequest(BaseModel):
+    name: str
+    phone_number: str
+    password: str
+    station: str
+    station_lat: Optional[float] = None
+    station_lng: Optional[float] = None
+    id_proof_doc: Optional[str] = None
+
+
+class LogisticsLoginCredentialsRequest(BaseModel):
+    phone_number: str
+    password: str
+
+
+class LogisticsLoginRequest(BaseModel):
+    name: Optional[str] = None
+    phone_number: str
+    password: Optional[str] = None
+    station: Optional[str] = "Nashik Agri-Corridor Hub"
+    station_lat: Optional[float] = None
+    station_lng: Optional[float] = None
+    id_proof_doc: Optional[str] = None
+
+
+class LogisticsProfileResponse(BaseModel):
+    id: int
+    name: str
+    phone_number: str
+    user_type: str = "logistics"
+    station: str
+    station_lat: Optional[float] = None
+    station_lng: Optional[float] = None
+    id_proof_doc: Optional[str] = None
+    id_proof_doc_url: Optional[str] = None
+    is_verified: bool = True
+    token: Optional[str] = None
+
+
+class LogisticsCheckpointCreate(BaseModel):
+    trip_id: int
+    checkpoint_name: str
+    officer_name: str
+    officer_phone: Optional[str] = None
+    cargo_seal_intact: bool = True
+    seal_number: Optional[str] = None
+    seal_status: Optional[str] = "Verified & Intact"
+    measured_weight_kg: Optional[float] = None
+    declared_weight_kg: Optional[float] = None
+    weight_discrepancy_kg: Optional[float] = None
+    weight_compliant: Optional[bool] = None
+    safety_parameters_status: Optional[str] = "Compliant"
+    cooling_status: Optional[str] = None
+    checkpoint_type: Optional[str] = "Highway Toll Plaza"
+    cargo_condition: str = "Good"
+    ice_status: str = "Adequate"
+    temp_celsius: Optional[float] = None
+    notes: Optional[str] = None
+    proof_image_url: Optional[str] = None
+    action_taken: Optional[str] = None
+
+
+class LoadingEventRequest(BaseModel):
+    request_id: str
+    officer_name: str
+    loading_type: str = "pickup"  # "pickup" (loading) or "drop" (unloading)
+    verified_weight_kg: Optional[float] = None
+    seal_number: Optional[str] = None
+    seal_status: Optional[str] = "Sealed & Intact"
+    ice_boxes_added: Optional[int] = 0
+    temp_celsius: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class IceHandlingRequest(BaseModel):
+    request_id: Optional[str] = None
+    trip_id: Optional[int] = None
+    officer_name: str
+    ice_kg_added: float = 5.0
+    ice_type: str = "Crushed Ice"  # "Crushed Ice", "Gel Packs", "Dry Ice"
+    temp_before: Optional[float] = None
+    temp_after: Optional[float] = None
+    notes: Optional[str] = None

@@ -20,6 +20,7 @@ from routers import drivers
 from routers import admins
 from routers import pricing
 from routers import notifications
+from routers import logistics
 
 
 # =========================================================
@@ -33,6 +34,7 @@ def auto_migrate():
     migrations = [
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS user_id INTEGER;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS driver_phone VARCHAR;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS price_per_kg INTEGER DEFAULT 0;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS total_driver_amount FLOAT DEFAULT 0.0;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS distance_km FLOAT DEFAULT 150.0;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS dest_lat FLOAT DEFAULT 0.0;",
@@ -43,6 +45,20 @@ def auto_migrate():
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS speed FLOAT DEFAULT 0.0;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS pickup_cargo_image_url VARCHAR;",
         "ALTER TABLE trips ADD COLUMN IF NOT EXISTS delivery_proof_image_url VARCHAR;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS preferred_lang VARCHAR DEFAULT 'hi';",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS return_trip_id INTEGER;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS is_return_leg BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS return_discount_pct INTEGER DEFAULT 0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS has_perishables BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS ice_handling_supported BOOLEAN DEFAULT TRUE;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_checkpoint VARCHAR;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS checkpoint_count INTEGER DEFAULT 0;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS inspection_status VARCHAR DEFAULT 'not_started';",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS inspection_completed BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS goods_area_status VARCHAR DEFAULT 'not_started';",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS goods_area_reached_at VARCHAR;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS goods_area_confirmed_at VARCHAR;",
+        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS return_started_at VARCHAR;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS goods_weight_kg INTEGER;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS distance_km FLOAT DEFAULT 150.0;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS kg_km FLOAT DEFAULT 0.0;",
@@ -61,9 +77,47 @@ def auto_migrate():
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS reason VARCHAR;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS rating INTEGER;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS feedback VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS trip_id INTEGER;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS trip_date VARCHAR;",
         "ALTER TABLE requests ADD COLUMN IF NOT EXISTS preferred_lang VARCHAR DEFAULT 'hi';",
-        "ALTER TABLE trips ADD COLUMN IF NOT EXISTS preferred_lang VARCHAR DEFAULT 'hi';",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS is_perishable BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS cargo_type VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS ice_handling_required BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS current_temp_c FLOAT;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS loading_status VARCHAR DEFAULT 'pending';",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS loaded_at VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS loaded_by VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS unloaded_at VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS unloaded_by VARCHAR;",
+        "ALTER TABLE requests ADD COLUMN IF NOT EXISTS ice_boxes_count INTEGER DEFAULT 0;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS user_type VARCHAR;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS full_name VARCHAR;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS gender VARCHAR;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS aadhaar_doc VARCHAR;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS license_doc VARCHAR;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS id_proof_doc VARCHAR;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS assigned_station VARCHAR;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS station_lat FLOAT DEFAULT NULL;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS station_lng FLOAT DEFAULT NULL;",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;",
         "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS preferred_lang VARCHAR DEFAULT 'hi';",
+        """
+        CREATE TABLE IF NOT EXISTS logistics_checkpoints (
+            id SERIAL PRIMARY KEY,
+            trip_id INTEGER REFERENCES trips(id),
+            checkpoint_name VARCHAR,
+            officer_name VARCHAR,
+            officer_phone VARCHAR,
+            timestamp VARCHAR,
+            cargo_seal_intact BOOLEAN DEFAULT TRUE,
+            cargo_condition VARCHAR DEFAULT 'Good',
+            ice_status VARCHAR DEFAULT 'Adequate',
+            temp_celsius FLOAT,
+            notes VARCHAR,
+            proof_image_url VARCHAR,
+            action_taken VARCHAR
+        );
+        """
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -447,4 +501,9 @@ app.include_router(
 # Automated WhatsApp & SMS Dispatch Alerts
 app.include_router(
     notifications.router
+)
+
+# Ground Logistics & Cold-Chain Operations
+app.include_router(
+    logistics.router
 )

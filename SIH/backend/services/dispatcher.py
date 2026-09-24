@@ -155,7 +155,7 @@ def send_local_gateway_whatsapp(phone: str, message: str, media_path: Optional[s
             payload["media_path"] = os.path.abspath(clean_path)
 
     try:
-        res = requests.post(url, json=payload, timeout=12)
+        res = requests.post(url, json=payload, timeout=1.5)
         data = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
         logger.info(f"[LocalGateway] Sent to {target} | Status: {res.status_code} | Resp: {data}")
         return res.status_code == 200 and data.get("success") is True

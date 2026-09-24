@@ -12,6 +12,7 @@ import {
 import ProfileSetupPage from './ProfileSetupPage';
 import LoginPage from './LoginPage';
 import { Home, FindVehicles, OfferTrip } from './pages';
+import LogisticsHub from './LogisticsHub';
 import Maps from './Maps';
 
 import {
@@ -120,6 +121,10 @@ const NAV = [
   {
     to: '/offer',
     key: 'offer'
+  },
+  {
+    to: '/logistics',
+    key: 'logistics'
   }
 ]
 
@@ -860,6 +865,9 @@ function Shell() {
 
           {/* SEPARATE FULL MAP PAGE */}
           <Route path="/maps" element={<Maps />} />
+
+          {/* LOGISTICS OPERATIONS & COLD-CHAIN HUB */}
+          <Route path="/logistics" element={<LogisticsHub />} />
 
           {/* FALLBACK */}
           <Route path="*" element={<Home />} />

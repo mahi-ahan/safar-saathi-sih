@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Krishi-Anna | Admin</title>
+
+    <style>
+
+        body {
+            margin: 0;
+
+            font-family: Arial, sans-serif;
+
+            background: #f4f4f4;
+        }
+
+        header {
+            background: #212121;
+
+            color: white;
+
+            padding: 20px 40px;
+
+            display: flex;
+
+            justify-content: space-between;
+
+            align-items: center;
+        }
+
+        .container {
+            padding: 40px;
+        }
+
+        .cards {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(220px, 1fr)
+                );
+
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+
+            padding: 25px;
+
+            border-radius: 12px;
+
+            box-shadow:
+                0 5px 15px
+                rgba(0, 0, 0, 0.08);
+        }
+
+        .card h2 {
+            color: #212121;
+        }
+
+        .card button {
+            padding: 10px 15px;
+
+            border: none;
+
+            border-radius: 6px;
+
+            background: #212121;
+
+            color: white;
+
+            cursor: pointer;
+        }
+
+        .logout {
+            background: #c62828;
+
+            border: none;
+
+            padding: 10px 18px;
+
+            border-radius: 7px;
+
+            color: white;
+
+            cursor: pointer;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<header>
+
+    <h1>⚙️ Admin Dashboard</h1>
+
+    <button
+        class="logout"
+        onclick="logout()"
+    >
+        Logout
+    </button>
+
+</header>
+
+
+<div class="container">
+
+    <h2>
+        Welcome, Administrator
+    </h2>
+
+
+    <div class="cards">
+
+
+        <div class="card">
+
+            <h2>👥 Users</h2>
+
+            <p>
+                Manage registered users.
+            </p>
+
+            <button
+                onclick="loadUsers()"
+            >
+                View Users
+            </button>
+
+        </div>
+
+
+        <div class="card">
+
+            <h2>🚚 Drivers</h2>
+
+            <p>
+                Manage drivers.
+            </p>
+
+            <button
+                onclick="loadDrivers()"
+            >
+                View Drivers
+            </button>
+
+        </div>
+
+
+        <div class="card">
+
+            <h2>🛣️ Trips</h2>
+
+            <p>
+                Manage all transport trips.
+            </p>
+
+            <button
+                onclick="loadTrips()"
+            >
+                View Trips
+            </button>
+
+        </div>
+
+
+        <div class="card">
+
+            <h2>📦 Requests</h2>
+
+            <p>
+                Monitor transport requests.
+            </p>
+
+            <button
+                onclick="loadRequests()"
+            >
+                View Requests
+            </button>
+
+        </div>
+
+
+    </div>
+
+
+    <div id="result"></div>
+
+</div>
+
+
+<script>
+
+    // =========================================
+    // CHECK LOGIN
+    // =========================================
+
+    const token =
+        localStorage.getItem(
+            "access_token"
+        );
+
+    const role =
+        localStorage.getItem(
+            "role"
+        );
+
+
+    if (!token || role !== "admin") {
+
+        window.location.href =
+            "/login";
+
+    }
+
+
+    // =========================================
+    // API HELPER
+    // =========================================
+
+    async function apiRequest(url) {
+
+        const response =
+            await fetch(
+                url,
+                {
+                    headers: {
+                        "Authorization":
+                            `Bearer ${token}`
+                    }
+                }
+            );
+
+
+        if (
+            response.status === 401 ||
+            response.status === 403
+        ) {
+
+            logout();
+
+            return null;
+
+        }
+
+
+        return await response.json();
+
+    }
+
+
+    // =========================================
+    // USERS
+    // =========================================
+
+    async function loadUsers() {
+
+        const data =
+            await apiRequest(
+                "/api/admin/users"
+            );
+
+
+        if (!data) {
+            return;
+        }
+
+
+        document.getElementById(
+            "result"
+        ).innerHTML =
+            "<pre>" +
+            JSON.stringify(
+                data,
+                null,
+                2
+            ) +
+            "</pre>";
+
+    }
+
+
+    // =========================================
+    // DRIVERS
+    // =========================================
+
+    async function loadDrivers() {
+
+        const data =
+            await apiRequest(
+                "/api/admin/drivers"
+            );
+
+
+        if (!data) {
+            return;
+        }
+
+
+        document.getElementById(
+            "result"
+        ).innerHTML =
+            "<pre>" +
+            JSON.stringify(
+                data,
+                null,
+                2
+            ) +
+            "</pre>";
+
+    }
+
+
+    // =========================================
+    // TRIPS
+    // =========================================
+
+    async function loadTrips() {
+
+        const data =
+            await apiRequest(
+                "/api/admin/trips"
+            );
+
+
+        if (!data) {
+            return;
+        }
+
+
+        document.getElementById(
+            "result"
+        ).innerHTML =
+            "<pre>" +
+            JSON.stringify(
+                data,
+                null,
+                2
+            ) +
+            "</pre>";
+
+    }
+
+
+    // =========================================
+    // REQUESTS
+    // =========================================
+
+    async function loadRequests() {
+
+        const data =
+            await apiRequest(
+                "/api/admin/requests"
+            );
+
+
+        if (!data) {
+            return;
+        }
+
+
+        document.getElementById(
+            "result"
+        ).innerHTML =
+            "<pre>" +
+            JSON.stringify(
+                data,
+                null,
+                2
+            ) +
+            "</pre>";
+
+    }
+
+
+    // =========================================
+    // LOGOUT
+    // =========================================
+
+    function logout() {
+
+        localStorage.removeItem(
+            "access_token"
+        );
+
+        localStorage.removeItem(
+            "role"
+        );
+
+        window.location.href =
+            "/login";
+
+    }
+
+</script>
+
+</body>
+
+</html>

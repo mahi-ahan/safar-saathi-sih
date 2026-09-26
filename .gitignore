@@ -1,0 +1,50 @@
+# Virtual Environments
+.venv/
+**/.venv/
+env/
+venv/
+ENV/
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+build/
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Databases & local storage
+*.sqlite
+*.sqlite3
+*.db
+uploads/
+**/uploads/
+static/uploads/
+**/static/uploads/
+
+# WhatsApp Web Session
+.wwebjs_auth/
+**/.wwebjs_auth/
+.wwebjs_cache/
+**/.wwebjs_cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,2635 @@
+import React, {
+  useEffect,
+  useRef,
+  useState
+} from 'react'
+
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import { geocodeIndianLocation } from './ui'
+import {
+  INSPECTION_STATES,
+  GOODS_AREA_STATES,
+  getTripStateMachine,
+  canStartInspection,
+  canCompleteInspection,
+  canConfirmGoodsArea,
+  canStartReturnTrip,
+  actionStartInspection,
+  actionCompleteInspection,
+  actionReachGoodsArea,
+  actionConfirmGoodsArea,
+  actionStartReturnTrip
+} from './tripStateMachine'
+
+
+/* =========================================================
+   LIVE MAP TRUCK DATA
+========================================================= */
+
+const initialTrucks = [
+  {
+    id: 1,
+    name: 'RF-1024',
+    driver: 'Ramesh Kumar',
+    start: [20.2961, 85.8245],
+    destinationPoint: [20.4625, 85.8828],
+    status: 'Moving',
+    load: 'Rice',
+    destination: 'Cuttack',
+    speed: 42,
+    routeChanged: true,
+    changeReason:
+      'Road blockage reported on the AI suggested route'
+  },
+  {
+    id: 2,
+    name: 'RF-2048',
+    driver: 'Suresh Patel',
+    start: [20.4625, 85.8828],
+    destinationPoint: [20.2961, 85.8245],
+    status: 'Moving',
+    load: 'Vegetables',
+    destination: 'Bhubaneswar',
+    speed: 36,
+    routeChanged: false,
+    changeReason: ''
+  },
+  {
+    id: 3,
+    name: 'RF-3096',
+    driver: 'Amit Singh',
+    start: [20.37, 85.86],
+    destinationPoint: [20.41, 85.88],
+    status: 'Stopped',
+    load: 'Potatoes',
+    destination: 'Collection Hub',
+    speed: 0,
+    routeChanged: false,
+    changeReason: ''
+  },
+  {
+    id: 4,
+    name: 'RF-4012',
+    driver: 'Rajesh Das',
+    start: [20.28, 85.8],
+    destinationPoint: [20.44, 85.88],
+    status: 'Moving',
+    load: 'Grains',
+    destination: 'Cuttack',
+    speed: 30,
+    routeChanged: true,
+    changeReason:
+      'Heavy traffic detected on the recommended route'
+  },
+  {
+    id: 5,
+    name: 'RF-5021',
+    driver: 'Vikash Sharma',
+    start: [20.25, 85.78],
+    destinationPoint: [20.35, 85.84],
+    status: 'Offline',
+    load: 'Fruits',
+    destination: 'Bhubaneswar',
+    speed: 0,
+    routeChanged: false,
+    changeReason: ''
+  }
+]
+
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function getStatusColor(status) {
+  if (status === 'Moving') return '#22c55e'
+  if (status === 'Stopped') return '#f59e0b'
+
+  return '#6b7280'
+}
+
+
+function getStatusDot(status) {
+  if (status === 'Moving') return '🟢'
+  if (status === 'Stopped') return '🟠'
+
+  return '⚪'
+}
+
+
+function formatDistance(meters) {
+  if (!meters) return '—'
+
+  return `${(meters / 1000).toFixed(1)} km`
+}
+
+
+function formatDuration(seconds) {
+  if (!seconds) return '—'
+
+  const minutes = Math.round(seconds / 60)
+
+  if (minutes < 60) {
+    return `${minutes} min`
+  }
+
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+
+  return `${hours}h ${remainingMinutes}m`
+}
+
+
+function getBearing(start, end) {
+  const lat1 = (start[0] * Math.PI) / 180
+  const lat2 = (end[0] * Math.PI) / 180
+
+  const deltaLng =
+    ((end[1] - start[1]) * Math.PI) / 180
+
+  const y =
+    Math.sin(deltaLng) * Math.cos(lat2)
+
+  const x =
+    Math.cos(lat1) *
+      Math.sin(lat2) -
+    Math.sin(lat1) *
+      Math.cos(lat2) *
+      Math.cos(deltaLng)
+
+  return (
+    ((Math.atan2(y, x) * 180) /
+      Math.PI +
+      360) %
+    360
+  )
+}
+
+
+/* =========================================================
+   ROAD ROUTE
+========================================================= */
+
+async function getRoadRoute(
+  start,
+  end,
+  alternatives = false
+) {
+  const coordinates =
+    `${start[1]},${start[0]};${end[1]},${end[0]}`
+
+  const url =
+    `https://router.project-osrm.org/route/v1/driving/${coordinates}` +
+    `?overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`
+
+  const response = await fetch(url)
+
+  if (!response.ok) {
+    throw new Error(
+      'Could not load road route'
+    )
+  }
+
+  const data = await response.json()
+
+  if (
+    data.code !== 'Ok' ||
+    !data.routes?.length
+  ) {
+    throw new Error(
+      'No road route found'
+    )
+  }
+
+  return data.routes.map(route => ({
+    points:
+      route.geometry.coordinates.map(
+        ([lng, lat]) => [lat, lng]
+      ),
+
+    distance: route.distance,
+
+    duration: route.duration,
+
+    steps: route.legs?.flatMap(l => l.steps || []).map(s => ({
+      instruction: s.maneuver?.type + (s.name ? ` on ${s.name}` : ''),
+      distance: s.distance,
+      duration: s.duration
+    })) || []
+  }))
+}
+
+
+/* =========================================================
+   TRUCK ICON
+========================================================= */
+
+function getTruckIcon(status, has_perishables = false) {
+  return L.divIcon({
+    className: 'custom-truck-marker',
+
+    html: `
+      <div
+        style="
+          position:relative;
+          width:44px;
+          height:44px;
+          background:${getStatusColor(status)};
+          border:3px solid white;
+          border-radius:50%;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          box-shadow:0 3px 10px rgba(0,0,0,.35);
+          cursor:pointer;
+          pointer-events:auto;
+        "
+      >
+        <div
+          class="truck-icon"
+          style="
+            font-size:22px;
+            transform:rotate(0deg);
+            transform-origin:center;
+            transition:transform .15s linear;
+            pointer-events:none;
+          "
+        >
+          🚚
+        </div>
+        ${has_perishables ? `
+          <div
+            title="Cold-Chain Perishables (Ice Replenished)"
+            style="
+              position:absolute;
+              top:-5px;
+              right:-5px;
+              background:#0284c7;
+              border:2px solid white;
+              border-radius:50%;
+              width:20px;
+              height:20px;
+              font-size:11px;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              box-shadow:0 2px 4px rgba(0,0,0,0.3);
+            "
+          >
+            ❄️
+          </div>
+        ` : ''}
+      </div>
+    `,
+
+    iconSize: [44, 44],
+
+    iconAnchor: [22, 22]
+  })
+}
+
+
+/* =========================================================
+   MAIN COMPONENT
+========================================================= */
+
+function Maps({
+  mode = 'live',
+  trips = [],
+  selectedTripId = null,
+  onTripSelect = null,
+  activeRequest = null,
+  focusMode = null
+}) {
+  const mapRef = useRef(null)
+  const leafletMapRef = useRef(null)
+  const markersRef = useRef({})
+  const routeLayersRef = useRef({})
+  const activeRouteLayersRef = useRef([])
+  const activeRouteMarkersRef = useRef([])
+  const trucksRef = useRef([])
+  const animationRef = useRef(null)
+  const lastTimeRef = useRef(null)
+  const selectedTruckIdRef = useRef(null)
+
+  const [routeInfo, setRouteInfo] = useState(null)
+  const [selectedTruck, setSelectedTruck] = useState(null)
+  const [trucks, setTrucks] = useState([])
+
+  const [loading, setLoading] =
+    useState(true)
+
+  const [routeError, setRouteError] =
+    useState(false)
+
+  const [followTruck, setFollowTruck] =
+    useState(false)
+
+  const [sidebarOpen, setSidebarOpen] =
+    useState(true)
+  const [, setSmVersion] = useState(0)
+
+  const handleStartInspection = async (truckId) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const updated = await actionStartInspection(truckId, token);
+      const target = trucksRef.current.find(t => t.id === truckId);
+      if (target) {
+        target.inspection_status = updated.inspection_status;
+        target.inspection_completed = updated.inspection_completed;
+      }
+      setSelectedTruck(prev => prev && prev.id === truckId ? { ...prev, ...updated } : prev);
+      setSmVersion(v => v + 1);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleConfirmInspection = async (truckId) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const updated = await actionCompleteInspection(truckId, {
+        seal_number: `SEAL-${truckId}-${Date.now() % 10000}`,
+        seal_status: 'verified_intact',
+        notes: 'Official ground checkpoint inspection verified & stamped.'
+      }, token);
+      const target = trucksRef.current.find(t => t.id === truckId);
+      if (target) {
+        target.inspection_status = updated.inspection_status;
+        target.inspection_completed = updated.inspection_completed;
+        target.checkpoint_count = (target.checkpoint_count || 0) + 1;
+        target.current_checkpoint = `${target.destination} NH Inspection Station`;
+      }
+      setSelectedTruck(prev => prev && prev.id === truckId ? {
+        ...prev,
+        ...updated,
+        checkpoint_count: (prev.checkpoint_count || 0) + 1,
+        current_checkpoint: `${prev.destination} NH Inspection Station`
+      } : prev);
+      setSmVersion(v => v + 1);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleConfirmGoodsArea = async (truckId) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const updated = await actionConfirmGoodsArea(truckId, token);
+      const target = trucksRef.current.find(t => t.id === truckId);
+      if (target) {
+        target.goods_area_status = updated.goods_area_status;
+        target.goods_area_confirmed_at = updated.goods_area_confirmed_at;
+      }
+      setSelectedTruck(prev => prev && prev.id === truckId ? { ...prev, ...updated } : prev);
+      setSmVersion(v => v + 1);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleStartReturnTrip = async (truckId) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      const updated = await actionStartReturnTrip(truckId, token);
+      const target = trucksRef.current.find(t => t.id === truckId);
+      if (target) {
+        target.goods_area_status = updated.goods_area_status;
+        target.return_started_at = updated.return_started_at;
+        target.direction = -1;
+        target.status = 'Moving';
+        target.speed = 38;
+      }
+      setSelectedTruck(prev => prev && prev.id === truckId ? {
+        ...prev,
+        ...updated,
+        direction: -1,
+        status: 'Moving',
+        speed: 38
+      } : prev);
+      setSmVersion(v => v + 1);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+
+  /* =====================================================
+     FIND VEHICLE MODE
+  ===================================================== */
+
+  useEffect(() => {
+
+    if (mode !== 'findVehicle') return
+
+    const map = L.map(mapRef.current, {
+      zoomControl: false
+    }).setView(
+      [20.5937, 78.9629],
+      5
+    )
+
+    leafletMapRef.current = map
+
+
+    L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {
+        attribution:
+          '&copy; OpenStreetMap contributors'
+      }
+    ).addTo(map)
+
+
+    L.control.zoom({
+      position: 'bottomright'
+    }).addTo(map)
+
+    setLoading(false)
+
+    return () => {
+      if (leafletMapRef.current) {
+        leafletMapRef.current.remove()
+        leafletMapRef.current = null
+      }
+    }
+
+  }, [mode])
+
+
+  /* =====================================================
+     UPDATE FIND VEHICLE INDEPENDENT MARKERS
+  ===================================================== */
+
+  useEffect(() => {
+
+    if (
+      mode !== 'findVehicle' ||
+      !leafletMapRef.current
+    ) {
+      return
+    }
+
+    const map = leafletMapRef.current
+
+    Object.values(markersRef.current).forEach(marker => {
+      map.removeLayer(marker)
+    })
+
+    markersRef.current = {}
+
+    trips.forEach(trip => {
+      if (
+        trip.lat === undefined ||
+        trip.lng === undefined ||
+        (trip.lat === 0 && trip.lng === 0) ||
+        trip.status === 'cancelled_by_driver' ||
+        trip.status === 'cancelled' ||
+        trip.status === 'completed'
+      ) {
+        return
+      }
+
+      const isLive = trip.status === 'in_transit' || trip.is_live;
+      const truckIcon = isLive ? getTruckIcon('Moving', trip.has_perishables) : getTruckIcon('Stopped', trip.has_perishables);
+
+      // 1. Independent Live Driver / Vehicle Location Marker
+      const driverMarker = L.marker(
+        [trip.lat, trip.lng],
+        { icon: truckIcon }
+      )
+        .addTo(map)
+        .bindPopup(`
+          <div style="min-width:210px;font-family:Arial,sans-serif;padding:4px;">
+            ${isLive ? `<div style="background:#22c55e;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">🔴 LIVE IN-TRANSIT</div><br/>` : `<div style="background:#4b5563;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">🚛 SCHEDULED VEHICLE</div><br/>`}
+            <b style="font-size:14px;color:#1F3D2B;">
+              🚚 ${trip.from || trip.from_loc} → ${trip.to || trip.to_loc}
+            </b>
+            <br/>
+            <span style="font-size:12px;color:#4b5563;">👤 Owner: ${trip.owner}</span>
+            <br/>
+            <span style="font-size:12px;color:#4b5563;">🚛 Vehicle: ${trip.vehicle}</span>
+            <br/>
+            <span style="font-size:12px;color:#166534;font-weight:600;">Status: ${(trip.status || 'scheduled').toUpperCase()}</span>
+            ${trip.has_perishables ? `<br/><span style="font-size:11px;color:#0284c7;font-weight:bold;background:#f0f9ff;padding:2px 6px;border-radius:6px;border:1px solid #bae6fd;display:inline-block;margin-top:4px;">❄️ Cold-Chain Perishables</span>` : ''}
+            ${trip.current_checkpoint ? `<br/><span style="font-size:11px;color:#92400e;font-weight:bold;display:inline-block;margin-top:2px;">🛑 Checkpoint: ${trip.current_checkpoint}</span>` : ''}
+          </div>
+        `);
+
+      driverMarker.on('click', () => {
+        if (onTripSelect) onTripSelect(trip);
+      });
+      markersRef.current[`driver_${trip.id}`] = driverMarker;
+
+      // 2. Independent Pickup Location Marker
+      const pLat = trip.pickup_lat || trip.lat;
+      const pLng = trip.pickup_lng || trip.lng;
+      if (pLat && pLng) {
+        const pickupIcon = L.divIcon({
+          className: 'pickup-point-icon',
+          html: `<div style="background:#f59e0b;color:white;width:28px;height:28px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:12px;">📦</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const pickupMarker = L.marker(
+          [pLat, pLng],
+          { icon: pickupIcon }
+        )
+          .addTo(map)
+          .bindPopup(`
+            <div style="min-width:200px;font-family:Arial,sans-serif;padding:4px;">
+              <div style="background:#f59e0b;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">📦 PICKUP LOCATION</div><br/>
+              <b style="font-size:13px;color:#1F3D2B;">${trip.pickup || trip.from || 'Pickup Point'}</b><br/>
+              <span style="font-size:12px;color:#4b5563;">🚛 Vehicle: ${trip.vehicle} (${trip.owner})</span><br/>
+              <span style="font-size:12px;color:#166534;font-weight:600;">Available: ${trip.available_space_kg ?? (trip.total_kg || 1000)} kg</span>
+            </div>
+          `);
+
+        pickupMarker.on('click', () => {
+          if (onTripSelect) onTripSelect(trip);
+        });
+        markersRef.current[`pickup_${trip.id}`] = pickupMarker;
+      }
+    });
+
+  }, [trips, mode, onTripSelect])
+
+
+  /* =====================================================
+     SMOOTH TARGET FOCUSING (PICKUP vs LIVE DRIVER)
+  ===================================================== */
+
+  useEffect(() => {
+    if (mode !== 'findVehicle' || !leafletMapRef.current || !focusMode) return;
+    const map = leafletMapRef.current;
+    const { type, lat, lng, tripId } = focusMode;
+    if (!lat || !lng) return;
+
+    map.flyTo([lat, lng], type === 'live_driver' ? 15 : 14, {
+      animate: true,
+      duration: 1.2
+    });
+
+    const targetMarkerKey = type === 'live_driver' ? `driver_${tripId}` : `pickup_${tripId}`;
+    const marker = markersRef.current[targetMarkerKey] || markersRef.current[tripId];
+    if (marker) {
+      setTimeout(() => {
+        try {
+          marker.openPopup();
+        } catch (e) {}
+      }, 500);
+    }
+  }, [focusMode, mode]);
+
+
+
+  /* =====================================================
+     GOOGLE MAPS STYLE ROUTE RENDERER FOR SELECTED VEHICLE
+  ===================================================== */
+
+  useEffect(() => {
+    if (mode !== 'findVehicle' || !leafletMapRef.current) return;
+    const map = leafletMapRef.current;
+
+    // Clean up previous route layers & markers
+    activeRouteLayersRef.current.forEach(layer => map.removeLayer(layer));
+    activeRouteLayersRef.current = [];
+    activeRouteMarkersRef.current.forEach(marker => map.removeLayer(marker));
+    activeRouteMarkersRef.current = [];
+
+    if (!selectedTripId) {
+      setRouteInfo(null);
+      return;
+    }
+
+    const trip = trips.find(item => item.id === selectedTripId);
+    if (!trip || trip.status === 'cancelled_by_driver' || trip.status === 'cancelled') {
+      setRouteInfo(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function drawTripRoute() {
+      try {
+        const startLat = trip.lat;
+        const startLng = trip.lng;
+        if (!startLat || !startLng) return;
+
+        let destLat = trip.destLat;
+        let destLng = trip.destLng;
+
+
+        if (!destLat || !destLng) {
+          const destResolved = await geocodeIndianLocation(trip.to || trip.to_loc);
+          if (destResolved) {
+            destLat = destResolved.lat;
+            destLng = destResolved.lng;
+          } else {
+            destLat = startLat + 0.8;
+            destLng = startLng + 0.8;
+          }
+        }
+
+        const startCoords = [startLat, startLng];
+        const destCoords = [destLat, destLng];
+        const routes = await getRoadRoute(startCoords, destCoords, false);
+        if (!isMounted || !routes || routes.length === 0) return;
+
+        const bestRoute = routes[0];
+        const points = bestRoute.points;
+
+        // 0. Visual 1 km Route Corridor Buffer Band (Green glowing buffer)
+        const corridorBuffer = L.polyline(points, {
+          color: '#10b981',
+          weight: 26,
+          opacity: 0.22,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+
+        // 1. Google Maps Outer Dark Blue Glow Casing Polyline
+        const casingPolyline = L.polyline(points, {
+          color: '#0369a1',
+          weight: 9,
+          opacity: 0.85,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+
+        // 2. Google Maps Inner Vibrant Sky Blue Driving Route Line
+        const corePolyline = L.polyline(points, {
+          color: '#38bdf8',
+          weight: 5,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+
+        activeRouteLayersRef.current = [corridorBuffer, casingPolyline, corePolyline];
+
+        // 3. Start Marker (🟢 Driver Origin)
+        const startIcon = L.divIcon({
+          className: 'route-start-icon',
+          html: `<div style="background:#16a34a;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;">🟢</div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        });
+        const startMarker = L.marker(startCoords, { icon: startIcon })
+          .addTo(map)
+          .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🟢 Origin:<br/><span style="font-weight:normal;color:#4b5563;">${trip.from || trip.from_loc}</span></div>`);
+
+        // 4. Destination Marker (🏁 Driver Destination)
+        const destIcon = L.divIcon({
+          className: 'route-dest-icon',
+          html: `<div style="background:#dc2626;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;">🏁</div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        });
+        const destMarker = L.marker(destCoords, { icon: destIcon })
+          .addTo(map)
+          .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🏁 Destination:<br/><span style="font-weight:normal;color:#4b5563;">${trip.to || trip.to_loc}</span></div>`);
+
+        const newMarkers = [startMarker, destMarker];
+
+        // 5. Sender Custom Pickup Pin (📦 Pickup)
+        if (activeRequest?.pickupCoords?.lat && activeRequest?.pickupCoords?.lng) {
+          const pickupIcon = L.divIcon({
+            className: 'sender-pickup-icon',
+            html: `<div style="background:#f59e0b;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;">📦</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          });
+          const pickupMarker = L.marker([activeRequest.pickupCoords.lat, activeRequest.pickupCoords.lng], { icon: pickupIcon })
+            .addTo(map)
+            .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">📦 Your Pickup:<br/><span style="font-weight:normal;color:#4b5563;">${activeRequest.pickupLocation}</span></div>`);
+          newMarkers.push(pickupMarker);
+        }
+
+        // 6. Sender Custom Delivery Pin (🎯 Delivery)
+        if (activeRequest?.deliveryCoords?.lat && activeRequest?.deliveryCoords?.lng) {
+          const deliveryIcon = L.divIcon({
+            className: 'sender-delivery-icon',
+            html: `<div style="background:#8b5cf6;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;">🎯</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          });
+          const deliveryMarker = L.marker([activeRequest.deliveryCoords.lat, activeRequest.deliveryCoords.lng], { icon: deliveryIcon })
+            .addTo(map)
+            .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🎯 Your Delivery:<br/><span style="font-weight:normal;color:#4b5563;">${activeRequest.deliveryLocation}</span></div>`);
+          newMarkers.push(deliveryMarker);
+        }
+
+        activeRouteMarkersRef.current = newMarkers;
+
+        // 7. Google Maps style Bounds Fitting
+        const bounds = L.latLngBounds(points);
+        if (activeRequest?.pickupCoords?.lat) bounds.extend([activeRequest.pickupCoords.lat, activeRequest.pickupCoords.lng]);
+        if (activeRequest?.deliveryCoords?.lat) bounds.extend([activeRequest.deliveryCoords.lat, activeRequest.deliveryCoords.lng]);
+        map.fitBounds(bounds, { padding: [35, 35], maxZoom: 13, animate: true, duration: 1 });
+
+        setRouteInfo({
+          from: trip.from || trip.from_loc,
+          to: trip.to || trip.to_loc,
+          distanceKm: (bestRoute.distance / 1000).toFixed(1),
+          durationText: formatDuration(Math.round(bestRoute.duration / 60))
+        });
+
+      } catch (err) {
+        console.error("Failed to load and draw road route", err);
+      }
+    }
+
+    drawTripRoute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedTripId, activeRequest, mode, trips])
+
+
+  /* =====================================================
+     LIVE MAP SETUP
+  ===================================================== */
+
+  useEffect(() => {
+
+    if (mode !== 'live') return
+
+    let mounted = true
+
+
+    async function setupMap() {
+      const map = L.map(mapRef.current, { zoomControl: false }).setView([20.37, 85.84], 10);
+      leafletMapRef.current = map;
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      try {
+        // 1. Fetch real trips from backend
+        let apiTrips = [];
+        try {
+          const res = await fetch("http://localhost:8000/api/trips");
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+              apiTrips = data.filter(t => t.status !== 'cancelled' && t.status !== 'cancelled_by_driver');
+            }
+          }
+        } catch (e) {
+          console.warn("Could not fetch backend trips for map", e);
+        }
+
+        // 2. Map database trips to radar trucks
+        const dbTrucks = apiTrips.map(t => {
+          const isLive = t.status === 'in_transit' || Boolean(t.is_live);
+          const startLat = Number(t.pickup_lat || t.lat || 20.2961);
+          const startLng = Number(t.pickup_lng || t.lng || 85.8245);
+          const destLat = Number(t.dest_lat || (startLat + 0.25));
+          const destLng = Number(t.dest_lng || (startLng + 0.15));
+
+          return {
+            id: t.id,
+            name: `RF-${1000 + t.id}`,
+            driver: t.owner || 'Verified Transporter',
+            start: [startLat, startLng],
+            destinationPoint: [destLat, destLng],
+            status: isLive ? 'Moving' : t.status === 'completed' ? 'Delivered' : 'Scheduled',
+            load: `${t.vehicle || 'Mini-Truck'} (${t.total_booked_kg || t.total_kg || 0} kg)`,
+            destination: t.to_loc?.split(',')[0] || t.to || 'Destination',
+            from: t.from_loc?.split(',')[0] || t.from || 'Origin',
+            speed: isLive ? (t.speed || 38) : 0,
+            is_return_leg: Boolean(t.is_return_leg),
+            has_perishables: Boolean(t.has_perishables),
+            ice_handling_supported: Boolean(t.ice_handling_supported),
+            current_checkpoint: t.current_checkpoint || null,
+            checkpoint_count: t.checkpoint_count || (t.checkpoints ? t.checkpoints.length : 0),
+            max_inspections: t.max_inspections || 1,
+            checkpoints: t.checkpoints || [],
+            routeChanged: false,
+            changeReason: ''
+          };
+        });
+
+        // 3. Combine with fallback trucks if database has few trips
+        const candidateTrucks = dbTrucks.length > 0 ? dbTrucks : initialTrucks;
+
+        const loadedTrucks = await Promise.all(
+          candidateTrucks.map(async truck => {
+            try {
+              const routes = await getRoadRoute(truck.start, truck.destinationPoint, true);
+              const aiRoute = routes[0];
+              const actualRoute = truck.routeChanged && routes[1] ? routes[1] : aiRoute;
+
+              const sm = getTripStateMachine(truck.id, truck);
+              const isReturnActive = sm.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED;
+
+              return {
+                ...truck,
+                aiRoute: aiRoute.points,
+                actualRoute: actualRoute.points,
+                position: isReturnActive ? [...actualRoute.points[actualRoute.points.length - 1]] : [...actualRoute.points[0]],
+                routeIndex: isReturnActive ? (actualRoute.points.length - 1) : 0,
+                direction: isReturnActive ? -1 : 1,
+                inspection_status: sm.inspection_status,
+                inspection_completed: sm.inspection_completed,
+                goods_area_status: sm.goods_area_status,
+                goods_area_reached_at: sm.goods_area_reached_at,
+                goods_area_confirmed_at: sm.goods_area_confirmed_at,
+                return_started_at: sm.return_started_at,
+                aiDistance: aiRoute.distance,
+                aiDuration: aiRoute.duration,
+                actualDistance: actualRoute.distance,
+                actualDuration: actualRoute.duration
+              };
+            } catch (err) {
+              // Haversine fallback polyline
+              const fallbackPoints = [truck.start, truck.destinationPoint];
+              const sm = getTripStateMachine(truck.id, truck);
+              const isReturnActive = sm.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED;
+              return {
+                ...truck,
+                aiRoute: fallbackPoints,
+                actualRoute: fallbackPoints,
+                position: isReturnActive ? [...fallbackPoints[1]] : [...truck.start],
+                routeIndex: isReturnActive ? 1 : 0,
+                direction: isReturnActive ? -1 : 1,
+                inspection_status: sm.inspection_status,
+                inspection_completed: sm.inspection_completed,
+                goods_area_status: sm.goods_area_status,
+                goods_area_reached_at: sm.goods_area_reached_at,
+                goods_area_confirmed_at: sm.goods_area_confirmed_at,
+                return_started_at: sm.return_started_at,
+                aiDistance: 45000,
+                aiDuration: 3600,
+                actualDistance: 45000,
+                actualDuration: 3600
+              };
+            }
+          })
+        );
+
+        if (!mounted) return;
+
+        trucksRef.current = loadedTrucks;
+        setTrucks([...loadedTrucks]);
+
+        // Auto-fit map to show all vehicles
+        if (loadedTrucks.length > 0) {
+          const allCoords = loadedTrucks.map(t => t.position);
+          const bounds = L.latLngBounds(allCoords);
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+        }
+
+        loadedTrucks.forEach(truck => {
+          const aiLine = L.polyline(truck.aiRoute, {
+            color: '#22c55e',
+            weight: 4,
+            opacity: 0.55,
+            dashArray: '10 10'
+          });
+
+          const actualLine = L.polyline(truck.actualRoute, {
+            color: '#2563eb',
+            weight: 4,
+            opacity: 0.85
+          });
+
+          routeLayersRef.current[truck.id] = { aiLine, actualLine };
+
+          const marker = L.marker(truck.position, {
+            icon: getTruckIcon(truck.status, truck.has_perishables),
+            interactive: true,
+            keyboard: true,
+            riseOnHover: true,
+            zIndexOffset: 1000
+          }).addTo(map);
+
+          marker.bindPopup(`
+            <div style="min-width:210px;font-family:Arial,sans-serif;padding:4px;">
+              <div style="background:${getStatusColor(truck.status)};color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">
+                ${truck.status === 'Moving' ? '🔴 LIVE IN-TRANSIT' : '🚛 ' + truck.status.toUpperCase()}
+              </div>
+              <b style="font-size:14px;color:#1F3D2B;display:block;margin-top:2px;">
+                🚚 ${truck.from || 'Origin'} → ${truck.destination}
+              </b>
+              <span style="font-size:12px;color:#4b5563;display:block;margin-top:2px;">👤 Driver: ${truck.driver}</span>
+              <span style="font-size:12px;color:#4b5563;display:block;">📦 Load: ${truck.load}</span>
+              ${truck.has_perishables ? `<div style="margin-top:4px;font-size:11px;font-weight:bold;color:#0284c7;background:#f0f9ff;padding:2px 6px;border-radius:6px;border:1px solid #bae6fd;">❄️ Cold-Chain Perishables (Ice Managed)</div>` : ''}
+              ${truck.current_checkpoint ? `<div style="margin-top:3px;font-size:11px;font-weight:600;color:#92400e;background:#fffbeb;padding:2px 6px;border-radius:6px;">🛑 Checkpoint: ${truck.current_checkpoint} (${truck.checkpoint_count || 1} checks)</div>` : ''}
+            </div>
+          `);
+
+          marker.on('click', () => {
+            selectTruck(truck.id);
+          });
+
+          markersRef.current[truck.id] = marker;
+        });
+
+        setLoading(false);
+
+      } catch (error) {
+
+        console.error(error)
+
+        if (mounted) {
+
+          setRouteError(true)
+
+          setLoading(false)
+
+        }
+
+      }
+
+    }
+
+
+    setupMap()
+
+
+    return () => {
+
+      mounted = false
+
+
+      if (
+        animationRef.current
+      ) {
+        cancelAnimationFrame(
+          animationRef.current
+        )
+      }
+
+
+      if (
+        leafletMapRef.current
+      ) {
+
+        leafletMapRef.current.remove()
+
+        leafletMapRef.current =
+          null
+
+      }
+
+    }
+
+  }, [mode])
+
+
+  /* =====================================================
+     SELECT TRUCK
+  ===================================================== */
+
+  const selectTruck = truckId => {
+
+    selectedTruckIdRef.current =
+      truckId
+
+
+    const truck =
+      trucksRef.current.find(
+        item =>
+          item.id === truckId
+      )
+
+
+    if (!truck) return
+
+
+    const sm = getTripStateMachine(truck.id, truck)
+
+    setSelectedTruck({
+      ...truck,
+      ...sm
+    })
+
+
+    setFollowTruck(false)
+
+
+    const map =
+      leafletMapRef.current
+
+
+    if (map) {
+
+      map.flyTo(
+        truck.position,
+        13,
+        {
+          duration: 0.8
+        }
+      )
+
+    }
+
+  }
+
+
+  /* =====================================================
+     LIVE TRUCK ANIMATION
+  ===================================================== */
+
+  useEffect(() => {
+
+    if (
+      mode !== 'live' ||
+      loading ||
+      routeError
+    ) {
+      return
+    }
+
+
+    const animate =
+      timestamp => {
+
+        if (
+          !lastTimeRef.current
+        ) {
+
+          lastTimeRef.current =
+            timestamp
+
+        }
+
+
+        const deltaTime =
+          timestamp -
+          lastTimeRef.current
+
+
+        lastTimeRef.current =
+          timestamp
+
+
+        trucksRef.current.forEach(
+          truck => {
+
+            if (
+              truck.status !==
+                'Moving' ||
+              !truck.actualRoute?.length
+            ) {
+              return
+            }
+
+
+            const movement =
+              (deltaTime / 1000) *
+              0.35
+
+
+            truck.routeIndex +=
+              movement *
+              truck.direction
+
+
+            const lastIndex =
+              truck.actualRoute.length -
+              1
+
+
+            // RULES 3, 4, 5: Sequenced Goods Area Arrival. Vehicle does NOT auto-return!
+            if (truck.direction === 1 && truck.routeIndex >= lastIndex) {
+              truck.routeIndex = lastIndex;
+              truck.status = 'Stopped';
+              truck.speed = 0;
+              if (
+                truck.goods_area_status !== GOODS_AREA_STATES.REACHED &&
+                truck.goods_area_status !== GOODS_AREA_STATES.CONFIRMED &&
+                truck.goods_area_status !== GOODS_AREA_STATES.RETURN_ENABLED &&
+                truck.goods_area_status !== GOODS_AREA_STATES.RETURN_STARTED
+              ) {
+                truck.goods_area_status = GOODS_AREA_STATES.REACHED;
+                actionReachGoodsArea(truck.id);
+              }
+            } else if (truck.direction === -1 && truck.routeIndex <= 0) {
+              truck.routeIndex = 0;
+              truck.status = 'Stopped';
+              truck.speed = 0;
+            }
+
+
+            const index =
+              Math.floor(
+                truck.routeIndex
+              )
+
+
+            const nextIndex =
+              Math.min(
+                index + 1,
+                lastIndex
+              )
+
+
+            const fraction =
+              truck.routeIndex -
+              index
+
+
+            const current =
+              truck.actualRoute[
+                index
+              ]
+
+
+            const next =
+              truck.actualRoute[
+                nextIndex
+              ]
+
+
+            const newPosition = [
+
+              current[0] +
+                (next[0] -
+                  current[0]) *
+                  fraction,
+
+              current[1] +
+                (next[1] -
+                  current[1]) *
+                  fraction
+
+            ]
+
+
+            truck.position =
+              newPosition
+
+
+            const marker =
+              markersRef.current[
+                truck.id
+              ]
+
+
+            if (marker) {
+
+              marker.setLatLng(
+                newPosition
+              )
+
+
+              const rotation =
+                truck.direction === 1
+                  ? getBearing(
+                      current,
+                      next
+                    )
+                  : getBearing(
+                      next,
+                      current
+                    )
+
+
+              const markerElement =
+                marker.getElement()
+
+
+              if (markerElement) {
+
+                const truckElement =
+                  markerElement.querySelector(
+                    '.truck-icon'
+                  )
+
+
+                if (
+                  truckElement
+                ) {
+
+                  truckElement.style.transform =
+                    `rotate(${rotation}deg)`
+
+                }
+
+              }
+
+            }
+
+          }
+        )
+
+
+        const selectedId =
+          selectedTruckIdRef.current
+
+
+        if (
+          selectedId !== null
+        ) {
+
+          const updatedTruck =
+            trucksRef.current.find(
+              truck =>
+                truck.id ===
+                selectedId
+            )
+
+
+          if (
+            updatedTruck
+          ) {
+
+            setSelectedTruck({
+              ...updatedTruck
+            })
+
+          }
+
+        }
+
+
+        if (
+          Math.floor(
+            timestamp / 1000
+          ) !==
+          Math.floor(
+            (
+              timestamp -
+              deltaTime
+            ) / 1000
+          )
+        ) {
+
+          setTrucks([
+            ...trucksRef.current
+          ])
+
+        }
+
+
+        animationRef.current =
+          requestAnimationFrame(
+            animate
+          )
+
+      }
+
+
+    animationRef.current =
+      requestAnimationFrame(
+        animate
+      )
+
+
+    return () => {
+
+      if (
+        animationRef.current
+      ) {
+
+        cancelAnimationFrame(
+          animationRef.current
+        )
+
+      }
+
+    }
+
+  }, [
+    mode,
+    loading,
+    routeError
+  ])
+
+
+  /* =====================================================
+     SHOW SELECTED ROUTE
+  ===================================================== */
+
+  useEffect(() => {
+
+    if (mode !== 'live') return
+
+
+    const map =
+      leafletMapRef.current
+
+
+    if (!map) return
+
+
+    Object.values(
+      routeLayersRef.current
+    ).forEach(
+      ({
+        aiLine,
+        actualLine
+      }) => {
+
+        if (
+          map.hasLayer(aiLine)
+        ) {
+
+          map.removeLayer(aiLine)
+
+        }
+
+
+        if (
+          map.hasLayer(actualLine)
+        ) {
+
+          map.removeLayer(actualLine)
+
+        }
+
+      }
+    )
+
+
+    if (
+      !selectedTruck
+    ) return
+
+
+    const layers =
+      routeLayersRef.current[
+        selectedTruck.id
+      ]
+
+
+    if (layers) {
+
+      layers.aiLine.addTo(map)
+
+      layers.actualLine.addTo(map)
+
+    }
+
+  }, [
+    selectedTruck?.id,
+    mode
+  ])
+
+
+  /* =====================================================
+     FOLLOW TRUCK
+  ===================================================== */
+
+  useEffect(() => {
+
+    if (
+      mode !== 'live' ||
+      !followTruck ||
+      !selectedTruck ||
+      !leafletMapRef.current
+    ) {
+      return
+    }
+
+
+    leafletMapRef.current.panTo(
+      selectedTruck.position,
+      {
+        animate: true,
+        duration: 0.3
+      }
+    )
+
+  }, [
+    selectedTruck?.position?.[0],
+    selectedTruck?.position?.[1],
+    followTruck,
+    mode
+  ])
+
+
+  const closeTruck = () => {
+
+    selectedTruckIdRef.current =
+      null
+
+    setSelectedTruck(null)
+
+    setFollowTruck(false)
+
+  }
+
+
+  /* =====================================================
+     FIND VEHICLE RETURN
+  ===================================================== */
+
+  if (mode === 'findVehicle') {
+
+    return (
+
+      <div
+        className="
+          relative
+          w-full
+          h-[420px]
+          overflow-hidden
+          rounded-2xl
+          border
+          border-gold/30
+          shadow-sm
+        "
+      >
+
+        <div
+          ref={mapRef}
+          className="
+            w-full
+            h-full
+          "
+        />
+
+      </div>
+
+    )
+
+  }
+
+
+  /* =====================================================
+     LIVE MAP VALUES
+  ===================================================== */
+
+  const movingCount =
+    trucks.filter(
+      truck =>
+        truck.status ===
+        'Moving'
+    ).length
+
+
+  const stoppedCount =
+    trucks.filter(
+      truck =>
+        truck.status ===
+        'Stopped'
+    ).length
+
+
+  const offlineCount =
+    trucks.filter(
+      truck =>
+        truck.status ===
+        'Offline'
+    ).length
+
+
+  /* =====================================================
+     LIVE MAP RETURN
+  ===================================================== */
+
+  return (
+
+    <div
+      style={{
+        width: '100%',
+        height:
+          'calc(100vh - 70px)',
+        position: 'relative',
+        overflow: 'hidden'
+      }}
+    >
+
+      <div
+        ref={mapRef}
+        style={{
+          width: '100%',
+          height: '100%'
+        }}
+      />
+
+
+      {/* HEADER */}
+
+      <div
+        style={{
+          position: 'absolute',
+          top: '20px',
+          left:
+            sidebarOpen
+              ? '350px'
+              : '20px',
+          zIndex: 1000,
+          background:
+            'rgba(255,255,255,.96)',
+          padding: '14px 18px',
+          borderRadius: '14px',
+          boxShadow:
+            '0 5px 25px rgba(0,0,0,.18)',
+          transition:
+            'left .3s ease'
+        }}
+      >
+
+        <div
+          style={{
+            fontWeight: 800,
+            fontSize: '18px',
+            color: '#14532d'
+          }}
+        >
+          🚚 RuralFlow Live Map
+        </div>
+
+        <div
+          style={{
+            fontSize: '13px',
+            marginTop: '4px',
+            color: '#666'
+          }}
+        >
+          {movingCount} vehicles moving live
+        </div>
+
+      </div>
+
+
+      {/* SIDEBAR */}
+
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left:
+            sidebarOpen
+              ? 0
+              : '-330px',
+          zIndex: 1100,
+          width: '330px',
+          height: '100%',
+          background:
+            'rgba(255,255,255,.98)',
+          boxShadow:
+            '4px 0 25px rgba(0,0,0,.15)',
+          transition:
+            'left .3s ease',
+          display: 'flex',
+          flexDirection:
+            'column'
+        }}
+      >
+
+        <div
+          style={{
+            padding: '20px',
+            borderBottom:
+              '1px solid #e5e7eb'
+          }}
+        >
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent:
+                'space-between',
+              alignItems:
+                'center'
+            }}
+          >
+
+            <div>
+
+              <div
+                style={{
+                  fontSize: '19px',
+                  fontWeight: 800,
+                  color: '#14532d'
+                }}
+              >
+                🚚 LIVE VEHICLES
+              </div>
+
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#777',
+                  marginTop: '4px'
+                }}
+              >
+                Real-time RuralFlow tracking
+              </div>
+
+            </div>
+
+
+            <button
+              onClick={() =>
+                setSidebarOpen(false)
+              }
+              style={{
+                border: 'none',
+                background: '#f3f4f6',
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '18px'
+              }}
+            >
+              ←
+            </button>
+
+          </div>
+
+
+          <div
+            style={{
+              display: 'flex',
+              gap: '8px',
+              marginTop: '16px'
+            }}
+          >
+
+            <div
+              style={{
+                flex: 1,
+                background: '#f0fdf4',
+                padding: '8px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                textAlign:
+                  'center'
+              }}
+            >
+              🟢 {movingCount}
+              <br />
+              Moving
+            </div>
+
+
+            <div
+              style={{
+                flex: 1,
+                background: '#fffbeb',
+                padding: '8px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                textAlign:
+                  'center'
+              }}
+            >
+              🟠 {stoppedCount}
+              <br />
+              Stopped
+            </div>
+
+
+            <div
+              style={{
+                flex: 1,
+                background: '#f3f4f6',
+                padding: '8px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                textAlign:
+                  'center'
+              }}
+            >
+              ⚪ {offlineCount}
+              <br />
+              Offline
+            </div>
+
+          </div>
+
+        </div>
+
+
+        {/* TRUCK LIST */}
+
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '10px'
+          }}
+        >
+
+          {trucks.map(
+            truck => {
+
+              const isSelected =
+                selectedTruck?.id ===
+                truck.id
+
+
+              return (
+
+                <div
+                  key={truck.id}
+                  onClick={() =>
+                    selectTruck(
+                      truck.id
+                    )
+                  }
+                  style={{
+                    padding: '14px',
+                    marginBottom: '8px',
+                    borderRadius:
+                      '12px',
+                    cursor: 'pointer',
+                    border:
+                      isSelected
+                        ? '2px solid #14532d'
+                        : '1px solid #e5e7eb',
+                    background:
+                      isSelected
+                        ? '#f0fdf4'
+                        : 'white'
+                  }}
+                >
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent:
+                        'space-between',
+                      alignItems:
+                        'center'
+                    }}
+                  >
+
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        color: '#1f2937'
+                      }}
+                    >
+                      {getStatusDot(
+                        truck.status
+                      )}{' '}
+                      {truck.name}
+                    </div>
+
+
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color:
+                          getStatusColor(
+                            truck.status
+                          ),
+                        fontWeight: 700
+                      }}
+                    >
+                      {truck.status}
+                    </div>
+
+                  </div>
+
+
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: '#666',
+                      marginTop: '6px'
+                    }}
+                  >
+                    👤 {truck.driver}
+                  </div>
+
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent:
+                        'space-between',
+                      marginTop: '10px',
+                      fontSize: '12px'
+                    }}
+                  >
+
+                    <span>
+                      📦 {truck.load}
+                    </span>
+
+
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color: truck.status === 'Moving' ? '#166534' : '#6b7280'
+                      }}
+                    >
+                      {truck.status === 'Moving' ? '📡 Live GPS' : '⏳ Scheduled'}
+                    </span>
+
+                  </div>
+
+
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: '#888',
+                      marginTop: '8px'
+                    }}
+                  >
+                    → {truck.destination}
+                  </div>
+
+
+                  {truck.routeChanged && (
+
+                    <div
+                      style={{
+                        marginTop: '9px',
+                        background:
+                          '#fff7ed',
+                        color:
+                          '#c2410c',
+                        padding:
+                          '6px 8px',
+                        borderRadius:
+                          '6px',
+                        fontSize:
+                          '10px',
+                        fontWeight: 700
+                      }}
+                    >
+                      ⚠ Route changed
+                    </div>
+
+                  )}
+
+                </div>
+
+              )
+
+            }
+          )}
+
+        </div>
+
+      </div>
+
+
+      {!sidebarOpen && (
+
+        <button
+          onClick={() =>
+            setSidebarOpen(true)
+          }
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: '20px',
+            zIndex: 1200,
+            border: 'none',
+            background: '#14532d',
+            color: 'white',
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            cursor: 'pointer',
+            fontSize: '20px'
+          }}
+        >
+          ☰
+        </button>
+
+      )}
+
+
+      {/* LOADING */}
+
+      {loading && (
+
+        <div
+          style={{
+            position: 'absolute',
+            top: '95px',
+            left:
+              sidebarOpen
+                ? '350px'
+                : '20px',
+            zIndex: 1000,
+            background: 'white',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            boxShadow:
+              '0 4px 18px rgba(0,0,0,.15)'
+          }}
+        >
+          🛣️ Loading road routes...
+        </div>
+
+      )}
+
+
+      {/* ERROR */}
+
+      {routeError && (
+
+        <div
+          style={{
+            position: 'absolute',
+            top: '95px',
+            left:
+              sidebarOpen
+                ? '350px'
+                : '20px',
+            zIndex: 1000,
+            background: '#fee2e2',
+            color: '#991b1b',
+            padding: '12px 16px',
+            borderRadius: '10px'
+          }}
+        >
+          Could not load road routes.
+        </div>
+
+      )}
+
+
+      {/* ROUTE LEGEND */}
+
+      <div
+        style={{
+          position: 'absolute',
+          bottom: '25px',
+          left:
+            sidebarOpen
+              ? '350px'
+              : '20px',
+          zIndex: 1000,
+          background:
+            'rgba(255,255,255,.96)',
+          padding: '14px 16px',
+          borderRadius: '14px',
+          boxShadow:
+            '0 5px 25px rgba(0,0,0,.18)',
+          fontSize: '13px'
+        }}
+      >
+
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom: '8px'
+          }}
+        >
+          Route Legend
+        </div>
+
+        <div>
+          🟢 Dashed — AI Suggested
+        </div>
+
+        <div>
+          🔵 Solid — Actual Route
+        </div>
+
+      </div>
+
+
+      {/* TRUCK DETAILS */}
+
+      {selectedTruck && (
+
+        <div
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            zIndex: 1000,
+            width: '330px',
+            maxHeight:
+              'calc(100% - 40px)',
+            overflowY: 'auto',
+            background: 'white',
+            borderRadius: '16px',
+            padding: '20px',
+            boxShadow:
+              '0 8px 30px rgba(0,0,0,.25)'
+          }}
+        >
+
+          <button
+            onClick={closeTruck}
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '10px',
+              border: 'none',
+              background:
+                'transparent',
+              fontSize: '22px',
+              cursor: 'pointer'
+            }}
+          >
+            ×
+          </button>
+
+
+          <div
+            style={{
+              fontSize: '30px'
+            }}
+          >
+            🚚
+          </div>
+
+
+          <h2
+            style={{
+              margin: '6px 0',
+              color: '#14532d'
+            }}
+          >
+            {selectedTruck.name}
+          </h2>
+
+
+          <div
+            style={{
+              display: 'inline-block',
+              padding: '5px 10px',
+              borderRadius: '20px',
+              background:
+                getStatusColor(
+                  selectedTruck.status
+                ),
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 700
+            }}
+          >
+            {selectedTruck.status}
+          </div>
+
+
+          <hr
+            style={{
+              margin: '16px 0'
+            }}
+          />
+
+
+          <p>
+            <strong>Driver:</strong>{' '}
+            {selectedTruck.driver}
+          </p>
+
+          <p>
+            <strong>Load:</strong>{' '}
+            {selectedTruck.load}
+          </p>
+
+          <p>
+            <strong>Destination:</strong>{' '}
+            {selectedTruck.destination}
+          </p>
+
+          <p>
+            <strong>GPS Status:</strong>{' '}
+            {selectedTruck.status === 'Moving' ? '🟢 Live GPS Broadcasting' : '⏳ Trip Scheduled'}
+          </p>
+
+          {selectedTruck.has_perishables && (
+            <div style={{ marginTop: '10px', padding: '8px 12px', background: '#ecfdf5', borderRadius: '10px', border: '1px solid #a7f3d0' }}>
+              <p style={{ margin: 0, fontSize: '13px', fontWeight: 'bold', color: '#065f46' }}>
+                ❄️ Cold-Chain Perishables Onboard
+              </p>
+              <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#047857' }}>
+                Perishable cargo monitored by ground logistics & ice stations.
+              </p>
+            </div>
+          )}
+
+          {/* =========================================================
+              RULE 1 & 2: OFFICIAL VEHICLE INSPECTION WORKFLOW
+              - Strictly NOT started automatically
+              - Exactly ONE inspection session per trip
+          ========================================================= */}
+          <div style={{ marginTop: '12px', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>
+                🛡️ Transit Inspection Session
+              </span>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '999px',
+                background: selectedTruck.checkpoint_count >= (selectedTruck.max_inspections || 1) || selectedTruck.inspection_completed ? '#ecfdf5' : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS ? '#fef3c7' : '#f1f5f9',
+                color: selectedTruck.checkpoint_count >= (selectedTruck.max_inspections || 1) || selectedTruck.inspection_completed ? '#047857' : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS ? '#b45309' : '#64748b'
+              }}>
+                {selectedTruck.checkpoint_count >= (selectedTruck.max_inspections || 1) || selectedTruck.inspection_completed
+                  ? `✔ Completed (${selectedTruck.checkpoint_count || selectedTruck.max_inspections || 1}/${selectedTruck.max_inspections || 1})`
+                  : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS
+                    ? `⏳ In Progress (${Math.min(selectedTruck.max_inspections || 1, (selectedTruck.checkpoint_count || 0) + 1)}/${selectedTruck.max_inspections || 1})`
+                    : `Not Started (${selectedTruck.checkpoint_count || 0}/${selectedTruck.max_inspections || 1})`}
+              </span>
+            </div>
+
+            {(() => {
+              const maxInsp = selectedTruck.max_inspections || 1;
+              const countDone = selectedTruck.checkpoint_count || 0;
+              const isFullyDone = countDone >= maxInsp || selectedTruck.inspection_completed;
+              const nextNum = Math.min(maxInsp, countDone + 1);
+
+              if (isFullyDone) {
+                return (
+                  <div style={{ marginTop: '6px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px' }}>
+                    <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>
+                      ✔ All Official Checkpoints Verified ({countDone}/{maxInsp})
+                    </div>
+                    {selectedTruck.checkpoints && selectedTruck.checkpoints.length > 0 ? (
+                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {selectedTruck.checkpoints.map((cp, idx) => (
+                          <div key={cp.id || idx} style={{ background: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '5px 8px', fontSize: '10.5px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 600, color: '#166534' }}>
+                              <span>Halt {idx + 1}: {cp.checkpoint_name}</span>
+                              <span style={{ fontSize: '9px', color: '#64748b' }}>{cp.timestamp}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#475569', marginTop: '2px' }}>
+                              <span>Officer: {cp.officer_name || 'Ground Officer'}</span>
+                              <span style={{ fontWeight: 600, color: '#047857' }}>Seal: #{cp.seal_number || selectedTruck.seal_number || 'Verified'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : selectedTruck.current_checkpoint ? (
+                      <p style={{ margin: '3px 0 0 0', fontSize: '10.5px', color: '#15803d' }}>
+                        Station: {selectedTruck.current_checkpoint}
+                      </p>
+                    ) : null}
+                    <p style={{ margin: '6px 0 0 0', fontSize: '10px', color: '#15803d', fontStyle: 'italic' }}>
+                      🔒 All {maxInsp} allowed checkpoint inspections completed for this journey.
+                    </p>
+                    <button
+                      disabled
+                      type="button"
+                      style={{
+                        width: '100%',
+                        marginTop: '8px',
+                        padding: '7px',
+                        background: '#e2e8f0',
+                        color: '#94a3b8',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'not-allowed'
+                      }}
+                    >
+                      ✔ All Checkpoints Certified
+                    </button>
+                  </div>
+                );
+              }
+
+              if (selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS) {
+                return (
+                  <div style={{ marginTop: '6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '11px', fontWeight: 700, color: '#92400e' }}>
+                      Active Inspection Halt {nextNum}/{maxInsp} In-Progress
+                    </p>
+                    <p style={{ margin: '0 0 8px 0', fontSize: '10.5px', color: '#b45309' }}>
+                      Verify security seal intactness and weighbridge compliance before certifying.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmInspection(selectedTruck.id)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: '#b45309',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✔ Confirm & Stamp Inspection ({nextNum}/{maxInsp})
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ marginTop: '6px' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
+                    {countDone === 0 ? 'Inspection begins ONLY after explicit manual trigger.' : `Halt ${countDone} stamped. Ready to initiate halt ${nextNum} of ${maxInsp}.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleStartInspection(selectedTruck.id)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      background: '#047857',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    🛡️ Start Checkpoint Inspection ({nextNum}/{maxInsp})
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* =========================================================
+              RULES 3, 4, 5, 6, 7: SEQUENCED GOODS AREA & RETURN TRIP WORKFLOW
+              Sequence:
+              Trip Started -> Vehicle Travelling -> Vehicle Reaches Goods Area -> Mark/Confirm Reached -> Return Trip Enabled -> Return Trip Started
+          ========================================================= */}
+          <div style={{ marginTop: '12px', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>
+                📦 Goods Area & Journey Sequence
+              </span>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '999px',
+                background: selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED ? '#ecfdf5' : selectedTruck.goods_area_status === GOODS_AREA_STATES.CONFIRMED ? '#eff6ff' : selectedTruck.goods_area_status === GOODS_AREA_STATES.REACHED ? '#fef3c7' : '#f1f5f9',
+                color: selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED ? '#047857' : selectedTruck.goods_area_status === GOODS_AREA_STATES.CONFIRMED ? '#1d4ed8' : selectedTruck.goods_area_status === GOODS_AREA_STATES.REACHED ? '#b45309' : '#64748b'
+              }}>
+                {selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED ? 'Step 6/6: Return Active' :
+                 selectedTruck.goods_area_status === GOODS_AREA_STATES.CONFIRMED || selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_ENABLED ? 'Step 5/6: Return Enabled' :
+                 selectedTruck.goods_area_status === GOODS_AREA_STATES.REACHED ? 'Step 3/6: At Goods Area' :
+                 'Step 2/6: Travelling'}
+              </span>
+            </div>
+
+            {/* Sequence Flow Tracker */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginBottom: '10px', fontSize: '9.5px', textAlign: 'center', fontWeight: 700 }}>
+              <div style={{
+                padding: '4px 2px',
+                borderRadius: '6px',
+                background: '#ecfdf5',
+                color: '#047857',
+                border: '1px solid #a7f3d0'
+              }}>
+                1. Started
+              </div>
+              <div style={{
+                padding: '4px 2px',
+                borderRadius: '6px',
+                background: selectedTruck.goods_area_status !== GOODS_AREA_STATES.NOT_STARTED ? '#ecfdf5' : '#f1f5f9',
+                color: selectedTruck.goods_area_status !== GOODS_AREA_STATES.NOT_STARTED ? '#047857' : '#64748b',
+                border: selectedTruck.goods_area_status !== GOODS_AREA_STATES.NOT_STARTED ? '1px solid #a7f3d0' : '1px solid #e2e8f0'
+              }}>
+                2. Travelling
+              </div>
+              <div style={{
+                padding: '4px 2px',
+                borderRadius: '6px',
+                background: [GOODS_AREA_STATES.REACHED, GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '#ecfdf5' : '#f1f5f9',
+                color: [GOODS_AREA_STATES.REACHED, GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '#047857' : '#64748b',
+                border: [GOODS_AREA_STATES.REACHED, GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '1px solid #a7f3d0' : '1px solid #e2e8f0'
+              }}>
+                3. Goods Area
+              </div>
+              <div style={{
+                padding: '4px 2px',
+                borderRadius: '6px',
+                background: [GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '#ecfdf5' : '#f1f5f9',
+                color: [GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '#047857' : '#64748b',
+                border: [GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '1px solid #a7f3d0' : '1px solid #e2e8f0'
+              }}>
+                4. Confirmed
+              </div>
+              <div style={{
+                padding: '4px 2px',
+                borderRadius: '6px',
+                background: [GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '#ecfdf5' : '#f1f5f9',
+                color: [GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '#047857' : '#64748b',
+                border: [GOODS_AREA_STATES.CONFIRMED, GOODS_AREA_STATES.RETURN_ENABLED, GOODS_AREA_STATES.RETURN_STARTED].includes(selectedTruck.goods_area_status) ? '1px solid #a7f3d0' : '1px solid #e2e8f0'
+              }}>
+                5. Enabled
+              </div>
+              <div style={{
+                padding: '4px 2px',
+                borderRadius: '6px',
+                background: selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED ? '#ecfdf5' : '#f1f5f9',
+                color: selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED ? '#047857' : '#64748b',
+                border: selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED ? '1px solid #a7f3d0' : '1px solid #e2e8f0'
+              }}>
+                6. Returned
+              </div>
+            </div>
+
+            {/* Stage 1 & 2: Vehicle Travelling - Return locked */}
+            {(!selectedTruck.goods_area_status || selectedTruck.goods_area_status === GOODS_AREA_STATES.NOT_STARTED || selectedTruck.goods_area_status === GOODS_AREA_STATES.TRAVELLING) && (
+              <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: '#92400e' }}>
+                  <span>🔒</span>
+                  <span>Return Trip Locked: Travelling to Goods Area</span>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '10.5px', color: '#b45309', lineHeight: 1.4 }}>
+                  Vehicle must physically reach the Goods Area ({selectedTruck.destination}) before arrival confirmation or return journey can be unlocked.
+                </p>
+              </div>
+            )}
+
+            {/* Stage 3: Vehicle Reaches Goods Area -> Step 4 Mark/Confirm Reached */}
+            {selectedTruck.goods_area_status === GOODS_AREA_STATES.REACHED && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 700, color: '#92400e' }}>
+                  <span>📍</span>
+                  <span>Vehicle Reached Goods Area!</span>
+                </div>
+                <p style={{ margin: '4px 0 8px 0', fontSize: '11px', color: '#b45309' }}>
+                  Outbound run arrived at {selectedTruck.destination}. Please confirm arrival to enable the return journey.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmGoodsArea(selectedTruck.id)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: '#d97706',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  ✔ Mark / Confirm Reached Goods Area
+                </button>
+              </div>
+            )}
+
+            {/* Stage 4 & 5: Goods Area Confirmed -> Return Trip Enabled */}
+            {(selectedTruck.goods_area_status === GOODS_AREA_STATES.CONFIRMED || selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_ENABLED) && (
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 700, color: '#1e40af' }}>
+                  <span>✔</span>
+                  <span>Arrival Confirmed · Return Trip Enabled</span>
+                </div>
+                <p style={{ margin: '4px 0 8px 0', fontSize: '11px', color: '#1e3a8a' }}>
+                  Goods Area arrival is confirmed. You may now start the return journey back to {selectedTruck.from || 'Origin'}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleStartReturnTrip(selectedTruck.id)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: '#1d4ed8',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  🚀 Start Return Trip
+                </button>
+              </div>
+            )}
+
+            {/* Stage 6: Return Trip Started */}
+            {selectedTruck.goods_area_status === GOODS_AREA_STATES.RETURN_STARTED && (
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 700, color: '#065f46' }}>
+                  <span>🔄</span>
+                  <span>Return Trip In-Transit</span>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#047857' }}>
+                  Vehicle has commenced its return journey to {selectedTruck.from || 'Origin'}. Return start action closed.
+                </p>
+                <button
+                  disabled
+                  type="button"
+                  style={{
+                    width: '100%',
+                    marginTop: '8px',
+                    padding: '7px',
+                    background: '#e2e8f0',
+                    color: '#94a3b8',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  Return Trip Started (Active)
+                </button>
+              </div>
+            )}
+          </div>
+
+
+          <button
+            onClick={() =>
+              setFollowTruck(
+                current => !current
+              )
+            }
+            style={{
+              width: '100%',
+              marginTop: '10px',
+              background:
+                followTruck
+                  ? '#2563eb'
+                  : '#14532d',
+              color: 'white',
+              border: 'none',
+              padding: '10px',
+              borderRadius: '9px',
+              cursor: 'pointer',
+              fontWeight: 700
+            }}
+          >
+            {followTruck
+              ? '📍 Following Truck'
+              : '📍 Follow Truck'}
+          </button>
+
+
+          <hr
+            style={{
+              margin: '16px 0'
+            }}
+          />
+
+
+          <div
+            style={{
+              background: '#f8fafc',
+              borderRadius: '12px',
+              padding: '14px'
+            }}
+          >
+
+            <div
+              style={{
+                fontWeight: 800,
+                color: '#14532d',
+                marginBottom: '12px'
+              }}
+            >
+              🤖 AI Route Analysis
+            </div>
+
+
+            <div>
+              AI Distance:{' '}
+              <strong>
+                {formatDistance(
+                  selectedTruck.aiDistance
+                )}
+              </strong>
+            </div>
+
+
+            <div>
+              Actual Distance:{' '}
+              <strong>
+                {formatDistance(
+                  selectedTruck.actualDistance
+                )}
+              </strong>
+            </div>
+
+
+            <div>
+              AI ETA:{' '}
+              <strong>
+                {formatDuration(
+                  selectedTruck.aiDuration
+                )}
+              </strong>
+            </div>
+
+
+            <div>
+              Actual ETA:{' '}
+              <strong>
+                {formatDuration(
+                  selectedTruck.actualDuration
+                )}
+              </strong>
+            </div>
+
+          </div>
+
+
+          <hr
+            style={{
+              margin: '16px 0'
+            }}
+          />
+
+
+          {selectedTruck.routeChanged ? (
+
+            <div
+              style={{
+                background: '#fff7ed',
+                border:
+                  '1px solid #fb923c',
+                borderRadius: '10px',
+                padding: '12px'
+              }}
+            >
+
+              <strong
+                style={{
+                  color: '#c2410c'
+                }}
+              >
+                ⚠ Route Changed
+              </strong>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                  fontSize: '13px'
+                }}
+              >
+                <strong>
+                  Reason:
+                </strong>{' '}
+                {
+                  selectedTruck.changeReason
+                }
+              </p>
+
+            </div>
+
+          ) : (
+
+            <div
+              style={{
+                background: '#f0fdf4',
+                border:
+                  '1px solid #22c55e',
+                borderRadius: '10px',
+                padding: '12px',
+                color: '#166534',
+                fontSize: '13px',
+                fontWeight: 600
+              }}
+            >
+              ✓ Driver is following the AI suggested route
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* GOOGLE MAPS STYLE ROUTE CARD OVERLAY (FIND VEHICLE MODE) */}
+      {mode === 'findVehicle' && routeInfo && (
+        <div className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl p-3.5 shadow-2xl border border-gold/40 max-w-[260px] animate-[fadeIn_.3s_ease]">
+          <div className="flex items-center gap-2 text-green-deep font-bold text-[11px]">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
+            <span>DRIVING ROUTE</span>
+          </div>
+          <p className="font-display font-bold text-xs text-green-deep mt-1 truncate">
+            {routeInfo.from} → {routeInfo.to}
+          </p>
+          <div className="flex items-center gap-2 mt-1.5 text-[11px] font-mono">
+            <span className="bg-blue-50 text-blue-800 font-bold px-2 py-0.5 rounded-md border border-blue-200">
+              🛣️ {routeInfo.distanceKm} km
+            </span>
+            <span className="bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-md border border-amber-200">
+              ⏱ {routeInfo.durationText}
+            </span>
+          </div>
+          {activeRequest?.pickupLocation && (
+            <p className="text-[10px] text-green-deep mt-2 pt-1.5 border-t border-gold/20 truncate">
+              📦 <span className="font-semibold">Pickup:</span> {activeRequest.pickupLocation}
+            </p>
+          )}
+          {activeRequest?.deliveryLocation && (
+            <p className="text-[10px] text-green-deep mt-0.5 truncate">
+              🎯 <span className="font-semibold">Drop:</span> {activeRequest.deliveryLocation}
+            </p>
+          )}
+        </div>
+      )}
+
+    </div>
+  )
+
+}
+
+
+export default Maps

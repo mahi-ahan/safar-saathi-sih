@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+uploads/
+static/uploads/
+*.sqlite
+*.db
+whatsapp_server/node_modules/
+whatsapp_server/.wwebjs_auth/
+whatsapp_server/.wwebjs_cache/

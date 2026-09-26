@@ -487,8 +487,14 @@ export default function LogisticsHub() {
     e.preventDefault();
     if (!checkpointModal.trip) return;
 
-    if (checkpointModal.trip.status === 'completed' || checkpointModal.trip.status === 'delivered') {
-      showBanner("✔ This trip is completed. No further highway inspections can be conducted.", "error");
+    const isFinished = checkpointModal.trip.status === 'completed' || checkpointModal.trip.status === 'delivered' || checkpointModal.trip.status === 'cancelled' || checkpointModal.trip.status === 'cancelled_by_driver';
+    if (isFinished) {
+      showBanner(
+        checkpointModal.trip.status === 'completed' || checkpointModal.trip.status === 'delivered'
+          ? "✔ Trip is already completed. No further highway inspections can be conducted."
+          : "⚠ Trip has been cancelled! Inspections cannot be conducted for cancelled trips.",
+        "error"
+      );
       return;
     }
 
@@ -572,6 +578,29 @@ export default function LogisticsHub() {
     e.preventDefault();
     if (!loadingModal.shipment) return;
 
+    const parentTrip = trips.find(t => t.id === loadingModal.shipment?.trip_id);
+    const tripStatus = loadingModal.shipment?.trip_status || parentTrip?.status;
+    if (['cancelled', 'cancelled_by_driver'].includes(tripStatus)) {
+      showBanner("Cannot perform loading or unloading. This trip has been deactivated or cancelled.", "error");
+      return;
+    }
+    if (['cancelled', 'cancelled_by_driver', 'rejected'].includes(loadingModal.shipment?.status)) {
+      showBanner("Cannot perform loading or unloading on a cancelled cargo request.", "error");
+      return;
+    }
+
+    if (loadingModal.loading_type === 'drop') {
+      const isTripStarted = Boolean(
+        loadingModal.shipment?.trip_started ||
+        (parentTrip && (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(parentTrip.status) || parentTrip.is_live)) ||
+        (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(loadingModal.shipment?.trip_status) || loadingModal.shipment?.is_live)
+      );
+      if (!isTripStarted) {
+        showBanner("Trip has not started yet. Unloading can only be performed after trip departure.", "error");
+        return;
+      }
+    }
+
     setLoadingModal(prev => ({ ...prev, submitting: true }));
     try {
       const isPerishWithIce = Boolean(loadingModal.shipment?.is_perishable && loadingModal.shipment?.ice_handling_required);
@@ -648,10 +677,28 @@ export default function LogisticsHub() {
     }
   };
 
-  // Filtered lists: Only shipments where user selected a perishable good requiring ice
+  // Filtered lists
+  const activeLoadingShipments = useMemo(() => {
+    return shipments.filter(s => {
+      if (!s.trip_id) return false;
+      if (['cancelled', 'cancelled_by_driver', 'rejected'].includes(s.status)) return false;
+      if (['cancelled', 'cancelled_by_driver'].includes(s.trip_status)) return false;
+      const parentTrip = trips.find(t => t.id === s.trip_id);
+      if (parentTrip && ['cancelled', 'cancelled_by_driver'].includes(parentTrip.status)) return false;
+      return true;
+    });
+  }, [shipments, trips]);
+
   const perishableShipments = useMemo(() => {
-    return shipments.filter(s => s.is_perishable && s.ice_handling_required);
-  }, [shipments]);
+    return shipments.filter(s => {
+      if (!s.trip_id) return false;
+      if (['cancelled', 'cancelled_by_driver', 'rejected'].includes(s.status)) return false;
+      if (['cancelled', 'cancelled_by_driver'].includes(s.trip_status)) return false;
+      const parentTrip = trips.find(t => t.id === s.trip_id);
+      if (parentTrip && ['cancelled', 'cancelled_by_driver'].includes(parentTrip.status)) return false;
+      return s.is_perishable && s.ice_handling_required;
+    });
+  }, [shipments, trips]);
 
   return (
     <div className="w-full min-h-screen bg-[#F4F6F5] text-slate-800 pb-20">
@@ -1430,6 +1477,18 @@ export default function LogisticsHub() {
                               ⚖ {trip.last_weigh_in_kg} kg ({trip.weight_compliant !== false ? 'Compliant' : 'Discrepancy'})
                             </span>
                           )}
+
+                          {trip.total_cargo_count > 0 && (
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-bold border flex items-center gap-1 ${
+                              trip.is_load_verified
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}>
+                              {trip.is_load_verified
+                                ? `✔ Load Verified & Sealed (${trip.verified_cargo_count}/${trip.total_cargo_count})`
+                                : `⏳ Load Unverified (${trip.unverified_cargo_count} pending in Tab 2)`}
+                            </span>
+                          )}
                         </div>
 
                         {/* Current Checkpoint Badge */}
@@ -1477,7 +1536,7 @@ export default function LogisticsHub() {
                           <div className="space-y-1.5">
                             <div className="rounded-xl bg-emerald-50 border border-emerald-300 p-2.5 text-center text-xs text-emerald-900 flex items-center justify-center gap-1.5 font-bold">
                               <CheckCircle2 size={16} className="text-emerald-600" />
-                              <span>This trip is completed. Cargo has been safely delivered.</span>
+                              <span>Trip Completed — Cargo safely delivered. Inspection Locked.</span>
                             </div>
                             <button
                               disabled
@@ -1485,7 +1544,7 @@ export default function LogisticsHub() {
                               title="This trip has been completed and delivered."
                             >
                               <CheckCircle2 size={15} className="text-white" />
-                              <span>✔ This Trip is Completed</span>
+                              <span>✔ This Trip is Completed (Delivered)</span>
                             </button>
                           </div>
                         ) : trip.status === 'pending_passenger_confirmation' ? (
@@ -1505,14 +1564,17 @@ export default function LogisticsHub() {
                           </div>
                         ) : (trip.status === 'cancelled' || trip.status === 'cancelled_by_driver' || trip.status === 'cancelled_by_user') ? (
                           <div className="space-y-1.5">
-                            <div className="rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-center text-xs text-rose-900 flex items-center justify-center gap-1.5 font-medium">
-                              <span>⛔ This trip was cancelled.</span>
+                            <div className="rounded-xl bg-rose-50 border border-rose-200/90 p-2.5 text-center text-xs text-rose-900 flex items-center justify-center gap-1.5 font-medium">
+                              <span>🛑</span>
+                              <span>Trip Cancelled — Inspection Unavailable. This trip was cancelled and cannot be inspected.</span>
                             </div>
                             <button
                               disabled
                               className="w-full py-2.5 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-80 select-none"
+                              title="Trip was cancelled. Inspection is disabled."
                             >
-                              <span>Trip Cancelled</span>
+                              <ShieldAlert size={15} className="text-slate-400" />
+                              <span>Trip Cancelled (Inspection Unavailable)</span>
                             </button>
                           </div>
                         ) : (!trip.status || (trip.status !== 'in_transit' && trip.status !== 'moving' && trip.status !== 'started' && !trip.is_live)) ? (
@@ -1522,16 +1584,18 @@ export default function LogisticsHub() {
                               <span>
                                 {trip.is_return_leg
                                   ? "Return trip has not started yet. Inspection stops unlock only after driver starts return leg."
-                                  : "Trip has not started yet. Inspection stops unlock only after driver departs."}
+                                  : (!trip.is_load_verified && trip.total_cargo_count > 0)
+                                    ? `Load verification pending (${trip.unverified_cargo_count} shipment(s) unverified). Driver cannot start trip until cargo is verified and sealed in Tab 2.`
+                                    : "Trip has not started yet. Inspection stops unlock only after driver departs."}
                               </span>
                             </div>
                             <button
                               disabled
                               className="w-full py-2.5 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-80 select-none"
-                              title={trip.is_return_leg ? "Return trip has not started yet. Cannot perform inspection." : "Trip has not started yet. Cannot perform inspection."}
+                              title={(!trip.is_load_verified && trip.total_cargo_count > 0) ? "Trip start blocked: Load verification pending" : (trip.is_return_leg ? "Return trip has not started yet." : "Trip has not started yet.")}
                             >
                               <ShieldAlert size={15} className="text-amber-500" />
-                              <span>Trip Not Started Yet</span>
+                              <span>{(!trip.is_load_verified && trip.total_cargo_count > 0) ? "Start Blocked: Load Verification Pending" : "Trip Not Started Yet"}</span>
                             </button>
                           </div>
                         ) : (() => {
@@ -1649,122 +1713,164 @@ export default function LogisticsHub() {
                 </p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4">
-                {shipments.map(s => {
-                  const isDeliveredTrip = s.trip_status === 'completed' || s.trip_status === 'delivered' || s.status === 'completed' || s.status === 'delivered';
-                  const isLoaded = s.loading_status === 'loaded' && !isDeliveredTrip;
-                  const isUnloaded = s.loading_status === 'unloaded' || isDeliveredTrip;
+              {activeLoadingShipments.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <Truck size={36} className="mx-auto mb-2 opacity-40 text-emerald-600" />
+                  <p className="text-sm font-semibold">No active cargo shipments currently pending loading or unloading.</p>
+                  <p className="text-xs text-slate-400 mt-1">Cargo from deactivated or cancelled trips is excluded from ground handling.</p>
+                </div>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-4">
+                  {activeLoadingShipments.map(s => {
+                    const parentTrip = trips.find(t => t.id === s.trip_id);
+                    const isDeliveredTrip = s.trip_status === 'completed' || s.trip_status === 'delivered' || s.status === 'completed' || s.status === 'delivered' || parentTrip?.status === 'completed';
+                    const isLoaded = s.loading_status === 'loaded' && !isDeliveredTrip;
+                    const isUnloaded = s.loading_status === 'unloaded' || isDeliveredTrip;
+                    const isTripStarted = Boolean(
+                      s.trip_started ||
+                      (parentTrip && (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(parentTrip.status) || parentTrip.is_live)) ||
+                      (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(s.trip_status) || s.is_live)
+                    );
 
-                  return (
-                    <div
-                      key={s.id}
-                      className="bg-slate-50 rounded-2xl border border-slate-200 p-4 hover:border-slate-300 transition flex flex-col justify-between"
-                    >
-                      <div>
-                        {/* Status Strip */}
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
-                            isUnloaded ? 'bg-purple-100 text-purple-800' :
-                            isLoaded ? 'bg-emerald-100 text-emerald-800' :
-                            'bg-amber-100 text-amber-800'
-                          }`}>
-                            {isUnloaded ? '✔ Fully Unloaded & Handed Over' : isLoaded ? '🚚 Loaded onto Truck' : '⏳ Pending Pickup Loading'}
-                          </span>
-
-                          {s.is_perishable && (
-                            <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900 text-[10px] font-bold flex items-center gap-1">
-                              <Snowflake size={11} /> Perishable
+                    return (
+                      <div
+                        key={s.id}
+                        className="bg-slate-50 rounded-2xl border border-slate-200 p-4 hover:border-slate-300 transition flex flex-col justify-between"
+                      >
+                        <div>
+                          {/* Status Strip */}
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                              isUnloaded ? 'bg-purple-100 text-purple-800' :
+                              isLoaded ? (isTripStarted ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800') :
+                              'bg-amber-100 text-amber-800'
+                            }`}>
+                              {isUnloaded 
+                                ? '✔ Fully Unloaded & Handed Over' 
+                                : isLoaded 
+                                  ? (isTripStarted ? '🚚 Loaded · In Transit to Drop' : '📦 Loaded · Awaiting Trip Departure') 
+                                  : '⏳ Pending Pickup Loading'}
                             </span>
+
+                            {s.is_perishable && (
+                              <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900 text-[10px] font-bold flex items-center gap-1">
+                                <Snowflake size={11} /> Perishable
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Shipper & Commodity */}
+                          <h3 className="font-display font-bold text-base text-slate-900">
+                            {s.cargo_type} · {s.goods_weight_kg} kg
+                          </h3>
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Shipper: <strong>{s.farmer_name}</strong> {s.farmer_phone && `(${s.farmer_phone})`}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Transporter: <strong>{s.driver_name}</strong> ({s.vehicle})
+                          </p>
+
+                          {/* Location Details */}
+                          <div className="mt-3 rounded-xl bg-white p-3 border border-slate-200 text-xs space-y-1.5">
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-emerald-700 font-bold shrink-0">📍 Pickup:</span>
+                              <span className="text-slate-700 truncate">{s.pickup_place}</span>
+                            </div>
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-purple-700 font-bold shrink-0">🏁 Delivery:</span>
+                              <span className="text-slate-700 truncate">{s.route?.split('→')[1] || s.route || 'Destination Market'}</span>
+                            </div>
+                          </div>
+
+                          {/* Loading / Unloading timestamps */}
+                          <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
+                            {s.loaded_at && (
+                              <p>✔ Loaded at: <strong className="text-slate-700">{s.loaded_at}</strong> by {s.loaded_by || 'Field Team'}</p>
+                            )}
+                            {s.unloaded_at && (
+                              <p>✔ Unloaded at: <strong className="text-slate-700">{s.unloaded_at}</strong> by {s.unloaded_by || 'Delivery Agent'}</p>
+                            )}
+                          </div>
+
+                          {!isLoaded && !isUnloaded && (
+                            <div className="mt-2.5 p-2 bg-amber-50/90 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-center gap-1.5 font-medium">
+                              <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                              <span>Trip start is locked until this cargo is weighed and sealed.</span>
+                            </div>
                           )}
                         </div>
 
-                        {/* Shipper & Commodity */}
-                        <h3 className="font-display font-bold text-base text-slate-900">
-                          {s.cargo_type} · {s.goods_weight_kg} kg
-                        </h3>
-                        <p className="text-xs text-slate-600 mt-0.5">
-                          Shipper: <strong>{s.farmer_name}</strong> {s.farmer_phone && `(${s.farmer_phone})`}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          Transporter: <strong>{s.driver_name}</strong> ({s.vehicle})
-                        </p>
-
-                        {/* Location Details */}
-                        <div className="mt-3 rounded-xl bg-white p-3 border border-slate-200 text-xs space-y-1.5">
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-emerald-700 font-bold shrink-0">📍 Pickup:</span>
-                            <span className="text-slate-700 truncate">{s.pickup_place}</span>
-                          </div>
-                          <div className="flex items-start gap-1.5">
-                            <span className="text-purple-700 font-bold shrink-0">🏁 Delivery:</span>
-                            <span className="text-slate-700 truncate">{s.route?.split('→')[1] || s.route || 'Destination Market'}</span>
-                          </div>
-                        </div>
-
-                        {/* Loading / Unloading timestamps */}
-                        <div className="mt-2 text-[11px] text-slate-500 space-y-0.5">
-                          {s.loaded_at && (
-                            <p>✔ Loaded at: <strong className="text-slate-700">{s.loaded_at}</strong> by {s.loaded_by || 'Field Team'}</p>
+                        {/* Action buttons */}
+                        <div className="pt-3 border-t border-slate-200 mt-3 flex items-center gap-2">
+                          {!isLoaded && !isUnloaded && (
+                            <button
+                              onClick={() => setLoadingModal({
+                                isOpen: true,
+                                shipment: s,
+                                loading_type: 'pickup',
+                                seal_number: s.seal_number || `SL-${Math.floor(10000 + Math.random() * 90000)}`,
+                                seal_status: 'verified_intact',
+                                verified_weight_kg: s.goods_weight_kg,
+                                ice_available_at_pickup: Boolean(s.is_perishable && s.ice_handling_required),
+                                ice_boxes_added: (s.is_perishable && s.ice_handling_required) ? 2 : (s.is_perishable ? 2 : 0),
+                                temp_celsius: s.current_temp_c || 3.8,
+                                notes: 'Weighed on electronic tare scale and stacked safely. Security seal tag affixed.',
+                                submitting: false
+                              })}
+                              className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                            >
+                              <span>📥 Verify & Load at Pickup</span>
+                            </button>
                           )}
-                          {s.unloaded_at && (
-                            <p>✔ Unloaded at: <strong className="text-slate-700">{s.unloaded_at}</strong> by {s.unloaded_by || 'Delivery Agent'}</p>
+
+                          {isLoaded && !isUnloaded && (
+                            !isTripStarted ? (
+                              <div className="flex-1 space-y-1.5">
+                                <div className="rounded-xl bg-amber-50 border border-amber-200/90 py-1.5 px-2.5 text-center text-[11px] text-amber-900 flex items-center justify-center gap-1.5 font-medium">
+                                  <span>⏳</span>
+                                  <span>Trip has not started yet. Unloading unlocks once driver departs.</span>
+                                </div>
+                                <button
+                                  disabled
+                                  className="w-full py-2 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-80 select-none"
+                                  title="Trip has not started yet. Unloading at drop destination unlocks only after the driver departs."
+                                >
+                                  <Lock size={13} className="text-amber-500" />
+                                  <span>Unloading Locked (Trip Not Started)</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setLoadingModal({
+                                  isOpen: true,
+                                  shipment: s,
+                                  loading_type: 'drop',
+                                  seal_number: s.seal_number || '',
+                                  seal_status: 'unsealed_at_destination',
+                                  verified_weight_kg: s.goods_weight_kg,
+                                  ice_boxes_added: 0,
+                                  temp_celsius: s.current_temp_c || 4.0,
+                                  notes: 'Security seal tag verified before unsealing. Received in good condition.',
+                                  submitting: false
+                                })}
+                                className="flex-1 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                              >
+                                <span>📤 Supervise Unload & Handover</span>
+                              </button>
+                            )
+                          )}
+
+                          {isUnloaded && (
+                            <div className="w-full py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-center text-xs font-semibold">
+                              ✔ Handover Complete & Signoff Archived
+                            </div>
                           )}
                         </div>
                       </div>
-
-                      {/* Action buttons */}
-                      <div className="pt-3 border-t border-slate-200 mt-3 flex items-center gap-2">
-                        {!isLoaded && !isUnloaded && (
-                          <button
-                            onClick={() => setLoadingModal({
-                              isOpen: true,
-                              shipment: s,
-                              loading_type: 'pickup',
-                              seal_number: s.seal_number || `SL-${Math.floor(10000 + Math.random() * 90000)}`,
-                              seal_status: 'verified_intact',
-                              verified_weight_kg: s.goods_weight_kg,
-                              ice_available_at_pickup: Boolean(s.is_perishable && s.ice_handling_required),
-                              ice_boxes_added: (s.is_perishable && s.ice_handling_required) ? 2 : 0,
-                              temp_celsius: s.current_temp_c || 3.8,
-                              notes: 'Weighed on electronic tare scale and stacked safely. Security seal tag affixed.',
-                              submitting: false
-                            })}
-                            className="flex-1 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <span>📥 Verify & Load at Pickup</span>
-                          </button>
-                        )}
-
-                        {isLoaded && !isUnloaded && (
-                          <button
-                            onClick={() => setLoadingModal({
-                              isOpen: true,
-                              shipment: s,
-                              loading_type: 'drop',
-                              seal_number: s.seal_number || '',
-                              seal_status: 'unsealed_at_destination',
-                              verified_weight_kg: s.goods_weight_kg,
-                              ice_boxes_added: 0,
-                              temp_celsius: s.current_temp_c || 4.0,
-                              notes: 'Security seal tag verified before unsealing. Received in good condition.',
-                              submitting: false
-                            })}
-                            className="flex-1 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <span>📤 Supervise Unload & Handover</span>
-                          </button>
-                        )}
-
-                        {isUnloaded && (
-                          <div className="w-full py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-center text-xs font-semibold">
-                            ✔ Handover Complete & Signoff Archived
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2046,14 +2152,30 @@ export default function LogisticsHub() {
                             <p className="text-[10px] text-slate-500 font-mono">{s.vehicle}</p>
                           </td>
                           <td className="py-3 px-4 text-slate-700 max-w-xs truncate">{s.route}</td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              s.loading_status === 'unloaded' || s.trip_status === 'completed' || s.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
-                              s.loading_status === 'loaded' ? 'bg-purple-100 text-purple-800' :
-                              'bg-amber-100 text-amber-800'
-                            }`}>
-                              {s.trip_status === 'completed' || s.status === 'completed' ? '✔ COMPLETED' : (s.loading_status || 'Pending').toUpperCase()}
-                            </span>
+                            {(() => {
+                              const parentTrip = trips.find(t => t.id === s.trip_id);
+                              const isTripStarted = Boolean(
+                                s.trip_started ||
+                                (parentTrip && (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(parentTrip.status) || parentTrip.is_live)) ||
+                                (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(s.trip_status) || s.is_live)
+                              );
+                              const isTripCompleted = s.trip_status === 'completed' || s.status === 'completed' || parentTrip?.status === 'completed';
+
+                              return (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isTripCompleted ? 'bg-emerald-100 text-emerald-800' :
+                                  s.loading_status === 'unloaded' ? 'bg-purple-100 text-purple-800' :
+                                  s.loading_status === 'loaded' ? (isTripStarted ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800') :
+                                  'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {isTripCompleted
+                                    ? '✔ COMPLETED'
+                                    : (s.loading_status === 'loaded' && !isTripStarted
+                                      ? 'LOADED (AWAITING DEPARTURE)'
+                                      : (s.loading_status || 'Pending').toUpperCase())}
+                                </span>
+                              );
+                            })()}
                           </td>
                         </tr>
                       ))}
@@ -2365,6 +2487,27 @@ export default function LogisticsHub() {
                 )}
               </div>
 
+              {loadingModal.loading_type === 'drop' && (() => {
+                const parentTrip = trips.find(t => t.id === loadingModal.shipment?.trip_id);
+                const isTripStarted = Boolean(
+                  loadingModal.shipment?.trip_started ||
+                  (parentTrip && (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(parentTrip.status) || parentTrip.is_live)) ||
+                  (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(loadingModal.shipment?.trip_status) || loadingModal.shipment?.is_live)
+                );
+                if (!isTripStarted) {
+                  return (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                      <Lock size={15} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Trip Not Started Yet</p>
+                        <p className="text-[11px] mt-0.5">The transport vehicle has not departed from the pickup origin. Drop unloading can only be supervised once the trip begins.</p>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {/* SECURITY SEAL INPUT / VERIFICATION */}
               <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
                 <label className="block text-xs font-bold text-emerald-950">
@@ -2486,8 +2629,15 @@ export default function LogisticsHub() {
               <div className="pt-2 flex items-center gap-2">
                 <button
                   type="submit"
-                  disabled={loadingModal.submitting}
-                  className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
+                  disabled={loadingModal.submitting || (loadingModal.loading_type === 'drop' && !(() => {
+                    const parentTrip = trips.find(t => t.id === loadingModal.shipment?.trip_id);
+                    return Boolean(
+                      loadingModal.shipment?.trip_started ||
+                      (parentTrip && (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(parentTrip.status) || parentTrip.is_live)) ||
+                      (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(loadingModal.shipment?.trip_status) || loadingModal.shipment?.is_live)
+                    );
+                  })())}
+                  className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
                 >
                   {loadingModal.submitting ? 'Submitting...' : 'Sign & Complete Action'}
                 </button>

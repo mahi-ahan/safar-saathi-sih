@@ -42,6 +42,11 @@ def can_start_inspection(trip) -> Tuple[bool, Optional[str]]:
     """
     trip_status = getattr(trip, "status", "scheduled")
     is_live = bool(getattr(trip, "is_live", False))
+
+    # Block inspection for completed or cancelled trips
+    if trip_status in ["completed", "cancelled", "cancelled_by_driver"]:
+        return False, f"Inspection cannot be started. This trip is already {trip_status.replace('_', ' ')}."
+
     if trip_status not in ["in_transit", "moving", "started"] and not is_live:
         if bool(getattr(trip, "is_return_leg", False)):
             return False, "Return trip has not started yet. Inspection stops can only be performed after the driver starts the return trip."
@@ -71,6 +76,11 @@ def can_complete_inspection(trip) -> Tuple[bool, Optional[str]]:
     """
     trip_status = getattr(trip, "status", "scheduled")
     is_live = bool(getattr(trip, "is_live", False))
+
+    # Block inspection for completed or cancelled trips
+    if trip_status in ["completed", "cancelled", "cancelled_by_driver"]:
+        return False, f"Inspection cannot be completed. This trip is already {trip_status.replace('_', ' ')}."
+
     if trip_status not in ["in_transit", "moving", "started"] and not is_live:
         if bool(getattr(trip, "is_return_leg", False)):
             return False, "Return trip has not started yet. Inspection stops can only be performed after the driver starts the return trip."
@@ -139,7 +149,14 @@ def can_start_return_trip(trip, outbound_trip=None) -> Tuple[bool, Optional[str]
     # Case A: Return leg linked to a primary outbound trip
     if bool(getattr(trip, "is_return_leg", False)) and outbound_trip:
         outbound_ga_status = getattr(outbound_trip, "goods_area_status", GoodsAreaState.NOT_STARTED) or GoodsAreaState.NOT_STARTED
-        if outbound_ga_status not in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED, GoodsAreaState.RETURN_STARTED]:
+        outbound_status = getattr(outbound_trip, "status", None)
+        
+        # Outbound is reached & confirmed if goods_area_status is confirmed/enabled OR outbound trip status is completed/pending_passenger_confirmation
+        is_ga_confirmed = (
+            outbound_ga_status in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED, GoodsAreaState.RETURN_STARTED] or
+            outbound_status in ["completed", "pending_passenger_confirmation"]
+        )
+        if not is_ga_confirmed:
             return False, f"Return trip is locked. Outbound journey ({outbound_trip.from_loc} → {outbound_trip.to_loc}) must reach the Goods Area and be confirmed before the return run can start."
         
         # Check if this return leg itself has already started
@@ -152,7 +169,7 @@ def can_start_return_trip(trip, outbound_trip=None) -> Tuple[bool, Optional[str]
     if current_status == GoodsAreaState.RETURN_STARTED:
         return False, "Return trip has already been started for this vehicle. Duplicate start requests are prohibited."
     
-    if current_status not in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED]:
+    if current_status not in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED] and getattr(trip, "status", None) != "completed":
         return False, "Return trip is locked. You must first reach the Goods Area and mark arrival as confirmed before starting the return journey."
     
     return True, None
@@ -184,6 +201,8 @@ def get_trip_state_summary(trip) -> dict:
     return_trip_enabled = ga_status in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED, GoodsAreaState.RETURN_STARTED]
     return_trip_started = ga_status == GoodsAreaState.RETURN_STARTED
 
+    can_start_insp, _ = can_start_inspection(trip)
+
     return {
         "trip_id": getattr(trip, "id", None),
         "distance_km": trip_dist,
@@ -192,7 +211,7 @@ def get_trip_state_summary(trip) -> dict:
         "inspections_remaining": max(0, max_insp - curr_count),
         "inspection_status": insp_status,
         "inspection_completed": insp_completed,
-        "can_start_inspection": not insp_completed and insp_status != InspectionState.IN_PROGRESS,
+        "can_start_inspection": can_start_insp,
         "goods_area_status": ga_status,
         "trip_started": trip_started,
         "vehicle_travelling": vehicle_travelling,

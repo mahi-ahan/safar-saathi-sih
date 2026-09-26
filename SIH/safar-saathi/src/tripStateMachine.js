@@ -122,6 +122,11 @@ export function saveTripStateMachine(tripId, updatedFields) {
 
 export function canStartInspection(state) {
   if (!state) return false;
+  // Block completed or cancelled trips
+  const status = state.status || state.trip_status;
+  if (status === 'completed' || status === 'cancelled' || status === 'cancelled_by_driver' || state.status === 'Delivered') {
+    return false;
+  }
   // Inspection can ONLY start after the trip has been started by the driver
   const tripStarted = state.status === 'in_transit' || state.status === 'moving' || state.status === 'started' || Boolean(state.is_live);
   if (!tripStarted) {
@@ -137,6 +142,10 @@ export function canStartInspection(state) {
 
 export function canCompleteInspection(state) {
   if (!state) return false;
+  const status = state.status || state.trip_status;
+  if (status === 'completed' || status === 'cancelled' || status === 'cancelled_by_driver' || state.status === 'Delivered') {
+    return false;
+  }
   const tripStarted = state.status === 'in_transit' || state.status === 'moving' || state.status === 'started' || Boolean(state.is_live);
   if (!tripStarted) {
     return false;
@@ -184,6 +193,10 @@ export function canStartReturnTrip(state) {
  */
 export async function actionStartInspection(tripId, token = null) {
   const current = getTripStateMachine(tripId);
+  const status = current?.status || current?.trip_status;
+  if (status === 'completed' || status === 'cancelled' || status === 'cancelled_by_driver' || current?.status === 'Delivered') {
+    throw new Error(`Inspection cannot be started. Trip is already ${status || 'ended'}.`);
+  }
   const tripStarted = current?.status === 'in_transit' || current?.status === 'moving' || current?.status === 'started' || Boolean(current?.is_live);
   if (!tripStarted) {
     throw new Error(

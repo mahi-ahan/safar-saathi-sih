@@ -20,7 +20,8 @@ import {
   Volume2,
   VolumeX,
   Play,
-  Share2
+  Share2,
+  Lock
 } from 'lucide-react'
 
 import { useLang, VEHICLE_CAPACITY_SPECS, getVehicleCapacitySpec } from './lib'
@@ -318,13 +319,13 @@ export function Home() {
 ========================================================= */
 
 
-export const CARGO_CATEGORIES = [
+const CARGO_CATEGORIES = [
   'Independent / General Cargo',
   'Perishable Goods',
   'Dedicated / Isolated Cargo'
 ];
 
-export const DEDICATED_PURPOSE_SUB_CATEGORIES = [
+const DEDICATED_PURPOSE_SUB_CATEGORIES = [
   'Pharmaceuticals & Vaccines',
   'Pure Vegetarian Food / FMCG',
   'Non-Veg / Meat, Poultry & Seafood',
@@ -335,7 +336,7 @@ export const DEDICATED_PURPOSE_SUB_CATEGORIES = [
   'Exclusive Single-Client Private Load'
 ];
 
-export const PERISHABLE_COOLING_TYPES = [
+const PERISHABLE_COOLING_TYPES = [
   'Crushed Flake Ice Boxes (Logistics Provided)',
   'Dry-Ice & Gel Packs (Sub-Zero Cold Chain)',
   'Refrigerated Chiller (0°C to 4°C)',
@@ -2260,13 +2261,19 @@ export function FindVehicles() {
                                     <span>Route Checkpoint Inspections</span>
                                   </div>
                                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                                    countDone >= maxInsp
+                                    isCancelled
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                      : isCompleted || countDone >= maxInsp
                                       ? 'bg-emerald-600 text-white shadow-2xs'
                                       : countDone > 0
                                         ? 'bg-amber-600 text-white'
                                         : 'bg-slate-200 text-slate-700'
                                   }`}>
-                                    {countDone >= maxInsp
+                                    {isCancelled
+                                      ? '🛑 Trip Cancelled'
+                                      : isCompleted
+                                      ? '✔ Trip Completed'
+                                      : countDone >= maxInsp
                                       ? `✔ All ${maxInsp} Halts Certified`
                                       : countDone > 0
                                         ? `Halt ${countDone} of ${maxInsp} Completed`
@@ -2361,7 +2368,7 @@ export function FindVehicles() {
                                       </p>
                                     )}
 
-                                    {countDone < maxInsp && (
+                                    {!isCompleted && !isCancelled && countDone < maxInsp && (
                                       <div className="text-[10.5px] text-emerald-800 font-medium flex items-center gap-1.5 bg-emerald-100/60 px-2.5 py-1.5 rounded-lg border border-emerald-200/50">
                                         <span>📍</span>
                                         <span>Next inspection halt ({countDone + 1} of {maxInsp}) will be conducted at a downstream checkpoint along the route.</span>
@@ -2370,11 +2377,15 @@ export function FindVehicles() {
                                   </div>
                                 ) : (
                                   <div className="text-[10.5px] text-slate-600 bg-white/80 p-2.5 rounded-lg border border-emerald-100 flex items-center gap-1.5">
-                                    <span>⏳</span>
+                                    <span>{isCompleted ? '✅' : isCancelled ? '🛑' : '⏳'}</span>
                                     <span>
-                                      {req.status === 'in_transit' || req.status === 'accepted'
-                                        ? `In transit: Ground officers will inspect cargo and record seals at ${maxInsp} highway checkpoint${maxInsp > 1 ? 's' : ''} along the corridor.`
-                                        : `Inspection scheduled: Will be verified once the transporter starts transit.`}
+                                      {isCompleted
+                                        ? 'Trip completed: Inspection cycle closed.'
+                                        : isCancelled
+                                          ? 'Trip cancelled: Inspection unavailable.'
+                                          : req.status === 'in_transit' || req.status === 'accepted'
+                                            ? `In transit: Ground officers will inspect cargo and record seals at ${maxInsp} highway checkpoint${maxInsp > 1 ? 's' : ''} along the corridor.`
+                                            : `Inspection scheduled: Will be verified once the transporter starts transit.`}
                                     </span>
                                   </div>
                                 )}
@@ -2949,7 +2960,8 @@ export function FindVehicles() {
                       setRequestOpen(null);
                       await fetchTripsAndRequests();
                     } else {
-                      notify("⚠ Failed to confirm delivery.");
+                      const errData = await res.json().catch(() => ({}));
+                      notify(errData.detail || "⚠ Failed to confirm delivery.");
                     }
                   } catch (err) {
                     console.error("Confirmation error", err);
@@ -3123,6 +3135,12 @@ export function OfferTrip() {
   };
 
   const startLiveTrip = async (trip) => {
+    // ENFORCE LOAD VERIFICATION CHECK: Cannot start until logistics verifies cargo at pickup
+    if (trip.can_start_trip === false || trip.is_load_verified === false || (trip.unverified_cargo_count && trip.unverified_cargo_count > 0)) {
+      notify(`⚠ ${trip.start_lock_reason || "Cannot start trip. Cargo load must be verified, weighed, and sealed by the ground logistics officer before departure."}`);
+      return;
+    }
+
     // ENFORCE MANDATORY LOCATION PERMISSION CHECK
     if (!navigator.geolocation) {
       notify("⚠ Location services are not supported by your browser. Cannot start trip.");
@@ -3147,7 +3165,8 @@ export function OfferTrip() {
           });
 
           if (!statusRes.ok) {
-            notify("⚠ Failed to start trip on server.");
+            const errData = await statusRes.json().catch(() => ({}));
+            notify(`⚠ ${errData.detail || "Failed to start trip on server."}`);
             return;
           }
 
@@ -3230,6 +3249,18 @@ export function OfferTrip() {
   };
 
   const driverCompleteTrip = (tripId) => {
+    const trip = myTrips.find(t => t.id === tripId);
+    if (trip && trip.partners) {
+      const pendingUnloads = trip.partners.filter(p => {
+        const inc = incomingRequests.find(r => r.id === p.id);
+        const lStatus = p.loading_status || inc?.loading_status || 'pending';
+        return ['accepted', 'in_transit', 'pending'].includes(p.status) && lStatus !== 'unloaded';
+      });
+      if (pendingUnloads.length > 0) {
+        notify(`⚠ Cannot complete delivery: ${pendingUnloads.length} cargo shipment(s) pending drop unload verification by the ground logistics team. Please verify unloading in Logistics Portal first.`);
+        return;
+      }
+    }
     isLiveActiveRef.current = false;
     if (liveIntervalRef.current) {
       clearInterval(liveIntervalRef.current);
@@ -3279,6 +3310,18 @@ export function OfferTrip() {
     if (!proofModal.proofUrl) {
       notify("⚠ Mandatory: Please upload a delivery proof photo before completing this trip.");
       return;
+    }
+    const currentTrip = myTrips.find(t => t.id === proofModal.tripId);
+    if (currentTrip && currentTrip.partners) {
+      const activeUnverified = currentTrip.partners.filter(p => {
+        const inc = incomingRequests.find(r => r.id === p.id);
+        const lStatus = p.loading_status || inc?.loading_status || 'pending';
+        return ['accepted', 'in_transit', 'pending'].includes(p.status) && lStatus !== 'unloaded';
+      });
+      if (activeUnverified.length > 0) {
+        notify(`⚠ Cannot complete delivery: ${activeUnverified.length} cargo shipment(s) are awaiting unload verification by the ground logistics team.`);
+        return;
+      }
     }
     isLiveActiveRef.current = false;
     if (liveIntervalRef.current) {
@@ -3354,6 +3397,12 @@ export function OfferTrip() {
   const confirmDeliverIndividualCargo = async () => {
     if (!deliverModal.req || !deliverModal.proofUrl) {
       notify("⚠ Mandatory: Please upload a delivery proof photo before completing drop-off.");
+      return;
+    }
+    const incReq = incomingRequests.find(r => r.id === deliverModal.req.id);
+    const lStatus = deliverModal.req.loading_status || incReq?.loading_status || 'pending';
+    if (lStatus !== 'unloaded') {
+      notify("⚠ Cannot complete delivery: Cargo unload has not been verified yet! The logistics team must supervise and verify cargo unloading in the Logistics Portal before delivery can be completed.");
       return;
     }
     const token = localStorage.getItem("access_token");
@@ -4198,6 +4247,15 @@ export function OfferTrip() {
                 const usedPct = trip.space_used_percentage !== undefined ? trip.space_used_percentage : (trip.pct || 0);
                 const freeKg = trip.available_space_kg !== undefined ? trip.available_space_kg : Math.max(0, (trip.total_kg || 1000) - (trip.total_booked_kg || 0));
 
+                const linkedOutbound = trip.return_trip_id ? myTrips.find(t => t.id === trip.return_trip_id) : null;
+                const isOutboundCompleted = linkedOutbound && (
+                  linkedOutbound.status === 'completed' ||
+                  linkedOutbound.status === 'pending_passenger_confirmation' ||
+                  ['confirmed', 'return_enabled', 'return_started', 'completed'].includes(linkedOutbound.goods_area_status) ||
+                  (linkedOutbound.partners && linkedOutbound.partners.length > 0 && linkedOutbound.partners.every(p => p.status === 'completed'))
+                );
+                const isReturnLocked = trip.is_return_leg && !isOutboundCompleted && (trip.can_start_trip === false || (trip.return_trip_id && !['confirmed', 'return_enabled', 'return_started', 'completed'].includes(linkedOutbound?.goods_area_status)));
+
                 return (
                   <div
                     key={trip.id}
@@ -4399,9 +4457,12 @@ export function OfferTrip() {
                           </p>
                           <div className="space-y-1.5">
                             {trip.partners.map(p => {
+                              const incReq = incomingRequests.find(r => r.id === p.id);
                               const isPartnerPendingConf = p.status === 'pending_passenger_confirmation';
                               const isPartnerCompleted = p.status === 'completed';
-                              const canDeliver = isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status);
+                              const isUnloadVerified = (p.loading_status === 'unloaded') || (incReq?.loading_status === 'unloaded') || p.is_unload_verified;
+                              const canDeliver = isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status) && isUnloadVerified;
+                              const isWaitingUnload = isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status) && !isUnloadVerified;
                               const isAcceptedWaitingStart = !isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status);
 
                               return (
@@ -4414,11 +4475,13 @@ export function OfferTrip() {
                                         ? 'bg-emerald-600 text-white'
                                         : isPartnerPendingConf
                                           ? 'bg-amber-500 text-white animate-pulse'
-                                          : isAcceptedWaitingStart
-                                            ? 'bg-blue-100 text-blue-800'
-                                            : 'bg-emerald-100 text-emerald-800'
+                                          : isWaitingUnload
+                                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                            : isAcceptedWaitingStart
+                                              ? 'bg-blue-100 text-blue-800'
+                                              : 'bg-emerald-100 text-emerald-800'
                                     }`}>
-                                      {isPartnerPendingConf ? 'Waiting Rating' : isPartnerCompleted ? 'Delivered' : isAcceptedWaitingStart ? 'Accepted' : p.status}
+                                      {isPartnerPendingConf ? 'Waiting Rating' : isPartnerCompleted ? 'Delivered' : isWaitingUnload ? 'Awaiting Unload' : isAcceptedWaitingStart ? 'Accepted' : p.status}
                                     </span>
                                   </div>
 
@@ -4430,6 +4493,13 @@ export function OfferTrip() {
                                       </span>
                                     )}
 
+                                    {isWaitingUnload && (
+                                      <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs" title="Logistics Ground Desk must supervise and verify cargo unloading in Logistics Portal before drop-off">
+                                        <span>⏳</span>
+                                        <span>Unload Verification Pending</span>
+                                      </span>
+                                    )}
+
                                     {canDeliver && (
                                       <button
                                         onClick={() => {
@@ -4437,6 +4507,7 @@ export function OfferTrip() {
                                             id: p.id,
                                             farmer_name: p.farmer_name,
                                             goods_weight_kg: p.goods_weight_kg,
+                                            loading_status: p.loading_status || incReq?.loading_status,
                                             route: p.route || `${trip.from_loc || trip.from} → ${trip.to_loc || trip.to}`,
                                             pickup_place: p.pickup_place
                                           };
@@ -4548,7 +4619,7 @@ export function OfferTrip() {
                         </div>
                       ) : !isTripLive ? (
                         <div className="space-y-2">
-                          {trip.is_return_leg && (trip.can_start_trip === false || (trip.return_trip_id && !['confirmed', 'return_enabled', 'return_started', 'completed'].includes(myTrips.find(t => t.id === trip.return_trip_id)?.goods_area_status) && myTrips.find(t => t.id === trip.return_trip_id)?.status !== 'completed')) ? (
+                          {isReturnLocked ? (
                             <div className="space-y-2">
                               <div className="rounded-xl bg-amber-50 border border-amber-300 p-2.5 text-xs text-amber-900 flex items-start gap-2">
                                 <span className="text-base shrink-0">🔒</span>
@@ -4567,6 +4638,38 @@ export function OfferTrip() {
                                 >
                                   <span>🔒</span>
                                   <span>Outbound Goods Area Pending</span>
+                                </button>
+                                {(trip.status === 'scheduled' || trip.status === 'pending' || !trip.status) && (
+                                  <button
+                                    onClick={() => cancelTrip(trip.id)}
+                                    className="px-3.5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                                    title="Cancel this scheduled trip"
+                                  >
+                                    <X size={15} />
+                                    Cancel
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (trip.can_start_trip === false || trip.is_load_verified === false || (trip.unverified_cargo_count && trip.unverified_cargo_count > 0)) ? (
+                            <div className="space-y-2">
+                              <div className="rounded-xl bg-amber-50 border border-amber-300 p-2.5 text-xs text-amber-900 flex items-start gap-2">
+                                <span className="text-base shrink-0">🔒</span>
+                                <div>
+                                  <p className="font-bold text-amber-950 text-xs">Trip Start Locked · Load Verification Pending</p>
+                                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                    {trip.start_lock_reason || "Assigned cargo must be verified, weighed, and sealed by the ground logistics officer at pickup before departure."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 w-full flex-wrap">
+                                <button
+                                  disabled
+                                  className="flex-1 min-w-[140px] py-2.5 bg-amber-50 text-amber-800 font-semibold text-xs rounded-xl border border-amber-300 flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-90 shadow-2xs"
+                                  title={trip.start_lock_reason || "Cargo load must be verified in logistics portal before departure"}
+                                >
+                                  <Lock size={15} className="text-amber-600" />
+                                  <span>Load Verification Pending</span>
                                 </button>
                                 {(trip.status === 'scheduled' || trip.status === 'pending' || !trip.status) && (
                                   <button
@@ -4668,9 +4771,23 @@ export function OfferTrip() {
                           )}
 
                           {undeliveredPartners.length > 0 ? (
-                            <p className="text-[11px] text-green-soft text-center italic">
-                              Deliver each cargo at its respective drop-off hub above using the "📸 Deliver Cargo" button.
-                            </p>
+                            <div className="space-y-1.5">
+                              {undeliveredPartners.some(p => {
+                                const inc = incomingRequests.find(r => r.id === p.id);
+                                const lStatus = p.loading_status || inc?.loading_status || 'pending';
+                                return lStatus !== 'unloaded';
+                              }) && (
+                                <div className="p-2 bg-amber-50 border border-amber-300 rounded-xl text-center shadow-2xs">
+                                  <p className="text-[11px] text-amber-900 font-semibold flex items-center justify-center gap-1.5">
+                                    <span>⏳</span>
+                                    <span>Unload Verification Pending: Cargo unload must be verified by ground logistics before delivery can be completed.</span>
+                                  </p>
+                                </div>
+                              )}
+                              <p className="text-[11px] text-green-soft text-center italic">
+                                Deliver each cargo at its respective drop-off hub above using the "📸 Deliver Cargo" button once unloaded.
+                              </p>
+                            </div>
                           ) : activePartners.length > 0 ? (
                             <button
                               onClick={() => driverCompleteTrip(trip.id)}

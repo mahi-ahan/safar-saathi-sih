@@ -801,6 +801,7 @@ function Maps({
             start: [startLat, startLng],
             destinationPoint: [destLat, destLng],
             status: isLive ? 'Moving' : t.status === 'completed' ? 'Delivered' : 'Scheduled',
+            trip_status: t.status || 'scheduled',
             load: `${t.vehicle || 'Mini-Truck'} (${t.total_booked_kg || t.total_kg || 0} kg)`,
             destination: t.to_loc?.split(',')[0] || t.to || 'Destination',
             from: t.from_loc?.split(',')[0] || t.from || 'Origin',
@@ -2109,7 +2110,25 @@ function Maps({
               RULE 1 & 2: OFFICIAL VEHICLE INSPECTION WORKFLOW
               - Strictly NOT started automatically
               - Exactly ONE inspection session per trip
+              - Hidden for completed / cancelled trips
           ========================================================= */}
+          {selectedTruck.trip_status === 'completed' || selectedTruck.status === 'Delivered' ? (
+            <div style={{ marginTop: '12px', padding: '10px 12px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '14px' }}>✅</span>
+              <div>
+                <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: '#166534' }}>Trip Completed — Inspection Locked</p>
+                <p style={{ margin: '2px 0 0 0', fontSize: '10.5px', color: '#15803d' }}>This trip has ended. No further inspection sessions can be started.</p>
+              </div>
+            </div>
+          ) : selectedTruck.trip_status === 'cancelled' || selectedTruck.trip_status === 'cancelled_by_driver' ? (
+            <div style={{ marginTop: '12px', padding: '10px 12px', background: '#fff1f2', borderRadius: '12px', border: '1px solid #fecdd3', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '14px' }}>🛑</span>
+              <div>
+                <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: '#9f1239' }}>Trip Cancelled — Inspection Unavailable</p>
+                <p style={{ margin: '2px 0 0 0', fontSize: '10.5px', color: '#be123c' }}>This trip was cancelled. Inspection is not available.</p>
+              </div>
+            </div>
+          ) : (
           <div style={{ marginTop: '12px', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>
@@ -2245,6 +2264,7 @@ function Maps({
               );
             })()}
           </div>
+          )}
 
           {/* =========================================================
               RULES 3, 4, 5, 6, 7: SEQUENCED GOODS AREA & RETURN TRIP WORKFLOW

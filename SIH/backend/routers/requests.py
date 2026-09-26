@@ -866,6 +866,13 @@ def update_request_status(
             detail="Invalid request status"
         )
 
+    if final_status in ["completed", "pending_passenger_confirmation"]:
+        if getattr(request, "loading_status", "pending") != "unloaded":
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot complete delivery. Cargo unload has not been verified yet! The logistics team must supervise and verify cargo unloading in the Logistics Portal before delivery can be completed."
+            )
+
     status = final_status
     request.status = status
     if final_reason:
@@ -1002,6 +1009,12 @@ def confirm_request_completion(
         if "lang" in payload:
             lang = payload.get("lang")
 
+    if getattr(request, "loading_status", "pending") != "unloaded":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot complete delivery receipt. Cargo unload has not been verified yet by the ground logistics team."
+        )
+
     request.status = "completed"
     if final_rating is not None:
         request.rating = max(1, min(5, int(final_rating)))
@@ -1011,13 +1024,21 @@ def confirm_request_completion(
     db.commit()
 
     # Check and finalize linked trip if all active booked passengers are confirmed
-    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
+    if getattr(request, "trip_id", None):
+        linked_t = db.query(models.TripModel).filter(models.TripModel.id == request.trip_id).first()
+        if linked_t:
+            check_and_finalize_trip_completion(linked_t, db)
+            recalculate_trip_cost_shares(linked_t, db)
+
+    all_trips = db.query(models.TripModel).filter(
+        models.TripModel.owner == request.owner,
+        models.TripModel.status.in_(["in_transit", "scheduled", "pending", "pending_passenger_confirmation"])
+    ).all()
     for t in all_trips:
         patterns = get_trip_route_patterns(t)
         if request.route in patterns or f"{t.from_loc} → {t.to_loc}" == request.route or f"{t.from_loc} -> {t.to_loc}" == request.route:
             check_and_finalize_trip_completion(t, db)
             recalculate_trip_cost_shares(t, db)
-            break
 
     db.refresh(request)
 
@@ -1100,6 +1121,12 @@ def deliver_individual_request_proof(
             detail=f"Cannot deliver cargo. This booking is already {request.status}."
         )
 
+    if getattr(request, "loading_status", "pending") != "unloaded":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot complete delivery. Cargo unload has not been verified yet! The logistics team must supervise and verify cargo unloading in the Logistics Portal before delivery can be completed."
+        )
+
     final_proof_url = None
     if file is not None and file.filename:
         final_proof_url = save_uploaded_image(file, subfolder="delivery_proofs")
@@ -1119,7 +1146,18 @@ def deliver_individual_request_proof(
 
     # Check and update linked trip
     linked_trip = None
-    all_trips = db.query(models.TripModel).filter(models.TripModel.owner == request.owner).all()
+    if getattr(request, "trip_id", None):
+        linked_trip = db.query(models.TripModel).filter(models.TripModel.id == request.trip_id).first()
+        if linked_trip:
+            if not linked_trip.delivery_proof_image_url:
+                linked_trip.delivery_proof_image_url = final_proof_url
+            check_and_finalize_trip_completion(linked_trip, db)
+            recalculate_trip_cost_shares(linked_trip, db)
+
+    all_trips = db.query(models.TripModel).filter(
+        models.TripModel.owner == request.owner,
+        models.TripModel.status.in_(["in_transit", "scheduled", "pending", "pending_passenger_confirmation"])
+    ).all()
     for t in all_trips:
         patterns = get_trip_route_patterns(t)
         if request.route in patterns or f"{t.from_loc} → {t.to_loc}" == request.route or f"{t.from_loc} -> {t.to_loc}" == request.route:
@@ -1127,8 +1165,8 @@ def deliver_individual_request_proof(
                 t.delivery_proof_image_url = final_proof_url
             check_and_finalize_trip_completion(t, db)
             recalculate_trip_cost_shares(t, db)
-            linked_trip = t
-            break
+            if not linked_trip:
+                linked_trip = t
 
     db.refresh(request)
 

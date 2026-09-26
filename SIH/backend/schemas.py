@@ -213,6 +213,8 @@ class TripResponse(TripCreate):
     outbound_trip_status: Optional[str] = None
     can_start_trip: Optional[bool] = True
     start_lock_reason: Optional[str] = None
+    is_load_verified: Optional[bool] = True
+    unverified_cargo_count: Optional[int] = 0
     has_return_leg: Optional[bool] = False
     has_perishables: Optional[bool] = False
     ice_handling_supported: Optional[bool] = False

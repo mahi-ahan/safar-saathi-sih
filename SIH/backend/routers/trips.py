@@ -453,25 +453,31 @@ def check_and_finalize_trip_completion(trip: models.TripModel, db: Session) -> b
     if total_active == 0:
         return False
 
+    # UNLOAD VERIFICATION: Unload must be verified before delivery can be completed
+    unverified_unloads = [req for req in active_requests if getattr(req, "loading_status", "pending") != "unloaded"]
+    if unverified_unloads:
+        return False
+
     confirmed_count = sum(1 for req in active_requests if req.status == "completed")
     delivered_count = sum(1 for req in active_requests if req.status in ["pending_passenger_confirmation", "completed"])
 
     # 1. All active shippers have confirmed & rated
     if confirmed_count == total_active:
-        if trip.status != "completed" or trip.is_live:
-            trip.status = "completed"
-            trip.is_live = False
-            db.commit()
-            db.refresh(trip)
+        trip.status = "completed"
+        trip.is_live = False
+        trip.goods_area_status = "confirmed"
+        db.commit()
+        db.refresh(trip)
         return True
 
     # 2. All active shippers have received individual drop-off proofs
     if delivered_count == total_active:
-        if trip.status != "pending_passenger_confirmation" or trip.is_live:
+        if trip.status != "completed":
             trip.status = "pending_passenger_confirmation"
-            trip.is_live = False
-            db.commit()
-            db.refresh(trip)
+        trip.is_live = False
+        trip.goods_area_status = "confirmed"
+        db.commit()
+        db.refresh(trip)
         return True
 
     return False
@@ -522,7 +528,13 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
             "seal_status": getattr(r, "seal_status", None),
             "cooling_type": getattr(r, "cooling_type", None),
             "verified_weight_kg": getattr(r, "verified_weight_kg", None),
-            "weight_compliant": getattr(r, "weight_compliant", None)
+            "weight_compliant": getattr(r, "weight_compliant", None),
+            "loading_status": getattr(r, "loading_status", "pending") or "pending",
+            "loaded_at": getattr(r, "loaded_at", None),
+            "loaded_by": getattr(r, "loaded_by", None),
+            "unloaded_at": getattr(r, "unloaded_at", None),
+            "unloaded_by": getattr(r, "unloaded_by", None),
+            "is_unload_verified": (getattr(r, "loading_status", "pending") == "unloaded")
         })
 
     total_capacity = trip.total_kg or 1000
@@ -574,6 +586,18 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
             can_start_trip = can_start
             if not can_start:
                 start_lock_reason = lock_reason
+
+    # 3. Load verification rule:
+    # A scheduled trip with accepted/assigned cargo cannot start until all cargo is verified & loaded by logistics at pickup!
+    active_cargo = get_trip_requests(trip, db, ["accepted", "assigned"])
+    unverified_cargo = [r for r in active_cargo if getattr(r, "loading_status", "pending") != "loaded"]
+    is_load_verified = len(active_cargo) == 0 or len(unverified_cargo) == 0
+    unverified_cargo_count = len(unverified_cargo)
+
+    if trip.status in ["scheduled", "pending"] and not is_load_verified:
+        can_start_trip = False
+        if not start_lock_reason:
+            start_lock_reason = f"Load verification pending: {unverified_cargo_count} assigned cargo shipment(s) must be verified, weighed, and sealed by the ground logistics officer at pickup before departure."
 
     cps = (
         db.query(models.LogisticsCheckpointModel)
@@ -657,6 +681,8 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         outbound_trip_status=outbound_trip_status,
         can_start_trip=can_start_trip,
         start_lock_reason=start_lock_reason,
+        is_load_verified=is_load_verified,
+        unverified_cargo_count=unverified_cargo_count,
         has_return_leg=has_return_leg,
         cargo_category=getattr(trip, "cargo_category", "Independent / General Cargo") or "Independent / General Cargo",
         dedicated_sub_category=getattr(trip, "dedicated_sub_category", None),
@@ -945,6 +971,16 @@ def update_trip_location(
                 detail=reason or f"Cannot start return trip. You must first complete the primary outbound journey ({outbound.from_loc} → {outbound.to_loc}) and confirm Goods Area arrival."
             )
 
+    # LOAD VERIFICATION ENFORCEMENT:
+    if (loc_data.is_live or loc_data.status == "in_transit") and trip.status in ["scheduled", "pending"]:
+        trip_requests = get_trip_requests(trip, db, ["accepted", "assigned"])
+        unverified_loads = [r for r in trip_requests if getattr(r, "loading_status", "pending") != "loaded"]
+        if unverified_loads:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot start trip. {len(unverified_loads)} assigned cargo shipment(s) pending pickup load verification in the logistics portal. All cargo must be weighed and sealed before departure."
+            )
+
     trip.lat = loc_data.lat
     trip.lng = loc_data.lng
     if loc_data.speed is not None:
@@ -998,6 +1034,27 @@ def update_trip_status(
                 detail=reason or f"Cannot start return backhaul trip. Primary outbound journey ({outbound.from_loc} → {outbound.to_loc}) must reach and confirm Goods Area arrival first."
             )
 
+    # LOAD VERIFICATION ENFORCEMENT:
+    # Driver CANNOT start trip until all accepted/assigned cargo loads have been verified and sealed by logistics team!
+    if status == "in_transit" and trip.status in ["scheduled", "pending"]:
+        trip_requests = get_trip_requests(trip, db, ["accepted", "assigned"])
+        unverified_loads = [r for r in trip_requests if getattr(r, "loading_status", "pending") != "loaded"]
+        if unverified_loads:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot start trip. {len(unverified_loads)} assigned cargo shipment(s) pending pickup load verification in the logistics portal. All cargo must be weighed and sealed before departure."
+            )
+    # UNLOAD VERIFICATION ENFORCEMENT:
+    # Until and unless all cargo is verified unloaded by the logistics team, delivery cannot be completed!
+    if status in ["completed", "pending_passenger_confirmation"]:
+        trip_requests = get_trip_requests(trip, db, ["accepted", "in_transit", "assigned", "pending_passenger_confirmation"])
+        unverified_unloads = [r for r in trip_requests if getattr(r, "loading_status", "pending") != "unloaded"]
+        if unverified_unloads:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot complete delivery. {len(unverified_unloads)} cargo shipment(s) pending drop unloading verification by the ground logistics team in Tab 2. All cargo must be supervised, unsealed, and verified unloaded before completing delivery."
+            )
+
     trip.status = status
     if status == "in_transit":
         trip.is_live = True
@@ -1005,6 +1062,8 @@ def update_trip_status(
             trip.goods_area_status = "travelling"
     elif status in ("completed", "cancelled", "cancelled_by_driver", "pending_passenger_confirmation"):
         trip.is_live = False
+        if status in ("completed", "pending_passenger_confirmation"):
+            trip.goods_area_status = "confirmed"
 
     route_str = f"{trip.from_loc} → {trip.to_loc}"
 
@@ -1137,6 +1196,22 @@ def driver_complete_trip(
             detail="This trip has already been completed and finalized."
         )
 
+    # UNLOAD VERIFICATION ENFORCEMENT:
+    # Until and unless all cargo is verified unloaded by the logistics team, delivery cannot be completed!
+    route_patterns = get_trip_route_patterns(trip)
+    active_requests_check = db.query(models.RequestModel).filter(
+        models.RequestModel.owner == trip.owner,
+        models.RequestModel.route.in_(route_patterns),
+        models.RequestModel.status.in_(["accepted", "in_transit", "assigned", "pending_passenger_confirmation"])
+    ).all()
+
+    unverified_unloads = [r for r in active_requests_check if getattr(r, "loading_status", "pending") != "unloaded"]
+    if unverified_unloads:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot complete delivery. {len(unverified_unloads)} cargo shipment(s) are pending drop unloading verification by the ground logistics team in Tab 2. All cargo must be supervised, unsealed, and verified unloaded before completing delivery."
+        )
+
     # STAGE 2: MANDATORY DELIVERY PROOF VALIDATION
     final_proof_url = None
 
@@ -1175,6 +1250,7 @@ def driver_complete_trip(
             trip.status = "pending_passenger_confirmation"
             for req in unconfirmed_requests:
                 req.status = "pending_passenger_confirmation"
+        trip.goods_area_status = "confirmed"
 
         db.commit()
         db.refresh(trip)

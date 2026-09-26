@@ -862,15 +862,28 @@ def get_logistics_trips_and_shipments(
 
         trip_is_perishable = (getattr(t, "cargo_category", "") == "Perishable Goods") or bool(getattr(t, "has_perishables", False))
         has_ice_shipments = any(bool(r.get("ice_handling_required")) for r in trip_reqs)
-        total_booked_kg = sum(r["goods_weight_kg"] for r in trip_reqs if r["status"] not in ["cancelled", "rejected"])
+        trip_has_perishables = trip_is_perishable or any(r["is_perishable"] for r in trip_reqs)
+        total_booked_kg = sum(r["goods_weight_kg"] for r in trip_reqs if r["status"] not in ["cancelled", "rejected", "cancelled_by_driver"])
 
-        for r in trip_reqs:
-            if r["is_perishable"]:
-                total_perishables += 1
-            if r["loading_status"] == "pending" and r["status"] in ["accepted", "scheduled", "in_transit"]:
-                pending_loadings += 1
-            elif r["loading_status"] == "loaded" and r["status"] in ["in_transit", "accepted"]:
-                pending_unloadings += 1
+        active_cargo = [r for r in trip_reqs if r["status"] not in ["cancelled", "rejected", "cancelled_by_driver"]]
+        unverified_cargo = [r for r in active_cargo if r.get("loading_status", "pending") != "loaded"]
+        is_load_verified = len(active_cargo) == 0 or len(unverified_cargo) == 0
+        unverified_cargo_count = len(unverified_cargo)
+        verified_cargo_count = len([r for r in active_cargo if r.get("loading_status") == "loaded"])
+
+        trip_started = bool(t and ((t.status in ["in_transit", "moving", "started", "pending_passenger_confirmation", "completed"]) or bool(getattr(t, "is_live", False))))
+
+        # Only count pending loadings & unloadings for active, non-cancelled, non-completed trips
+        if t.status not in ["cancelled", "cancelled_by_driver", "completed"]:
+            for r in trip_reqs:
+                if r["status"] in ["cancelled", "cancelled_by_driver", "rejected"]:
+                    continue
+                if r["is_perishable"]:
+                    total_perishables += 1
+                if r["loading_status"] == "pending" and r["status"] in ["accepted", "scheduled", "in_transit"]:
+                    pending_loadings += 1
+                elif r["loading_status"] == "loaded" and r["status"] in ["in_transit", "accepted"] and trip_started:
+                    pending_unloadings += 1
 
         trip_list.append({
             "id": t.id,
@@ -913,16 +926,26 @@ def get_logistics_trips_and_shipments(
             "checkpoint_count": actual_checkpoints_count,
             "current_checkpoint": t.current_checkpoint or (trip_cps[0]["checkpoint_name"] if trip_cps else "Departure Hub"),
             "checkpoints": trip_cps,
-            "bookings": trip_reqs
+            "bookings": trip_reqs,
+            "is_load_verified": is_load_verified,
+            "unverified_cargo_count": unverified_cargo_count,
+            "verified_cargo_count": verified_cargo_count,
+            "total_cargo_count": len(active_cargo),
+            "can_start_trip": is_load_verified
         })
 
-    # Flat list of all cargo shipments with full details
+    # Flat list of active cargo shipments (excludes cancelled requests and deactivated trips)
     flat_shipments = []
-    filtered_trip_ids = {t.id for t in filtered_trips}
+    active_filtered_trip_ids = {t.id for t in filtered_trips if t.status not in ["cancelled", "cancelled_by_driver"]}
     for r in all_requests:
-        if r.trip_id and r.trip_id not in filtered_trip_ids:
+        if not r.trip_id or r.trip_id not in active_filtered_trip_ids:
+            continue
+        if r.status in ["cancelled", "cancelled_by_driver", "rejected"]:
             continue
         t = next((trip for trip in all_trips if trip.id == r.trip_id), None)
+        if not t or t.status in ["cancelled", "cancelled_by_driver"]:
+            continue
+        r_trip_started = bool(t and ((t.status in ["in_transit", "moving", "started", "pending_passenger_confirmation", "completed"]) or bool(getattr(t, "is_live", False))))
         flat_shipments.append({
             "id": r.id,
             "trip_id": r.trip_id,
@@ -930,6 +953,9 @@ def get_logistics_trips_and_shipments(
             "driver_phone": t.driver_phone if t else None,
             "vehicle": t.vehicle if t else "Truck",
             "trip_status": t.status if t else "scheduled",
+            "trip_started": r_trip_started,
+            "is_live": bool(getattr(t, "is_live", False)) if t else False,
+            "goods_area_status": getattr(t, "goods_area_status", None) if t else None,
             "farmer_name": r.farmer_name or "Shipper",
             "farmer_phone": (db.query(models.UserProfile.phone_number).filter(models.UserProfile.user_id == r.user_id).scalar() if r.user_id else None),
             "cargo_type": r.cargo_type or "Perishable Fresh Produce",
@@ -998,6 +1024,13 @@ def log_checkpoint_inspection(
     trip = db.query(models.TripModel).filter(models.TripModel.id == payload.trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail=f"Trip ID {payload.trip_id} not found.")
+
+    # RULE: Inspection cannot be performed on completed or cancelled trips
+    if trip.status in ["completed", "cancelled", "cancelled_by_driver"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Inspection cannot be performed. This trip is already {trip.status.replace('_', ' ')}."
+        )
 
     # RULE: Inspection stop can ONLY be performed after the driver has started the trip
     if trip.status not in ["in_transit", "moving", "started"] and not bool(getattr(trip, "is_live", False)):
@@ -1230,6 +1263,20 @@ def record_loading_event(
     if not req:
         raise HTTPException(status_code=404, detail=f"Cargo booking ID {payload.request_id} not found.")
 
+    if req.status in ["cancelled", "cancelled_by_driver", "rejected"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot record loading or unloading. This cargo booking has been {req.status.replace('_', ' ')}."
+        )
+
+    if req.trip_id:
+        trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first()
+        if trip and trip.status in ["cancelled", "cancelled_by_driver"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot record loading or unloading. The associated trip #{trip.id} has been {trip.status.replace('_', ' ')}."
+            )
+
     timestamp_str = datetime.now().strftime("%Y-%m-%d %I:%M %p")
 
     if payload.loading_type == "pickup":
@@ -1280,6 +1327,24 @@ def record_loading_event(
             else:
                 msg += " (Ice unavailable at pickup dock; deferred to nearest highway inspection checkpoint)."
     else:
+        # Validation 1: Cargo must already be loaded at pickup
+        if req.loading_status != "loaded":
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot perform drop unloading before cargo has been loaded onto the vehicle at pickup."
+            )
+
+        # Validation 2: The trip must have actually started
+        if req.trip_id:
+            trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first()
+            if trip:
+                trip_started = bool((trip.status in ["in_transit", "moving", "started", "pending_passenger_confirmation", "completed"]) or bool(getattr(trip, "is_live", False)))
+                if not trip_started:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Trip has not started yet. Unloading can only be performed after the driver departs and the trip is underway."
+                    )
+
         req.loading_status = "unloaded"
         req.unloaded_at = timestamp_str
         req.unloaded_by = payload.officer_name

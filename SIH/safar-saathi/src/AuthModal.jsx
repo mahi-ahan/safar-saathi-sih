@@ -124,7 +124,8 @@ export function AuthModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          google_token: credentialResponse.credential
+          google_token: credentialResponse.credential,
+          intent: intent
         })
       });
 
@@ -139,21 +140,10 @@ export function AuthModal({
           return;
         }
 
-        // Check for Intent vs Role Mismatch
-        if (intent === 'find' && data.user_type === 'driver') {
-          localStorage.removeItem("access_token");
-          const errorMsg = localizedText.sender_mismatch;
-          setRoleError({
-            type: 'driver_on_sender',
-            message: errorMsg,
-            token: data.access_token
-          });
-          speakText(errorMsg, lang);
-          return;
-        }
-
+        // Strict role verification check on success
         if (intent === 'offer' && data.user_type !== 'driver') {
           localStorage.removeItem("access_token");
+          localStorage.removeItem("user_type");
           const errorMsg = localizedText.driver_mismatch;
           setRoleError({
             type: 'sender_on_driver',
@@ -164,8 +154,22 @@ export function AuthModal({
           return;
         }
 
+        if (intent === 'find' && data.user_type === 'driver') {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("user_type");
+          const errorMsg = localizedText.sender_mismatch;
+          setRoleError({
+            type: 'driver_on_sender',
+            message: errorMsg,
+            token: data.access_token
+          });
+          speakText(errorMsg, lang);
+          return;
+        }
+
         localStorage.removeItem('login_intent');
         localStorage.setItem("access_token", data.access_token);
+        localStorage.setItem("user_type", data.user_type);
         
         onClose();
         if (onSuccess) {
@@ -177,7 +181,14 @@ export function AuthModal({
         }
       } else {
         const detail = data.detail || "Google authentication failed on backend.";
-        setRoleError({ type: 'general', message: detail });
+        const isSenderOnDriver = detail.includes("already registered as a Sender");
+        const isDriverOnSender = detail.includes("already registered as a Transporter");
+
+        setRoleError({ 
+          type: isSenderOnDriver ? 'sender_on_driver' : isDriverOnSender ? 'driver_on_sender' : 'general', 
+          message: detail,
+          token: data.access_token 
+        });
         speakText(detail, lang);
       }
     } catch (err) {
@@ -267,10 +278,11 @@ export function AuthModal({
                   {roleError.message}
                 </p>
 
-                {roleError.type === 'driver_on_sender' && roleError.token && (
+                {roleError.type === 'driver_on_sender' && (
                   <button
                     onClick={() => {
-                      localStorage.setItem("access_token", roleError.token);
+                      if (roleError.token) localStorage.setItem("access_token", roleError.token);
+                      localStorage.setItem("user_type", "driver");
                       onClose();
                       navigate('/offer');
                     }}
@@ -280,10 +292,11 @@ export function AuthModal({
                   </button>
                 )}
 
-                {roleError.type === 'sender_on_driver' && roleError.token && (
+                {roleError.type === 'sender_on_driver' && (
                   <button
                     onClick={() => {
-                      localStorage.setItem("access_token", roleError.token);
+                      if (roleError.token) localStorage.setItem("access_token", roleError.token);
+                      localStorage.setItem("user_type", "sender");
                       onClose();
                       navigate('/find');
                     }}

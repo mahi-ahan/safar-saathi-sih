@@ -765,30 +765,30 @@ function ProtectedRoute({ children, requiredType }) {
           return
         }
 
-        // ROLE-BASED ACCESS CONTROL ENFORCEMENT:
-        // A Sender (user_type !== 'driver') cannot access Driver Hub (/offer)
-        // A Driver (user_type === 'driver') cannot access Sender Hub (/find)
+        // Strict Role-Based Route Protection:
+        // Senders (user_type !== 'driver') cannot access Driver Operations (/offer)
+        // Drivers (user_type === 'driver') cannot access Sender Hub (/find)
         if (requiredType === 'driver' && data.user_type !== 'driver') {
-          localStorage.removeItem("access_token")
           navigate('/login', {
             state: {
               intent: 'offer',
-              error: `You were logged in as a Sender (${data.email}). Please sign in with your Driver account to access the Driver Operations Hub.`
+              error: `This Google account is registered as a Sender (${data.email || ''}). An email registered for Find a Vehicle cannot be used to Offer a Trip. Please sign in with a Driver account, or return to Find a Vehicle.`
             }
-          })
-          return
+          });
+          return;
         }
 
         if (requiredType === 'sender' && data.user_type === 'driver') {
-          localStorage.removeItem("access_token")
           navigate('/login', {
             state: {
               intent: 'find',
-              error: `You were logged in as a Driver (${data.email}). Please sign in with your Sender account to access Find a Vehicle.`
+              error: `This Google account is registered as a Driver (${data.email || ''}). An email registered for Offer a Trip cannot be used for Find a Vehicle. Please sign in with a Sender account, or return to Offer a Trip.`
             }
-          })
-          return
+          });
+          return;
         }
+
+        localStorage.setItem("user_type", data.user_type);
       } catch (err) {
         console.error("Auth status error:", err)
       } finally {

@@ -185,6 +185,8 @@ def google_login(payload: dict, db: Session = Depends(get_db)):
     aadhaar_doc = None
     license_doc = None
     
+    intent = (payload.get("intent") or "").lower().strip()
+
     if not user:
         # Generate a unique username to prevent UNIQUE constraint failures
         base_username = name.replace(" ", "").lower()
@@ -199,18 +201,59 @@ def google_login(payload: dict, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
-        is_complete = False
+
+        target_type = "driver" if (intent in ["offer", "driver"]) else "sender"
+        profile = models.UserProfile(
+            user_id=user.id,
+            full_name=name,
+            phone_number="9876543210",
+            user_type=target_type,
+            is_verified=True
+        )
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+        user_type = target_type
+        full_name = name
+        is_complete = True
     else:
         profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == user.id).first()
-        if profile:
+        if not profile:
+            target_type = "driver" if (intent in ["offer", "driver"]) else "sender"
+            profile = models.UserProfile(
+                user_id=user.id,
+                full_name=name,
+                phone_number="9876543210",
+                user_type=target_type,
+                is_verified=True
+            )
+            db.add(profile)
+            db.commit()
+            db.refresh(profile)
+            user_type = target_type
+            full_name = name
+            is_complete = True
+        else:
             user_type = profile.user_type
-            full_name = profile.full_name
+            full_name = profile.full_name or name
             aadhaar_doc = profile.aadhaar_doc
             license_doc = profile.license_doc
-            if user_type == "driver":
-                is_complete = bool(profile.phone_number and profile.aadhaar_doc and profile.license_doc)
-            else:
-                is_complete = bool(profile.phone_number and profile.user_type)
+            is_complete = bool(profile.phone_number and profile.user_type)
+
+            # Strict Role Check:
+            # 1. An email registered as a Sender cannot log into Offer a Trip (Driver)
+            if intent in ["offer", "driver"] and profile.user_type != "driver":
+                raise HTTPException(
+                    status_code=403,
+                    detail="This Google account is already registered as a Sender. Please sign in with a Driver account to offer trips, or proceed to Find a Vehicle."
+                )
+
+            # 2. An email registered as a Driver cannot log into Find a Vehicle (Sender)
+            if intent in ["find", "sender"] and profile.user_type == "driver":
+                raise HTTPException(
+                    status_code=403,
+                    detail="This Google account is already registered as a Transporter (Driver). Please sign in with a Sender account to book cargo space, or proceed to Driver Operations."
+                )
 
     access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
     

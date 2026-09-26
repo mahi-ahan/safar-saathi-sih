@@ -49,7 +49,8 @@ export function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          google_token: credentialResponse.credential
+          google_token: credentialResponse.credential,
+          intent: intent
         })
       });
 
@@ -63,21 +64,10 @@ export function LoginPage() {
           return;
         }
 
-        // Check for Intent vs Role Mismatch
-        if (intent === 'find' && data.user_type === 'driver') {
-          localStorage.removeItem("access_token");
-          const errorMsg = localizedText.sender_mismatch;
-          setRoleError({
-            type: 'driver_on_sender',
-            message: errorMsg,
-            token: data.access_token
-          });
-          speakText(errorMsg, lang);
-          return;
-        }
-
+        // Strict role verification check on success
         if (intent === 'offer' && data.user_type !== 'driver') {
           localStorage.removeItem("access_token");
+          localStorage.removeItem("user_type");
           const errorMsg = localizedText.driver_mismatch;
           setRoleError({
             type: 'sender_on_driver',
@@ -88,8 +78,22 @@ export function LoginPage() {
           return;
         }
 
+        if (intent === 'find' && data.user_type === 'driver') {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("user_type");
+          const errorMsg = localizedText.sender_mismatch;
+          setRoleError({
+            type: 'driver_on_sender',
+            message: errorMsg,
+            token: data.access_token
+          });
+          speakText(errorMsg, lang);
+          return;
+        }
+
         localStorage.removeItem('login_intent');
         localStorage.setItem("access_token", data.access_token);
+        localStorage.setItem("user_type", data.user_type);
 
         if (data.user_type === 'driver') {
           navigate('/offer');
@@ -98,7 +102,14 @@ export function LoginPage() {
         }
       } else {
         const detail = data.detail || "Google authentication failed. Please try again.";
-        setRoleError({ type: 'general', message: detail });
+        const isSenderOnDriver = detail.includes("already registered as a Sender");
+        const isDriverOnSender = detail.includes("already registered as a Transporter");
+
+        setRoleError({
+          type: isSenderOnDriver ? 'sender_on_driver' : isDriverOnSender ? 'driver_on_sender' : 'general',
+          message: detail,
+          token: data.access_token
+        });
         speakText(detail, lang);
       }
     } catch (err) {
@@ -229,11 +240,13 @@ export function LoginPage() {
                   {roleError.message}
                 </p>
 
-                {roleError.type === 'driver_on_sender' && roleError.token && (
+                {roleError.type === 'driver_on_sender' && (
                   <button
                     type="button"
                     onClick={() => {
-                      localStorage.setItem("access_token", roleError.token);
+                      if (roleError.token) localStorage.setItem("access_token", roleError.token);
+                      localStorage.setItem("user_type", "driver");
+                      setIntent('offer');
                       navigate('/offer');
                     }}
                     className="px-3.5 py-1.5 bg-green-deep text-cream rounded-xl text-xs font-semibold hover:bg-green transition flex items-center gap-1.5 cursor-pointer shadow-xs"
@@ -242,11 +255,13 @@ export function LoginPage() {
                   </button>
                 )}
 
-                {roleError.type === 'sender_on_driver' && roleError.token && (
+                {roleError.type === 'sender_on_driver' && (
                   <button
                     type="button"
                     onClick={() => {
-                      localStorage.setItem("access_token", roleError.token);
+                      if (roleError.token) localStorage.setItem("access_token", roleError.token);
+                      localStorage.setItem("user_type", "sender");
+                      setIntent('find');
                       navigate('/find');
                     }}
                     className="px-3.5 py-1.5 bg-soil text-cream rounded-xl text-xs font-semibold hover:bg-soil-light transition flex items-center gap-1.5 cursor-pointer shadow-xs"

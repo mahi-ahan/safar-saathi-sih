@@ -570,6 +570,45 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
             if not can_start:
                 start_lock_reason = lock_reason
 
+    cps = (
+        db.query(models.LogisticsCheckpointModel)
+        .filter(models.LogisticsCheckpointModel.trip_id == trip.id)
+        .order_by(models.LogisticsCheckpointModel.id.asc())
+        .all()
+    )
+    checkpoints_list = [
+        {
+            "id": cp.id,
+            "trip_id": cp.trip_id,
+            "checkpoint_name": cp.checkpoint_name,
+            "checkpoint_type": getattr(cp, "checkpoint_type", "Highway Toll Plaza") or "Highway Toll Plaza",
+            "officer_name": cp.officer_name,
+            "officer_phone": cp.officer_phone,
+            "timestamp": cp.timestamp,
+            "cargo_seal_intact": cp.cargo_seal_intact,
+            "seal_number": getattr(cp, "seal_number", None),
+            "seal_status": getattr(cp, "seal_status", "Verified & Intact") or "Verified & Intact",
+            "measured_weight_kg": getattr(cp, "measured_weight_kg", None),
+            "declared_weight_kg": getattr(cp, "declared_weight_kg", None),
+            "weight_discrepancy_kg": getattr(cp, "weight_discrepancy_kg", None),
+            "weight_compliant": getattr(cp, "weight_compliant", True),
+            "safety_parameters_status": getattr(cp, "safety_parameters_status", "Compliant") or "Compliant",
+            "cooling_status": getattr(cp, "cooling_status", None),
+            "cargo_condition": cp.cargo_condition,
+            "ice_status": cp.ice_status,
+            "temp_celsius": cp.temp_celsius,
+            "notes": cp.notes,
+            "action_taken": cp.action_taken,
+            "proof_image_url": cp.proof_image_url
+        }
+        for cp in cps
+    ]
+    from routers.logistics import calculate_trip_distance_km, get_max_inspections_for_distance
+    trip_dist = calculate_trip_distance_km(trip)
+    max_insp = get_max_inspections_for_distance(trip_dist)
+    curr_cp_count = max(getattr(trip, "checkpoint_count", 0) or 0, len(checkpoints_list))
+    remaining_insp = max(0, max_insp - curr_cp_count)
+
     return schemas.TripResponse(
         id=trip.id,
         state=trip.state or "",
@@ -623,8 +662,11 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         weight_compliant=getattr(trip, "weight_compliant", None),
         cooling_type=getattr(trip, "cooling_type", None),
         target_temp_c=getattr(trip, "target_temp_c", None),
-        current_checkpoint=getattr(trip, "current_checkpoint", None),
-        checkpoint_count=getattr(trip, "checkpoint_count", 0) or 0,
+        current_checkpoint=getattr(trip, "current_checkpoint", None) or (checkpoints_list[-1]["checkpoint_name"] if checkpoints_list else None),
+        checkpoint_count=curr_cp_count,
+        max_inspections=max_insp,
+        inspections_remaining=remaining_insp,
+        checkpoints=checkpoints_list,
         has_perishables=bool(getattr(trip, "has_perishables", False)),
         ice_handling_supported=bool(getattr(trip, "ice_handling_supported", True)),
         inspection_status=getattr(trip, "inspection_status", "not_started") or "not_started",
@@ -1554,9 +1596,17 @@ def complete_trip_inspection(
         raise HTTPException(status_code=400, detail=reason)
 
     p = payload or schemas.TripInspectionCompleteRequest()
-    trip.inspection_status = trip_state_machine.InspectionState.COMPLETED
-    trip.inspection_completed = True
-    trip.checkpoint_count = (trip.checkpoint_count or 0) + 1
+    from routers.logistics import calculate_trip_distance_km, get_max_inspections_for_distance
+    trip_dist = calculate_trip_distance_km(trip)
+    max_insp = get_max_inspections_for_distance(trip_dist)
+    new_count = (trip.checkpoint_count or 0) + 1
+    trip.checkpoint_count = new_count
+    if new_count >= max_insp:
+        trip.inspection_status = trip_state_machine.InspectionState.COMPLETED
+        trip.inspection_completed = True
+    else:
+        trip.inspection_status = trip_state_machine.InspectionState.NOT_STARTED
+        trip.inspection_completed = False
     if p.seal_number:
         trip.seal_number = p.seal_number
     if p.seal_status:
@@ -1564,13 +1614,33 @@ def complete_trip_inspection(
     if p.measured_weight_kg is not None:
         trip.last_weigh_in_kg = p.measured_weight_kg
 
+    cp_station = getattr(p, "checkpoint_name", None) or trip.current_checkpoint or f"{trip.to_loc.split(',')[0]} NH Transit Checkpoint"
+    trip.current_checkpoint = cp_station
+    db_checkpoint = models.LogisticsCheckpointModel(
+        trip_id=trip.id,
+        checkpoint_name=cp_station,
+        checkpoint_type="Highway Toll Plaza",
+        officer_name=getattr(current_user, "username", "Field Officer"),
+        timestamp=datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+        cargo_seal_intact=True,
+        seal_number=trip.seal_number or f"SL-{trip.id}-{int(datetime.now().timestamp()) % 10000}",
+        seal_status=trip.seal_status or "Verified & Intact",
+        measured_weight_kg=trip.last_weigh_in_kg or float(trip.total_kg or 450.0),
+        declared_weight_kg=float(trip.total_kg or 450.0),
+        weight_compliant=True,
+        cargo_condition="Intact & Good",
+        notes=p.notes or f"Inspection halt {new_count}/{max_insp} verified and stamped."
+    )
+    db.add(db_checkpoint)
+
     db.commit()
     db.refresh(trip)
 
     state_dict = trip_state_machine.get_trip_state_summary(trip)
+    msg = f"Inspection halt {new_count}/{max_insp} verified and stamped." if new_count < max_insp else f"All {max_insp} inspection halts completed. Trip inspection fully verified."
     return schemas.TripStateMachineResponse(
         **state_dict,
-        message="Inspection verified and sealed permanently. Inspection session closed."
+        message=msg
     )
 
 

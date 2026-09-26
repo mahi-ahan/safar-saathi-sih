@@ -809,7 +809,9 @@ function Maps({
             has_perishables: Boolean(t.has_perishables),
             ice_handling_supported: Boolean(t.ice_handling_supported),
             current_checkpoint: t.current_checkpoint || null,
-            checkpoint_count: t.checkpoint_count || 0,
+            checkpoint_count: t.checkpoint_count || (t.checkpoints ? t.checkpoints.length : 0),
+            max_inspections: t.max_inspections || 1,
+            checkpoints: t.checkpoints || [],
             routeChanged: false,
             changeReason: ''
           };
@@ -2118,100 +2120,130 @@ function Maps({
                 fontWeight: 700,
                 padding: '2px 8px',
                 borderRadius: '999px',
-                background: selectedTruck.inspection_completed || selectedTruck.inspection_status === INSPECTION_STATES.COMPLETED ? '#ecfdf5' : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS ? '#fef3c7' : '#f1f5f9',
-                color: selectedTruck.inspection_completed || selectedTruck.inspection_status === INSPECTION_STATES.COMPLETED ? '#047857' : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS ? '#b45309' : '#64748b'
+                background: selectedTruck.checkpoint_count >= (selectedTruck.max_inspections || 1) || selectedTruck.inspection_completed ? '#ecfdf5' : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS ? '#fef3c7' : '#f1f5f9',
+                color: selectedTruck.checkpoint_count >= (selectedTruck.max_inspections || 1) || selectedTruck.inspection_completed ? '#047857' : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS ? '#b45309' : '#64748b'
               }}>
-                {selectedTruck.inspection_completed || selectedTruck.inspection_status === INSPECTION_STATES.COMPLETED ? '✔ Completed (1/1)' : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS ? '⏳ In Progress' : 'Not Started'}
+                {selectedTruck.checkpoint_count >= (selectedTruck.max_inspections || 1) || selectedTruck.inspection_completed
+                  ? `✔ Completed (${selectedTruck.checkpoint_count || selectedTruck.max_inspections || 1}/${selectedTruck.max_inspections || 1})`
+                  : selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS
+                    ? `⏳ In Progress (${Math.min(selectedTruck.max_inspections || 1, (selectedTruck.checkpoint_count || 0) + 1)}/${selectedTruck.max_inspections || 1})`
+                    : `Not Started (${selectedTruck.checkpoint_count || 0}/${selectedTruck.max_inspections || 1})`}
               </span>
             </div>
 
-            {(!selectedTruck.inspection_status || selectedTruck.inspection_status === INSPECTION_STATES.NOT_STARTED) && !selectedTruck.inspection_completed && (
-              <div style={{ marginTop: '6px' }}>
-                <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
-                  Inspection begins ONLY after explicit manual trigger. No inspection data is pre-populated.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => handleStartInspection(selectedTruck.id)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    background: '#047857',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                  }}
-                >
-                  🛡️ Start Inspection
-                </button>
-              </div>
-            )}
+            {(() => {
+              const maxInsp = selectedTruck.max_inspections || 1;
+              const countDone = selectedTruck.checkpoint_count || 0;
+              const isFullyDone = countDone >= maxInsp || selectedTruck.inspection_completed;
+              const nextNum = Math.min(maxInsp, countDone + 1);
 
-            {selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS && !selectedTruck.inspection_completed && (
-              <div style={{ marginTop: '6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
-                <p style={{ margin: '0 0 4px 0', fontSize: '11px', fontWeight: 700, color: '#92400e' }}>
-                  Active Inspection Session In-Progress
-                </p>
-                <p style={{ margin: '0 0 8px 0', fontSize: '10.5px', color: '#b45309' }}>
-                  Verify security seal intactness and weighbridge compliance before certifying.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => handleConfirmInspection(selectedTruck.id)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    background: '#b45309',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  ✔ Confirm & Stamp Inspection
-                </button>
-              </div>
-            )}
+              if (isFullyDone) {
+                return (
+                  <div style={{ marginTop: '6px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px' }}>
+                    <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>
+                      ✔ All Official Checkpoints Verified ({countDone}/{maxInsp})
+                    </div>
+                    {selectedTruck.checkpoints && selectedTruck.checkpoints.length > 0 ? (
+                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {selectedTruck.checkpoints.map((cp, idx) => (
+                          <div key={cp.id || idx} style={{ background: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '5px 8px', fontSize: '10.5px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 600, color: '#166534' }}>
+                              <span>Halt {idx + 1}: {cp.checkpoint_name}</span>
+                              <span style={{ fontSize: '9px', color: '#64748b' }}>{cp.timestamp}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#475569', marginTop: '2px' }}>
+                              <span>Officer: {cp.officer_name || 'Ground Officer'}</span>
+                              <span style={{ fontWeight: 600, color: '#047857' }}>Seal: #{cp.seal_number || selectedTruck.seal_number || 'Verified'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : selectedTruck.current_checkpoint ? (
+                      <p style={{ margin: '3px 0 0 0', fontSize: '10.5px', color: '#15803d' }}>
+                        Station: {selectedTruck.current_checkpoint}
+                      </p>
+                    ) : null}
+                    <p style={{ margin: '6px 0 0 0', fontSize: '10px', color: '#15803d', fontStyle: 'italic' }}>
+                      🔒 All {maxInsp} allowed checkpoint inspections completed for this journey.
+                    </p>
+                    <button
+                      disabled
+                      type="button"
+                      style={{
+                        width: '100%',
+                        marginTop: '8px',
+                        padding: '7px',
+                        background: '#e2e8f0',
+                        color: '#94a3b8',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'not-allowed'
+                      }}
+                    >
+                      ✔ All Checkpoints Certified
+                    </button>
+                  </div>
+                );
+              }
 
-            {(selectedTruck.inspection_completed || selectedTruck.inspection_status === INSPECTION_STATES.COMPLETED) && (
-              <div style={{ marginTop: '6px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>
-                  ✔ Official Inspection Verified & Sealed
-                </div>
-                {selectedTruck.current_checkpoint && (
-                  <p style={{ margin: '3px 0 0 0', fontSize: '10.5px', color: '#15803d' }}>
-                    Station: {selectedTruck.current_checkpoint}
+              if (selectedTruck.inspection_status === INSPECTION_STATES.IN_PROGRESS) {
+                return (
+                  <div style={{ marginTop: '6px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '11px', fontWeight: 700, color: '#92400e' }}>
+                      Active Inspection Halt {nextNum}/{maxInsp} In-Progress
+                    </p>
+                    <p style={{ margin: '0 0 8px 0', fontSize: '10.5px', color: '#b45309' }}>
+                      Verify security seal intactness and weighbridge compliance before certifying.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmInspection(selectedTruck.id)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: '#b45309',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✔ Confirm & Stamp Inspection ({nextNum}/{maxInsp})
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ marginTop: '6px' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
+                    {countDone === 0 ? 'Inspection begins ONLY after explicit manual trigger.' : `Halt ${countDone} stamped. Ready to initiate halt ${nextNum} of ${maxInsp}.`}
                   </p>
-                )}
-                <p style={{ margin: '4px 0 0 0', fontSize: '10px', color: '#15803d', fontStyle: 'italic' }}>
-                  🔒 Inspection session closed. Only ONE inspection permitted per trip.
-                </p>
-                <button
-                  disabled
-                  type="button"
-                  style={{
-                    width: '100%',
-                    marginTop: '8px',
-                    padding: '7px',
-                    background: '#e2e8f0',
-                    color: '#94a3b8',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'not-allowed'
-                  }}
-                >
-                  Start Inspection (Disabled — Session Closed)
-                </button>
-              </div>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => handleStartInspection(selectedTruck.id)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      background: '#047857',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    🛡️ Start Checkpoint Inspection ({nextNum}/{maxInsp})
+                  </button>
+                </div>
+              );
+            })()}
           </div>
 
           {/* =========================================================

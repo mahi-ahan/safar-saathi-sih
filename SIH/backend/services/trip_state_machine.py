@@ -37,28 +37,60 @@ class GoodsAreaState:
 
 def can_start_inspection(trip) -> Tuple[bool, Optional[str]]:
     """
-    Inspection must NOT start automatically and only ONE session is allowed per trip.
+    Inspection can ONLY start after the trip has been started by the driver.
+    Inspection must NOT start automatically and cannot exceed distance-based capacity.
     """
-    if getattr(trip, "inspection_completed", False) or getattr(trip, "inspection_status", None) == InspectionState.COMPLETED:
-        return False, "Inspection has already been completed for this trip. Only one inspection session is permitted per trip."
-    
+    trip_status = getattr(trip, "status", "scheduled")
+    is_live = bool(getattr(trip, "is_live", False))
+    if trip_status not in ["in_transit", "moving", "started"] and not is_live:
+        if bool(getattr(trip, "is_return_leg", False)):
+            return False, "Return trip has not started yet. Inspection stops can only be performed after the driver starts the return trip."
+        return False, "Trip has not started yet. Inspection stops can only be performed after the driver starts the trip."
+
+    # Distance-based inspection capacity check
+    from routers.logistics import calculate_trip_distance_km, get_max_inspections_for_distance
+    try:
+        trip_dist = calculate_trip_distance_km(trip)
+    except Exception:
+        trip_dist = float(getattr(trip, "distance_km", 150.0) or 150.0)
+    max_insp = get_max_inspections_for_distance(trip_dist)
+    curr_count = getattr(trip, "checkpoint_count", 0) or 0
+
+    if curr_count >= max_insp:
+        return False, f"All {max_insp} allowed inspection(s) for this {round(trip_dist)} km trip have already been completed."
+
     if getattr(trip, "inspection_status", None) == InspectionState.IN_PROGRESS:
         return False, "An inspection session is already in progress for this trip. Duplicate start requests are prohibited."
-    
+
     return True, None
 
 
 def can_complete_inspection(trip) -> Tuple[bool, Optional[str]]:
     """
-    Inspection can only be completed if an active session is in progress.
+    Inspection can only be completed if the trip has started and an active session is in progress.
     """
-    if getattr(trip, "inspection_completed", False) or getattr(trip, "inspection_status", None) == InspectionState.COMPLETED:
-        return False, "Inspection has already been confirmed and completed for this trip."
-    
+    trip_status = getattr(trip, "status", "scheduled")
+    is_live = bool(getattr(trip, "is_live", False))
+    if trip_status not in ["in_transit", "moving", "started"] and not is_live:
+        if bool(getattr(trip, "is_return_leg", False)):
+            return False, "Return trip has not started yet. Inspection stops can only be performed after the driver starts the return trip."
+        return False, "Trip has not started yet. Inspection stops can only be performed after the driver starts the trip."
+
+    from routers.logistics import calculate_trip_distance_km, get_max_inspections_for_distance
+    try:
+        trip_dist = calculate_trip_distance_km(trip)
+    except Exception:
+        trip_dist = float(getattr(trip, "distance_km", 150.0) or 150.0)
+    max_insp = get_max_inspections_for_distance(trip_dist)
+    curr_count = getattr(trip, "checkpoint_count", 0) or 0
+
+    if curr_count >= max_insp:
+        return False, f"All {max_insp} allowed inspection(s) for this {round(trip_dist)} km trip have already been confirmed."
+
     current_status = getattr(trip, "inspection_status", InspectionState.NOT_STARTED)
     if current_status != InspectionState.IN_PROGRESS:
         return False, "Inspection cannot be completed because it has not been started yet. Click 'Start Inspection' first."
-    
+
     return True, None
 
 
@@ -130,11 +162,20 @@ def get_trip_state_summary(trip) -> dict:
     """
     Returns the comprehensive state machine summary for a trip.
     """
-    insp_status = getattr(trip, "inspection_status", InspectionState.NOT_STARTED) or InspectionState.NOT_STARTED
-    insp_completed = bool(getattr(trip, "inspection_completed", False)) or insp_status == InspectionState.COMPLETED
-    
+    from routers.logistics import calculate_trip_distance_km, get_max_inspections_for_distance
+    try:
+        trip_dist = calculate_trip_distance_km(trip)
+    except Exception:
+        trip_dist = float(getattr(trip, "distance_km", 150.0) or 150.0)
+    max_insp = get_max_inspections_for_distance(trip_dist)
+    curr_count = getattr(trip, "checkpoint_count", 0) or 0
+    insp_completed = curr_count >= max_insp
+    insp_status = InspectionState.COMPLETED if insp_completed else (getattr(trip, "inspection_status", InspectionState.NOT_STARTED) or InspectionState.NOT_STARTED)
+    if insp_status == InspectionState.COMPLETED and not insp_completed:
+        insp_status = InspectionState.IN_PROGRESS if curr_count > 0 else InspectionState.NOT_STARTED
+
     ga_status = getattr(trip, "goods_area_status", GoodsAreaState.NOT_STARTED) or GoodsAreaState.NOT_STARTED
-    
+
     # Sequence derived flags
     trip_started = getattr(trip, "status", "scheduled") in ["in_transit", "moving", "started", "completed"] or ga_status != GoodsAreaState.NOT_STARTED
     vehicle_travelling = getattr(trip, "status", "scheduled") in ["in_transit", "moving"] and ga_status in [GoodsAreaState.NOT_STARTED, GoodsAreaState.TRAVELLING]
@@ -145,9 +186,13 @@ def get_trip_state_summary(trip) -> dict:
 
     return {
         "trip_id": getattr(trip, "id", None),
+        "distance_km": trip_dist,
+        "max_inspections": max_insp,
+        "checkpoint_count": curr_count,
+        "inspections_remaining": max(0, max_insp - curr_count),
         "inspection_status": insp_status,
         "inspection_completed": insp_completed,
-        "can_start_inspection": not insp_completed and insp_status == InspectionState.NOT_STARTED,
+        "can_start_inspection": not insp_completed and insp_status != InspectionState.IN_PROGRESS,
         "goods_area_status": ga_status,
         "trip_started": trip_started,
         "vehicle_travelling": vehicle_travelling,

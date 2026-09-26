@@ -230,6 +230,9 @@ class TripResponse(TripCreate):
     # State Machine lifecycle fields
     inspection_status: Optional[str] = "not_started"
     inspection_completed: Optional[bool] = False
+    max_inspections: Optional[int] = 1
+    inspections_remaining: Optional[int] = 0
+    checkpoints: Optional[list[dict]] = []
     goods_area_status: Optional[str] = "not_started"
     goods_area_reached_at: Optional[str] = None
     goods_area_confirmed_at: Optional[str] = None
@@ -283,6 +286,10 @@ class TripStateMachineResponse(BaseModel):
     goods_area_reached_at: Optional[str] = None
     goods_area_confirmed_at: Optional[str] = None
     return_started_at: Optional[str] = None
+    distance_km: Optional[float] = None
+    max_inspections: Optional[int] = 1
+    checkpoint_count: Optional[int] = 0
+    inspections_remaining: Optional[int] = 0
     message: Optional[str] = None
 
 
@@ -378,6 +385,11 @@ class RequestResponse(RequestCreate):
     unloaded_at: Optional[str] = None
     unloaded_by: Optional[str] = None
     ice_boxes_count: Optional[int] = 0
+    current_checkpoint: Optional[str] = None
+    checkpoint_count: Optional[int] = 0
+    max_inspections: Optional[int] = 1
+    inspections_remaining: Optional[int] = 0
+    checkpoints: Optional[list[dict]] = []
 
     class Config:
         from_attributes = True

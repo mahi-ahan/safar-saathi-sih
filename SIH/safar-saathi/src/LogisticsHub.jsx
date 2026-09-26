@@ -31,7 +31,8 @@ import {
   LogIn,
   UserPlus,
   Eye,
-  EyeOff
+  EyeOff,
+  ShieldAlert
 } from 'lucide-react';
 import { useLang } from './lib';
 import { TTSButton } from './tts';
@@ -167,18 +168,27 @@ export default function LogisticsHub() {
       }
 
       // Location-restricted feed for authorized officer's posting station
-      if (officer?.station) {
-        params.set("officer_station", officer.station);
+      const stationName = officer?.station || officer?.assigned_station;
+      if (stationName) {
+        params.set("officer_station", stationName);
       }
-      if (officer?.station_lat != null) {
-        params.set("officer_lat", officer.station_lat);
+      const lat = officer?.station_lat ?? officer?.lat;
+      const lng = officer?.station_lng ?? officer?.lng;
+      if (lat != null && lat !== 0) {
+        params.set("officer_lat", lat);
       }
-      if (officer?.station_lng != null) {
-        params.set("officer_lng", officer.station_lng);
+      if (lng != null && lng !== 0) {
+        params.set("officer_lng", lng);
+      }
+
+      const token = localStorage.getItem("access_token");
+      const headers = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
       }
 
       const url = `${API_BASE}/api/logistics/trips-and-shipments${params.toString() ? `?${params.toString()}` : ''}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setTrips(data.trips || []);
@@ -191,7 +201,7 @@ export default function LogisticsHub() {
     } finally {
       setLoading(false);
     }
-  }, [selectedCorridor, searchQuery, officer?.station, officer?.station_lat, officer?.station_lng]);
+  }, [selectedCorridor, searchQuery, officer?.station, officer?.assigned_station, officer?.station_lat, officer?.station_lng, officer?.lat, officer?.lng]);
 
   useEffect(() => {
     fetchData();
@@ -476,6 +486,38 @@ export default function LogisticsHub() {
   const handleSubmitCheckpoint = async (e) => {
     e.preventDefault();
     if (!checkpointModal.trip) return;
+
+    const isStarted = checkpointModal.trip.status === 'in_transit' || checkpointModal.trip.status === 'moving' || checkpointModal.trip.status === 'started' || Boolean(checkpointModal.trip.is_live);
+    if (!isStarted) {
+      showBanner(
+        checkpointModal.trip.is_return_leg
+          ? "⚠ Return trip has not started yet! Inspection stops can only be performed after the driver starts the return trip."
+          : "⚠ Trip has not started yet! Inspection stops can only be performed after the driver starts the trip.",
+        "error"
+      );
+      return;
+    }
+
+    const curOfficerPhone = (officer?.phone_number || '').replace(/[\s-]/g, '');
+    const curOfficerStation = (officer?.station || officer?.assigned_station || '').trim().toLowerCase();
+    const curOfficerTokens = curOfficerStation
+      ? curOfficerStation.split(/[\s,/-]+/).filter(w => w.length > 2 && !['toll', 'plaza', 'checkpoint', 'hub', 'station', 'nh', 'expressway', 'highway'].includes(w))
+      : [];
+    const curOfficerName = (officer?.name || '').trim().toLowerCase();
+
+    const alreadyDone = checkpointModal.trip.checkpoints && checkpointModal.trip.checkpoints.some(cp => {
+      const cpPhone = (cp.officer_phone || '').replace(/[\s-]/g, '');
+      if (curOfficerPhone && cpPhone && curOfficerPhone === cpPhone) return true;
+      if (curOfficerName && cp.officer_name && curOfficerName === cp.officer_name.toLowerCase()) return true;
+      const cpName = (cp.checkpoint_name || '').toLowerCase();
+      if (curOfficerTokens.length > 0 && curOfficerTokens.some(tok => cpName.includes(tok))) return true;
+      return false;
+    });
+
+    if (alreadyDone) {
+      showBanner("⚠ An inspection has already been recorded for this trip from your station. Only 1 inspection is allowed per station/login. Remaining halts must be conducted at downstream checkpoints.", "error");
+      return;
+    }
 
     setCheckpointModal(prev => ({ ...prev, submitting: true }));
     try {
@@ -1088,7 +1130,7 @@ export default function LogisticsHub() {
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
               }`}
             >
-              <span>🇮🇳 All India Corridors</span>
+              <span>{officer?.station ? `📍 ${officer.station.split(',')[0].trim()} Station Radar` : '🇮🇳 All Corridors'}</span>
               <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${!selectedCorridor ? 'bg-emerald-950 text-emerald-200' : 'bg-slate-200 text-slate-600'}`}>
                 {metrics.active_transit_trips} trips
               </span>
@@ -1301,7 +1343,7 @@ export default function LogisticsHub() {
                         {/* Top Trip Header */}
                         <div className="flex items-start justify-between gap-2 mb-3">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-display font-bold text-base text-slate-900">
                                 {trip.from_loc.split(',')[0]} → {trip.to_loc.split(',')[0]}
                               </span>
@@ -1310,6 +1352,12 @@ export default function LogisticsHub() {
                               }`}>
                                 {trip.status.replace('_', ' ')}
                               </span>
+                              {trip.is_return_leg && (
+                                <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 font-bold text-[10px] border border-indigo-200 flex items-center gap-1">
+                                  <span>🔄</span>
+                                  <span>Return Backhaul</span>
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs text-slate-500 mt-0.5">
                               Driver: <strong>{trip.owner}</strong> {trip.driver_phone && `(📱 ${trip.driver_phone})`}
@@ -1371,7 +1419,7 @@ export default function LogisticsHub() {
                             <span className="font-bold text-slate-800">{trip.current_checkpoint || 'Departure Station'}</span>
                           </div>
                           <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-                            <span>Inspections Passed: <strong>{trip.checkpoints?.length || 0} stops</strong></span>
+                            <span>Inspections: <strong className="text-emerald-700 font-mono">{trip.checkpoint_count || trip.checkpoints?.length || 0} / {trip.max_inspections || (Math.round(trip.route_distance_km || trip.distance_km || 150) <= 100 ? 1 : Math.round(trip.route_distance_km || trip.distance_km || 150) <= 300 ? 2 : Math.round(trip.route_distance_km || trip.distance_km || 150) <= 500 ? 3 : 4)} completed</strong></span>
                             <span>Scale Compliance: <strong className={trip.weight_compliant !== false ? 'text-emerald-700' : 'text-rose-700'}>{trip.weight_compliant !== false ? '✔ Passed' : '⚠ Flagged'}</strong></span>
                           </div>
                         </div>
@@ -1379,11 +1427,11 @@ export default function LogisticsHub() {
                         {/* Recent Checkpoint Log history (if any) */}
                         {trip.checkpoints && trip.checkpoints.length > 0 && (
                           <div className="mb-3 space-y-1.5">
-                            <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Recent Stop Logs:</p>
-                            {trip.checkpoints.slice(0, 2).map((cp, idx) => (
+                            <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Stop Inspection Logs ({trip.checkpoints.length}):</p>
+                            {trip.checkpoints.map((cp, idx) => (
                               <div key={idx} className="text-[11px] bg-emerald-50/70 border border-emerald-200/60 rounded-lg p-2 text-emerald-950 flex items-center justify-between">
                                 <div>
-                                  <span className="font-bold">{cp.checkpoint_name}</span>
+                                  <span className="font-bold">Halt #{idx + 1}: {cp.checkpoint_name}</span>
                                   <span className="text-slate-500 ml-1">({cp.timestamp})</span>
                                   <p className="text-[10px] text-slate-600 mt-0.5">
                                     Seal: {cp.seal_number ? `#${cp.seal_number} ` : ''}({cp.cargo_seal_intact ? '✔ Intact' : '⚠ Broken'}) · Weigh: {cp.measured_weight_kg ? `${cp.measured_weight_kg}kg` : 'N/A'}
@@ -1400,46 +1448,118 @@ export default function LogisticsHub() {
                         )}
                       </div>
 
-                      {/* Action Button: Rule 2 - Only ONE inspection per trip */}
+                      {/* Action Button: Dynamic Distance-Based Inspection Capacity */}
                       <div className="pt-2">
-                        {trip.inspection_completed || trip.inspection_status === 'completed' || (trip.checkpoint_count && trip.checkpoint_count >= 1) ? (
-                          <button
-                            disabled
-                            className="w-full py-2.5 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-80 select-none"
-                            title="Only one inspection session is permitted per trip. This session is complete."
-                          >
-                            <ShieldCheck size={15} />
-                            <span>✔ Inspection Completed (Session Closed)</span>
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setCheckpointModal({
-                              isOpen: true,
-                              trip,
-                              checkpoint_name: officer?.station || `${trip.from_loc.split(',')[0]} - ${trip.to_loc.split(',')[0]} NH Toll Plaza`,
-                              checkpoint_type: 'Highway Toll Plaza',
-                              cargo_seal_intact: trip.seal_status !== 'tampered_broken',
-                              seal_number: trip.seal_number || `SL-${Math.floor(10000 + Math.random() * 90000)}`,
-                              seal_status: trip.seal_status || 'verified_intact',
-                              measured_weight_kg: trip.last_weigh_in_kg || trip.total_booked_kg || trip.total_kg || 450,
-                              declared_weight_kg: trip.total_booked_kg || trip.total_kg || 450,
-                              weight_compliant: trip.weight_compliant !== false,
-                              safety_parameters_status: trip.safety_parameters_status || 'Passed All Safety Checks',
-                              cooling_status: trip.has_perishables ? 'Optimal Range' : 'Not Applicable',
-                              temp_celsius: trip.has_perishables ? 3.5 : '',
-                              cargo_condition: 'Intact & Good',
-                              ice_status: trip.has_perishables ? 'Adequate' : 'Not Applicable',
-                              notes: 'Cargo security seal verified intact; weighbridge scales within legal tolerance.',
-                              action_taken: 'Seal verified & weighbridge stamped.',
-                              proof_image: null,
-                              submitting: false
-                            })}
-                            className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <ShieldCheck size={15} />
-                            <span>Perform Stop Inspection Here</span>
-                          </button>
-                        )}
+                        {(!trip.status || (trip.status !== 'in_transit' && trip.status !== 'moving' && trip.status !== 'started' && !trip.is_live)) ? (
+                          <div className="space-y-1.5">
+                            <div className="rounded-xl bg-amber-50 border border-amber-200/90 p-2.5 text-center text-xs text-amber-900 flex items-center justify-center gap-1.5 font-medium">
+                              <span>⏳</span>
+                              <span>
+                                {trip.is_return_leg
+                                  ? "Return trip has not started yet. Inspection stops unlock only after driver starts return leg."
+                                  : "Trip has not started yet. Inspection stops unlock only after driver departs."}
+                              </span>
+                            </div>
+                            <button
+                              disabled
+                              className="w-full py-2.5 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-80 select-none"
+                              title={trip.is_return_leg ? "Return trip has not started yet. Cannot perform inspection." : "Trip has not started yet. Cannot perform inspection."}
+                            >
+                              <ShieldAlert size={15} className="text-amber-500" />
+                              <span>Trip Not Started Yet</span>
+                            </button>
+                          </div>
+                        ) : (() => {
+                          const distKm = Math.round(Number(trip.route_distance_km || trip.distance_km || 150));
+                          const maxInsp = Number(trip.max_inspections || (distKm <= 100 ? 1 : distKm <= 300 ? 2 : distKm <= 500 ? 3 : distKm <= 1000 ? 4 : 5));
+                          const countDone = Number(trip.checkpoint_count || (trip.checkpoints ? trip.checkpoints.length : 0) || 0);
+                          const isFullyInspected = countDone >= maxInsp;
+                          const nextHaltNumber = Math.min(maxInsp, countDone + 1);
+
+                          const offPhone = (officer?.phone_number || '').replace(/[\s-]/g, '');
+                          const offStation = (officer?.station || officer?.assigned_station || '').trim().toLowerCase();
+                          const offTokens = offStation
+                            ? offStation.split(/[\s,/-]+/).filter(w => w.length > 2 && !['toll', 'plaza', 'checkpoint', 'hub', 'station', 'nh', 'expressway', 'highway'].includes(w))
+                            : [];
+                          const offName = (officer?.name || '').trim().toLowerCase();
+
+                          const alreadyInspectedHere = Boolean(trip.checkpoints && trip.checkpoints.find(cp => {
+                            const cpPhone = (cp.officer_phone || '').replace(/[\s-]/g, '');
+                            if (offPhone && cpPhone && offPhone === cpPhone) return true;
+                            if (offName && cp.officer_name && offName === cp.officer_name.toLowerCase()) return true;
+                            const cpName = (cp.checkpoint_name || '').toLowerCase();
+                            if (offTokens.length > 0 && offTokens.some(tok => cpName.includes(tok))) return true;
+                            return false;
+                          }));
+
+                          if (isFullyInspected) {
+                            return (
+                              <button
+                                disabled
+                                className="w-full py-2.5 bg-emerald-50 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-90 select-none shadow-xs"
+                                title={`All ${maxInsp} allowed inspections for this ${distKm} km journey have been completed.`}
+                              >
+                                <ShieldCheck size={15} className="text-emerald-600" />
+                                <span>✔ All Highway Checkpoints Inspected ({countDone}/{maxInsp} Done)</span>
+                              </button>
+                            );
+                          }
+
+                          if (alreadyInspectedHere) {
+                            return (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px] text-slate-600 px-0.5 font-medium">
+                                  <span>Inspected at this Station (Halt {countDone} of {maxInsp})</span>
+                                  <span className="font-bold text-amber-700 font-mono">{maxInsp - countDone} remaining</span>
+                                </div>
+                                <button
+                                  disabled
+                                  className="w-full py-2.5 bg-amber-50 text-amber-900 font-bold text-xs rounded-xl border border-amber-300 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-95 select-none shadow-xs"
+                                  title="An inspection has already been recorded for this trip from your station. Only 1 inspection is allowed per station/login. Remaining halts must be conducted downstream along the route."
+                                >
+                                  <CheckCircle2 size={15} className="text-amber-600" />
+                                  <span>✔ Station Inspected (1 Per Station Limit) · Next Halt Downstream</span>
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px] text-slate-600 px-0.5 font-medium">
+                                <span>Inspection Halt <strong>{nextHaltNumber} of {maxInsp}</strong> ({distKm} km route)</span>
+                                <span className="font-bold text-emerald-800 font-mono">{maxInsp - countDone} remaining</span>
+                              </div>
+                              <button
+                                onClick={() => setCheckpointModal({
+                                  isOpen: true,
+                                  trip,
+                                  checkpoint_name: officer?.station || `${trip.from_loc.split(',')[0]} - ${trip.to_loc.split(',')[0]} NH Toll Plaza`,
+                                  checkpoint_type: 'Highway Toll Plaza',
+                                  cargo_seal_intact: trip.seal_status !== 'tampered_broken',
+                                  seal_number: trip.seal_number || `SL-${Math.floor(10000 + Math.random() * 90000)}`,
+                                  seal_status: trip.seal_status || 'verified_intact',
+                                  measured_weight_kg: trip.last_weigh_in_kg || trip.total_booked_kg || trip.total_kg || 450,
+                                  declared_weight_kg: trip.total_booked_kg || trip.total_kg || 450,
+                                  weight_compliant: trip.weight_compliant !== false,
+                                  safety_parameters_status: trip.safety_parameters_status || 'Passed All Safety Checks',
+                                  cooling_status: trip.has_perishables ? 'Optimal Range' : 'Not Applicable',
+                                  temp_celsius: trip.has_perishables ? 3.5 : '',
+                                  cargo_condition: 'Intact & Good',
+                                  ice_status: trip.has_perishables ? 'Adequate' : 'Not Applicable',
+                                  notes: `Halt ${nextHaltNumber}/${maxInsp}: Cargo security seal verified; weighbridge scale compliance inspected.`,
+                                  action_taken: `Halt ${nextHaltNumber}/${maxInsp} seal verified & weighbridge stamped.`,
+                                  proof_image: null,
+                                  submitting: false
+                                })}
+                                className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <ShieldCheck size={15} />
+                                <span>{countDone === 0 ? `Log Checkpoint Inspection (1/${maxInsp})` : `Log Next Checkpoint Inspection (${nextHaltNumber}/${maxInsp})`}</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   ))}

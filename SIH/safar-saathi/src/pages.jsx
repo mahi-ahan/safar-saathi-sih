@@ -377,6 +377,7 @@ export function FindVehicles() {
   const [requestOpen, setRequestOpen] = useState(null)
   const [requests, setRequests] = useState({})
   const [myRequests, setMyRequests] = useState([])
+  const [expandedInspections, setExpandedInspections] = useState({})
   const [submittingTripId, setSubmittingTripId] = useState(null)
   const [cancellationModal, setCancellationModal] = useState({
     isOpen: false,
@@ -497,6 +498,9 @@ export function FindVehicles() {
           has_perishables: Boolean(trip.has_perishables),
           ice_handling_supported: trip.ice_handling_supported !== false,
           current_checkpoint: trip.current_checkpoint || null,
+          checkpoint_count: trip.checkpoint_count || (trip.checkpoints ? trip.checkpoints.length : 0),
+          max_inspections: trip.max_inspections || 1,
+          inspections_remaining: trip.inspections_remaining || 0,
           checkpoints: trip.checkpoints || []
         }));
 
@@ -2161,34 +2165,143 @@ export function FindVehicles() {
                             )}
                           </div>
 
-                          {/* WEIGHBRIDGE & CHECKPOINT INSPECTION */}
-                          {(req.verified_weight_kg || req.last_weigh_in_kg || req.current_checkpoint) && (
-                            <div className="bg-white/80 rounded-lg p-2 border border-gold/20 space-y-1 mt-1 text-[10.5px]">
-                              {req.current_checkpoint && (
-                                <div className="flex items-center justify-between text-green-deep">
-                                  <span className="font-medium text-green-soft">🚩 Checkpoint:</span>
-                                  <span className="font-semibold">{req.current_checkpoint}</span>
-                                </div>
-                              )}
-                              {(req.verified_weight_kg || req.last_weigh_in_kg) && (
-                                <div className="flex items-center justify-between">
-                                  <span className="text-green-soft">⚖ Scale Weigh-in:</span>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono font-bold text-green-deep">{req.verified_weight_kg || req.last_weigh_in_kg} kg</span>
-                                    {req.weight_compliant === false ? (
-                                      <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-100 text-rose-700 border border-rose-300">
-                                        ⚠️ Discrepancy
-                                      </span>
-                                    ) : req.weight_compliant === true ? (
-                                      <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">
-                                        ✅ Verified
-                                      </span>
-                                    ) : null}
+                          {/* WEIGHBRIDGE & CHECKPOINT INSPECTION TIMELINE */}
+                          {(() => {
+                            const cps = req.checkpoints || [];
+                            const maxInsp = req.max_inspections || 1;
+                            const countDone = req.checkpoint_count || cps.length || 0;
+                            const isExpanded = Boolean(expandedInspections[req.id]);
+
+                            return (
+                              <div className="rounded-xl border border-emerald-300/80 bg-gradient-to-br from-emerald-50/80 via-teal-50/40 to-white p-3 space-y-2 mt-2 text-xs shadow-2xs">
+                                {/* Header */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                                    <span className="text-sm">🛡️</span>
+                                    <span>Route Checkpoint Inspections</span>
                                   </div>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                                    countDone >= maxInsp
+                                      ? 'bg-emerald-600 text-white shadow-2xs'
+                                      : countDone > 0
+                                        ? 'bg-amber-600 text-white'
+                                        : 'bg-slate-200 text-slate-700'
+                                  }`}>
+                                    {countDone >= maxInsp
+                                      ? `✔ All ${maxInsp} Halts Certified`
+                                      : countDone > 0
+                                        ? `Halt ${countDone} of ${maxInsp} Completed`
+                                        : `0/${maxInsp} Inspected (Scheduled)`}
+                                  </span>
                                 </div>
-                              )}
-                            </div>
-                          )}
+
+                                {/* Scale Weigh-in summary if available */}
+                                {(req.verified_weight_kg || req.last_weigh_in_kg) && (
+                                  <div className="flex items-center justify-between text-[11px] bg-white/90 p-2 rounded-lg border border-emerald-200/70">
+                                    <span className="text-green-soft font-medium">⚖ Last Verified Weight:</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-mono font-bold text-green-deep">{req.verified_weight_kg || req.last_weigh_in_kg} kg</span>
+                                      {req.weight_compliant === false ? (
+                                        <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                                          ⚠️ Discrepancy
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">
+                                          ✅ Scale Verified
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Checkpoints List */}
+                                {cps.length > 0 ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-[11px] text-emerald-900 bg-white/80 px-2.5 py-1.5 rounded-lg border border-emerald-200/60">
+                                      <span className="truncate max-w-[200px]">
+                                        Latest Stop: <strong>{cps[cps.length - 1].checkpoint_name}</strong>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedInspections(p => ({ ...p, [req.id]: !p[req.id] }))}
+                                        className="font-bold text-emerald-700 hover:text-emerald-900 hover:underline flex items-center gap-0.5 cursor-pointer ml-1 shrink-0"
+                                      >
+                                        <span>{isExpanded ? 'Hide All Halts ▴' : `View All (${cps.length}) ▾`}</span>
+                                      </button>
+                                    </div>
+
+                                    {/* Timeline of all inspection stops */}
+                                    {isExpanded ? (
+                                      <div className="space-y-2 pt-1 border-t border-emerald-200/60">
+                                        {cps.map((cp, cIdx) => (
+                                          <div key={cp.id || cIdx} className="bg-white rounded-lg p-2.5 border border-emerald-200 shadow-2xs space-y-1.5">
+                                            <div className="flex items-center justify-between gap-1 flex-wrap">
+                                              <span className="font-bold text-emerald-900 text-[11px] flex items-center gap-1.5">
+                                                <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] flex items-center justify-center font-bold">{cIdx + 1}</span>
+                                                <span>{cp.checkpoint_name}</span>
+                                              </span>
+                                              <span className="text-[10px] text-slate-500 font-mono">{cp.timestamp || 'Verified'}</span>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-1 text-[10.5px] pt-1 border-t border-slate-100">
+                                              <div className="text-slate-600">
+                                                Officer: <strong className="text-slate-800">{cp.officer_name || 'Field Officer'}</strong>
+                                              </div>
+                                              <div className="text-right">
+                                                Seal: <span className="font-mono font-bold text-emerald-700">#{cp.seal_number || req.seal_number || 'Applied'}</span>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex items-center justify-between text-[10px] bg-slate-50 px-2 py-1 rounded">
+                                              <span>
+                                                ⚖ Scale: <strong>{cp.measured_weight_kg ? `${cp.measured_weight_kg} kg` : `${req.goods_weight_kg || req.kg} kg`}</strong>
+                                                {cp.weight_compliant !== false ? (
+                                                  <span className="ml-1 text-emerald-700 font-bold">✔ Compliant</span>
+                                                ) : (
+                                                  <span className="ml-1 text-rose-600 font-bold">⚠️ Discrepancy</span>
+                                                )}
+                                              </span>
+                                              {cp.temp_celsius !== null && cp.temp_celsius !== undefined && (
+                                                <span className="font-mono font-bold text-cyan-800">
+                                                  ❄ {cp.temp_celsius}°C
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            {cp.notes && (
+                                              <p className="text-[10px] text-slate-600 italic bg-amber-50/70 p-1.5 rounded border border-amber-200/50">
+                                                "{cp.notes}"
+                                              </p>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[10.5px] text-emerald-800 italic">
+                                        Cargo security verified at {cps[cps.length - 1].checkpoint_name} by Officer {cps[cps.length - 1].officer_name || 'In-Charge'}. Click "View All" to inspect the full highway halt audit.
+                                      </p>
+                                    )}
+
+                                    {countDone < maxInsp && (
+                                      <div className="text-[10.5px] text-emerald-800 font-medium flex items-center gap-1.5 bg-emerald-100/60 px-2.5 py-1.5 rounded-lg border border-emerald-200/50">
+                                        <span>📍</span>
+                                        <span>Next inspection halt ({countDone + 1} of {maxInsp}) will be conducted at a downstream checkpoint along the route.</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-[10.5px] text-slate-600 bg-white/80 p-2.5 rounded-lg border border-emerald-100 flex items-center gap-1.5">
+                                    <span>⏳</span>
+                                    <span>
+                                      {req.status === 'in_transit' || req.status === 'accepted'
+                                        ? `In transit: Ground officers will inspect cargo and record seals at ${maxInsp} highway checkpoint${maxInsp > 1 ? 's' : ''} along the corridor.`
+                                        : `Inspection scheduled: Will be verified once the transporter starts transit.`}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
 
@@ -2321,32 +2434,47 @@ export function FindVehicles() {
                       )}
 
                       {isAccepted && (
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs text-green-700 font-semibold flex items-center gap-1">
-                            <span>✔</span>
-                            <span>Transporter Accepted</span>
-                          </p>
-                          <button
-                            onClick={async () => {
-                              if (!window.confirm("Are you sure you want to cancel this booking?")) return;
-                              const token = localStorage.getItem("access_token");
-                              try {
-                                const res = await fetch(`http://localhost:8000/api/requests/${req.id}`, {
-                                  method: "DELETE",
-                                  headers: { "Authorization": `Bearer ${token}` }
-                                });
-                                if (res.ok) {
-                                  notify("✖ Booking cancelled.");
-                                  fetchTripsAndRequests();
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-green-700 font-semibold flex items-center gap-1">
+                              <span>✔</span>
+                              <span>Transporter Accepted (In Transit)</span>
+                            </p>
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm("Are you sure you want to cancel this booking?")) return;
+                                const token = localStorage.getItem("access_token");
+                                try {
+                                  const res = await fetch(`http://localhost:8000/api/requests/${req.id}`, {
+                                    method: "DELETE",
+                                    headers: { "Authorization": `Bearer ${token}` }
+                                  });
+                                  if (res.ok) {
+                                    notify("✖ Booking cancelled.");
+                                    fetchTripsAndRequests();
+                                  }
+                                } catch (err) {
+                                  notify("Could not connect to backend.");
                                 }
-                              } catch (err) {
-                                notify("Could not connect to backend.");
-                              }
-                            }}
-                            className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-xl transition cursor-pointer"
-                          >
-                            Cancel Booking
-                          </button>
+                              }}
+                              className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-[11px] rounded-lg transition cursor-pointer"
+                            >
+                              Cancel Booking
+                            </button>
+                          </div>
+                          {req.trip_id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTripId(req.trip_id);
+                                setRequestOpen(req.trip_id);
+                                window.scrollTo({ top: 400, behavior: 'smooth' });
+                              }}
+                              className="w-full py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <span>🗺️ Track Live Route & Checkpoint Halts</span>
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -3971,9 +4099,9 @@ export function OfferTrip() {
                 const allPartnersDelivered = activePartners.length > 0 && undeliveredPartners.length === 0;
 
                 const isCompleted = trip.status === 'completed' || (activePartners.length > 0 && activePartners.every(p => p.status === 'completed'));
-                const isPendingConfirmation = !isCompleted && activePartners.length > 0 && undeliveredPartners.length === 0;
+                const isPendingConfirmation = !isCompleted && (trip.status === 'pending_passenger_confirmation' || ((trip.status === 'in_transit' || trip.is_live) && activePartners.length > 0 && undeliveredPartners.length === 0));
                 const isCancelled = trip.status === 'cancelled' || trip.status === 'cancelled_by_driver';
-                const isTripLive = !isCompleted && !isPendingConfirmation && !isCancelled && (trip.is_live || trip.status === 'in_transit' || activeLiveTripId === trip.id || undeliveredPartners.length > 0);
+                const isTripLive = !isCompleted && !isPendingConfirmation && !isCancelled && Boolean(trip.is_live || trip.status === 'in_transit' || activeLiveTripId === trip.id);
                 const hasLinkedReturnTrip = trip.is_return_leg ||
                   Boolean(trip.has_return_leg) ||
                   Boolean(trip.return_trip_id) ||
@@ -4185,7 +4313,9 @@ export function OfferTrip() {
                           <p className="text-[11px] font-bold text-emerald-900 flex items-center justify-between mb-1.5">
                             <span>📦 Cargo Shippers on Route ({trip.partners.length})</span>
                             <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-mono font-semibold">
-                              {trip.partners.filter(p => ['accepted', 'in_transit', 'pending'].includes(p.status)).length} In-Transit
+                              {isTripLive
+                                ? `${trip.partners.filter(p => ['accepted', 'in_transit', 'pending'].includes(p.status)).length} In-Transit`
+                                : `${trip.partners.filter(p => ['accepted', 'in_transit', 'pending'].includes(p.status)).length} Booked`}
                             </span>
                           </p>
                           <div className="space-y-1.5">
@@ -4594,7 +4724,7 @@ export function OfferTrip() {
                 const isCancelled = req.status === 'cancelled_by_driver' || req.status === 'cancelled';
 
                 const linkedTrip = myTrips.find(t => (req.trip_id && t.id === req.trip_id) || (t.partners && t.partners.some(p => p.id === req.id)));
-                const isLinkedTripLive = linkedTrip ? (linkedTrip.is_live || linkedTrip.status === 'in_transit' || activeLiveTripId === linkedTrip.id) : (activeLiveTripId !== null);
+                const isLinkedTripLive = Boolean(linkedTrip && (linkedTrip.is_live || linkedTrip.status === 'in_transit' || activeLiveTripId === linkedTrip.id));
 
                 return (
                   <div

@@ -29,6 +29,15 @@ export const GOODS_AREA_STATES = {
 
 const STORAGE_PREFIX = 'ss_trip_state_';
 
+export function getMaxInspectionsForDistance(distanceKm) {
+  const dist = Number(distanceKm) || 150;
+  if (dist <= 100) return 1;
+  if (dist <= 300) return 2;
+  if (dist <= 500) return 3;
+  if (dist <= 1000) return 4;
+  return Math.min(8, Math.max(5, Math.round(dist / 250)));
+}
+
 /**
  * Retrieves the isolated state for a specific tripId / vehicle ID.
  * Merges localStorage with any authoritative backend fields provided in initialTrip.
@@ -56,16 +65,20 @@ export function getTripStateMachine(tripId, initialTrip = null) {
     }
   }
 
-  // Authoritative fallback precedence: backend fields > localStorage > initial defaults
-  const inspection_status =
-    initialTrip?.inspection_status ||
-    stored?.inspection_status ||
-    (initialTrip?.inspection_completed ? INSPECTION_STATES.COMPLETED : INSPECTION_STATES.NOT_STARTED);
+// Authoritative fallback precedence: backend fields > localStorage > initial defaults
+  const distance_km = Number(initialTrip?.route_distance_km || initialTrip?.distance_km || stored?.distance_km || 150);
+  const max_inspections = initialTrip?.max_inspections || getMaxInspectionsForDistance(distance_km);
+  const checkpoint_count = Number(initialTrip?.checkpoint_count ?? stored?.checkpoint_count ?? (initialTrip?.checkpoints?.length || 0));
 
   const inspection_completed =
-    Boolean(initialTrip?.inspection_completed) ||
-    inspection_status === INSPECTION_STATES.COMPLETED ||
-    Boolean(stored?.inspection_completed);
+    checkpoint_count >= max_inspections ||
+    (Boolean(initialTrip?.inspection_completed) && checkpoint_count >= max_inspections);
+
+  const inspection_status = inspection_completed
+    ? INSPECTION_STATES.COMPLETED
+    : (initialTrip?.inspection_status === INSPECTION_STATES.IN_PROGRESS
+        ? INSPECTION_STATES.IN_PROGRESS
+        : (checkpoint_count > 0 ? INSPECTION_STATES.IN_PROGRESS : (stored?.inspection_status || INSPECTION_STATES.NOT_STARTED)));
 
   const goods_area_status =
     initialTrip?.goods_area_status ||
@@ -74,7 +87,11 @@ export function getTripStateMachine(tripId, initialTrip = null) {
 
   const state = {
     tripId,
-    inspection_status: inspection_completed ? INSPECTION_STATES.COMPLETED : inspection_status,
+    distance_km,
+    max_inspections,
+    checkpoint_count,
+    inspections_remaining: Math.max(0, max_inspections - checkpoint_count),
+    inspection_status,
     inspection_completed,
     goods_area_status,
     goods_area_reached_at: initialTrip?.goods_area_reached_at || stored?.goods_area_reached_at || null,
@@ -105,16 +122,28 @@ export function saveTripStateMachine(tripId, updatedFields) {
 
 export function canStartInspection(state) {
   if (!state) return false;
-  // Strictly disallow if already completed or currently in progress
-  if (state.inspection_completed || state.inspection_status === INSPECTION_STATES.COMPLETED) {
+  // Inspection can ONLY start after the trip has been started by the driver
+  const tripStarted = state.status === 'in_transit' || state.status === 'moving' || state.status === 'started' || Boolean(state.is_live);
+  if (!tripStarted) {
     return false;
   }
-  return state.inspection_status === INSPECTION_STATES.NOT_STARTED;
+  const maxInsp = state.max_inspections || getMaxInspectionsForDistance(state.distance_km);
+  const count = state.checkpoint_count || 0;
+  if (count >= maxInsp || state.inspection_completed) {
+    return false;
+  }
+  return state.inspection_status !== INSPECTION_STATES.IN_PROGRESS;
 }
 
 export function canCompleteInspection(state) {
   if (!state) return false;
-  if (state.inspection_completed || state.inspection_status === INSPECTION_STATES.COMPLETED) {
+  const tripStarted = state.status === 'in_transit' || state.status === 'moving' || state.status === 'started' || Boolean(state.is_live);
+  if (!tripStarted) {
+    return false;
+  }
+  const maxInsp = state.max_inspections || getMaxInspectionsForDistance(state.distance_km);
+  const count = state.checkpoint_count || 0;
+  if (count >= maxInsp) {
     return false;
   }
   return state.inspection_status === INSPECTION_STATES.IN_PROGRESS;
@@ -155,6 +184,14 @@ export function canStartReturnTrip(state) {
  */
 export async function actionStartInspection(tripId, token = null) {
   const current = getTripStateMachine(tripId);
+  const tripStarted = current?.status === 'in_transit' || current?.status === 'moving' || current?.status === 'started' || Boolean(current?.is_live);
+  if (!tripStarted) {
+    throw new Error(
+      current?.is_return_leg
+        ? 'Return trip has not started yet. Inspection stops can only be performed after the driver starts the return trip.'
+        : 'Trip has not started yet. Inspection stops can only be performed after the driver starts the trip.'
+    );
+  }
   if (!canStartInspection(current)) {
     throw new Error('Inspection has already been started or completed for this trip.');
   }
@@ -187,6 +224,14 @@ export async function actionStartInspection(tripId, token = null) {
  */
 export async function actionCompleteInspection(tripId, payload = {}, token = null) {
   const current = getTripStateMachine(tripId);
+  const tripStarted = current?.status === 'in_transit' || current?.status === 'moving' || current?.status === 'started' || Boolean(current?.is_live);
+  if (!tripStarted) {
+    throw new Error(
+      current?.is_return_leg
+        ? 'Return trip has not started yet. Inspection stops can only be performed after the driver starts the return trip.'
+        : 'Trip has not started yet. Inspection stops can only be performed after the driver starts the trip.'
+    );
+  }
   if (!canCompleteInspection(current)) {
     throw new Error('Cannot complete inspection. No inspection session currently in progress.');
   }

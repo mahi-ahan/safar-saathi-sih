@@ -85,10 +85,12 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
     
     # Locate linked trip
     trip = None
-    if req.owner and req.route:
+    if req.trip_id:
+        trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first()
+    if not trip and req.owner and req.route:
         all_trips = db.query(models.TripModel).filter(models.TripModel.owner == req.owner).all()
         for t in all_trips:
-            if f"{t.from_loc} → {t.to_loc}" == req.route:
+            if f"{t.from_loc} → {t.to_loc}" == req.route or f"{t.from_loc} -> {t.to_loc}" == req.route:
                 trip = t
                 break
 
@@ -138,6 +140,53 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
         if d_prof and d_prof.phone_number:
             driver_phone = d_prof.phone_number
 
+    # Load checkpoint inspection history for cargo shipper visibility
+    checkpoints_list = []
+    curr_cp_name = None
+    target_trip_id = req.trip_id or (trip.id if trip else None)
+    if target_trip_id:
+        cps = (
+            db.query(models.LogisticsCheckpointModel)
+            .filter(models.LogisticsCheckpointModel.trip_id == target_trip_id)
+            .order_by(models.LogisticsCheckpointModel.id.asc())
+            .all()
+        )
+        for cp in cps:
+            checkpoints_list.append({
+                "id": cp.id,
+                "trip_id": cp.trip_id,
+                "checkpoint_name": cp.checkpoint_name,
+                "checkpoint_type": getattr(cp, "checkpoint_type", "Highway Toll Plaza") or "Highway Toll Plaza",
+                "officer_name": cp.officer_name,
+                "officer_phone": cp.officer_phone,
+                "timestamp": cp.timestamp,
+                "cargo_seal_intact": cp.cargo_seal_intact,
+                "seal_number": getattr(cp, "seal_number", None),
+                "seal_status": getattr(cp, "seal_status", "Verified & Intact") or "Verified & Intact",
+                "measured_weight_kg": getattr(cp, "measured_weight_kg", None),
+                "declared_weight_kg": getattr(cp, "declared_weight_kg", None),
+                "weight_discrepancy_kg": getattr(cp, "weight_discrepancy_kg", None),
+                "weight_compliant": getattr(cp, "weight_compliant", True),
+                "safety_parameters_status": getattr(cp, "safety_parameters_status", "Compliant") or "Compliant",
+                "cooling_status": getattr(cp, "cooling_status", None),
+                "cargo_condition": cp.cargo_condition,
+                "ice_status": cp.ice_status,
+                "temp_celsius": cp.temp_celsius,
+                "notes": cp.notes,
+                "action_taken": cp.action_taken,
+                "proof_image_url": cp.proof_image_url
+            })
+        if checkpoints_list:
+            curr_cp_name = checkpoints_list[-1]["checkpoint_name"]
+        elif trip:
+            curr_cp_name = getattr(trip, "current_checkpoint", None)
+
+    from routers.logistics import calculate_trip_distance_km, get_max_inspections_for_distance
+    t_dist = calculate_trip_distance_km(trip) if trip else float(dist or 150.0)
+    max_insp = get_max_inspections_for_distance(t_dist)
+    cp_count = len(checkpoints_list)
+    remaining_insp = max(0, max_insp - cp_count)
+
     return schemas.RequestResponse(
         id=req.id,
         status=req.status or "pending",
@@ -186,7 +235,12 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
         verified_weight_kg=req.verified_weight_kg,
         weight_compliant=bool(req.weight_compliant if req.weight_compliant is not None else True),
         cooling_type=req.cooling_type,
-        target_temp_c=req.target_temp_c
+        target_temp_c=req.target_temp_c,
+        current_checkpoint=curr_cp_name,
+        checkpoint_count=cp_count,
+        max_inspections=max_insp,
+        inspections_remaining=remaining_insp,
+        checkpoints=checkpoints_list
     )
 
 

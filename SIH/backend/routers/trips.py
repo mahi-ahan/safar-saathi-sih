@@ -412,6 +412,7 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
     space_used_pct = min(100, round((total_payload / trip_capacity) * 100)) if trip_capacity > 0 else 0
     trip.pct = space_used_pct
 
+    trip_is_perishable = bool((getattr(trip, "cargo_category", "") == "Perishable Goods") or getattr(trip, "has_perishables", False))
     for req in active_requests:
         req_wt = float(req.goods_weight_kg if req.goods_weight_kg is not None else (req.kg or 0))
         if len(active_requests) > 1 and total_kg_km > 0:
@@ -422,7 +423,11 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
             share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)
         else:
             share = 0.0
-        req.per_person_share = share
+
+        # Individual on-demand ice surcharge (+₹75) applies only if trip is not Perishable Goods
+        ice_surcharge = 75.0 if (not trip_is_perishable and bool(req.ice_handling_required)) else 0.0
+        req.ice_surcharge = ice_surcharge
+        req.per_person_share = round(share + ice_surcharge, 2)
 
     db.commit()
     return total_payload, total_kg_km, available_space, space_used_pct, len(active_requests)
@@ -667,8 +672,8 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         max_inspections=max_insp,
         inspections_remaining=remaining_insp,
         checkpoints=checkpoints_list,
-        has_perishables=bool(getattr(trip, "has_perishables", False)),
-        ice_handling_supported=bool(getattr(trip, "ice_handling_supported", True)),
+        has_perishables=bool(trip.cargo_category == "Perishable Goods" or getattr(trip, "has_perishables", False)),
+        ice_handling_supported=bool((trip.cargo_category == "Perishable Goods") and getattr(trip, "ice_handling_supported", False)),
         inspection_status=getattr(trip, "inspection_status", "not_started") or "not_started",
         inspection_completed=bool(getattr(trip, "inspection_completed", False)),
         goods_area_status=getattr(trip, "goods_area_status", "not_started") or "not_started",
@@ -850,6 +855,12 @@ def create_trip(
     trip_data = trip.model_dump()
     trip_lang = trip_data.pop("lang", "hi")
     trip_data["total_kg"] = declared_kg
+    is_perish = (trip.cargo_category == "Perishable Goods")
+    trip_data["has_perishables"] = is_perish
+    trip_data["ice_handling_supported"] = is_perish and bool(trip.ice_handling_supported)
+    if not is_perish:
+        trip_data["cooling_type"] = None
+        trip_data["target_temp_c"] = None
 
     profile = db.query(models.UserProfile).filter(
         models.UserProfile.user_id == current_user.id

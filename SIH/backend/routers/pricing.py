@@ -781,16 +781,24 @@ def calculate_ptl_fare(
     is_shared = len(other_sharers) > 0
     sharers_count = len(other_sharers) + 1
 
+    # Ice Surcharge Rule:
+    # If trip is Perishable Goods, ice is included in the base fare (₹0 surcharge).
+    # If trip is Independent/General Cargo and shipper requested ice, add flat ₹75 ice box fee.
+    is_perish_trip = (req.trip_cargo_category == 'Perishable Goods')
+    ice_surcharge = 75.0 if (bool(req.is_ice_requested) and not is_perish_trip) else 0.0
+
     # =========================================================
     # RULE 1: THE FULL-PRICE RULE (UNSHARED SOLO BOOKING)
     # =========================================================
     if not is_shared:
-        user_final_price = tot_price
+        user_final_price = tot_price + ice_surcharge
         savings = 0.0
         breakdown = {
             "userSegmentKm": user_dist,
             "userWeightKg": user_wt,
             "totalVehiclePrice": tot_price,
+            "iceSurcharge": ice_surcharge,
+            "iceNote": "Cold-chain ice included in base fare (₹0)." if is_perish_trip else ("+₹75 Cold-Chain Ice Box fee added." if ice_surcharge > 0 else "Ambient cargo (no ice needed)."),
             "status": "Solo Booking: 100% capacity reserved for single sender.",
             "notes": "Full vehicle base price applies until other co-sharing partners join along the route."
         }
@@ -906,9 +914,11 @@ def calculate_ptl_fare(
         }
         source = "local_ptl_engine"
 
-    final_user_price = ai_result["userFinalPrice"]
-    final_savings = ai_result.get("savingsComparedToSolo", max(0.0, tot_price - final_user_price))
+    final_user_price = ai_result["userFinalPrice"] + ice_surcharge
+    final_savings = ai_result.get("savingsComparedToSolo", max(0.0, tot_price - ai_result["userFinalPrice"]))
     breakdown_data = ai_result.get("breakdown", {})
+    breakdown_data["iceSurcharge"] = ice_surcharge
+    breakdown_data["iceNote"] = "Cold-chain ice included in base fare (₹0)." if is_perish_trip else ("+₹75 Cold-Chain Ice Box fee added." if ice_surcharge > 0 else "Ambient cargo (no ice needed).")
 
     voice_texts = generate_multilingual_ptl_voice_announcements(
         is_shared=True,

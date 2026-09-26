@@ -181,7 +181,7 @@ class TripCreate(BaseModel):
     is_return_leg: Optional[bool] = False
     return_discount_pct: Optional[int] = 0
     has_perishables: Optional[bool] = False
-    ice_handling_supported: Optional[bool] = True
+    ice_handling_supported: Optional[bool] = False
     current_checkpoint: Optional[str] = None
     checkpoint_count: Optional[int] = 0
     cargo_category: Optional[str] = "Independent / General Cargo"
@@ -215,7 +215,7 @@ class TripResponse(TripCreate):
     start_lock_reason: Optional[str] = None
     has_return_leg: Optional[bool] = False
     has_perishables: Optional[bool] = False
-    ice_handling_supported: Optional[bool] = True
+    ice_handling_supported: Optional[bool] = False
     current_checkpoint: Optional[str] = None
     checkpoint_count: Optional[int] = 0
     cargo_category: Optional[str] = "Independent / General Cargo"
@@ -338,6 +338,10 @@ class RequestCreate(BaseModel):
     unloaded_at: Optional[str] = None
     unloaded_by: Optional[str] = None
     ice_boxes_count: Optional[int] = 0
+    ice_added: Optional[bool] = False
+    ice_added_stage: Optional[str] = None
+    ice_added_at: Optional[str] = None
+    ice_unavailable_at_pickup: Optional[bool] = False
     cargo_category: Optional[str] = "Independent / General Cargo"
     dedicated_sub_category: Optional[str] = None
     is_dedicated: Optional[bool] = False
@@ -348,6 +352,7 @@ class RequestCreate(BaseModel):
     weight_compliant: Optional[bool] = None
     cooling_type: Optional[str] = None
     target_temp_c: Optional[float] = None
+    ice_surcharge: Optional[float] = 0.0
 
 
 class RequestResponse(RequestCreate):
@@ -378,6 +383,7 @@ class RequestResponse(RequestCreate):
     is_perishable: Optional[bool] = False
     cargo_type: Optional[str] = "General"
     ice_handling_required: Optional[bool] = False
+    ice_surcharge: Optional[float] = 0.0
     current_temp_c: Optional[float] = None
     loading_status: Optional[str] = "pending"
     loaded_at: Optional[str] = None
@@ -385,6 +391,10 @@ class RequestResponse(RequestCreate):
     unloaded_at: Optional[str] = None
     unloaded_by: Optional[str] = None
     ice_boxes_count: Optional[int] = 0
+    ice_added: Optional[bool] = False
+    ice_added_stage: Optional[str] = None
+    ice_added_at: Optional[str] = None
+    ice_unavailable_at_pickup: Optional[bool] = False
     current_checkpoint: Optional[str] = None
     checkpoint_count: Optional[int] = 0
     max_inspections: Optional[int] = 1
@@ -490,6 +500,8 @@ class CalculatePtlFareRequest(BaseModel):
     user_segment_distance_km: float
     user_weight_kg: float
     other_sharers: Optional[list[PtlSharerInfo]] = []
+    is_ice_requested: Optional[bool] = False
+    trip_cargo_category: Optional[str] = None
 
 
 class CalculatePtlFareResponse(BaseModel):
@@ -642,6 +654,7 @@ class LoadingEventRequest(BaseModel):
     seal_number: Optional[str] = None
     seal_status: Optional[str] = "Sealed & Intact"
     ice_boxes_added: Optional[int] = 0
+    ice_unavailable_at_pickup: Optional[bool] = False
     temp_celsius: Optional[float] = None
     notes: Optional[str] = None
 
@@ -654,4 +667,6 @@ class IceHandlingRequest(BaseModel):
     ice_type: str = "Crushed Ice"  # "Crushed Ice", "Gel Packs", "Dry Ice"
     temp_before: Optional[float] = None
     temp_after: Optional[float] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = None
+    stage: Optional[str] = None  # "pickup", "checkpoint"
+    checkpoint_name: Optional[str] = None

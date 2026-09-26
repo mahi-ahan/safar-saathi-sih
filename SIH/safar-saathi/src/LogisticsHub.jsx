@@ -487,6 +487,11 @@ export default function LogisticsHub() {
     e.preventDefault();
     if (!checkpointModal.trip) return;
 
+    if (checkpointModal.trip.status === 'completed' || checkpointModal.trip.status === 'delivered') {
+      showBanner("✔ This trip is completed. No further highway inspections can be conducted.", "error");
+      return;
+    }
+
     const isStarted = checkpointModal.trip.status === 'in_transit' || checkpointModal.trip.status === 'moving' || checkpointModal.trip.status === 'started' || Boolean(checkpointModal.trip.is_live);
     if (!isStarted) {
       showBanner(
@@ -569,6 +574,8 @@ export default function LogisticsHub() {
 
     setLoadingModal(prev => ({ ...prev, submitting: true }));
     try {
+      const isPerishWithIce = Boolean(loadingModal.shipment?.is_perishable && loadingModal.shipment?.ice_handling_required);
+      const isIceAvail = loadingModal.ice_available_at_pickup !== false;
       const res = await fetch(`${API_BASE}/api/logistics/loading-event`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -579,7 +586,8 @@ export default function LogisticsHub() {
           verified_weight_kg: loadingModal.verified_weight_kg ? Number(loadingModal.verified_weight_kg) : loadingModal.shipment.goods_weight_kg,
           seal_number: loadingModal.seal_number,
           seal_status: loadingModal.seal_status,
-          ice_boxes_added: Number(loadingModal.ice_boxes_added) || 0,
+          ice_boxes_added: (isPerishWithIce && isIceAvail) ? (Number(loadingModal.ice_boxes_added) || 0) : 0,
+          ice_unavailable_at_pickup: isPerishWithIce && !isIceAvail,
           temp_celsius: Number(loadingModal.temp_celsius) || 3.5,
           notes: loadingModal.notes
         })
@@ -618,37 +626,31 @@ export default function LogisticsHub() {
           ice_type: iceModal.ice_type,
           temp_before: Number(iceModal.temp_before),
           temp_after: Number(iceModal.temp_after),
-          notes: iceModal.notes
+          notes: iceModal.notes,
+          stage: iceModal.stage || 'pickup',
+          checkpoint_name: officer?.station || 'Station Checkpoint'
         })
       });
 
       const data = await res.json();
       if (res.ok) {
-        showBanner(`❄️ ${iceModal.ice_kg_added}kg ${iceModal.ice_type} replenished! Temperature stabilized.`);
+        showBanner(`❄️ ${iceModal.ice_kg_added}kg ${iceModal.ice_type} supplied! (One-time policy fulfilled).`);
         setIceModal({ isOpen: false, shipment: null, submitting: false });
         fetchData();
       } else {
-        showBanner(data.detail || "Failed to record ice replenishment.", "error");
+        showBanner(data.detail || "Failed to record ice addition.", "error");
       }
     } catch (err) {
       console.error("Ice handling error", err);
-      showBanner("Could not record ice replenishment.", "error");
+      showBanner("Could not record ice addition.", "error");
     } finally {
       setIceModal(prev => ({ ...prev, submitting: false }));
     }
   };
 
-  // Filtered lists
+  // Filtered lists: Only shipments where user selected a perishable good requiring ice
   const perishableShipments = useMemo(() => {
-    return shipments.filter(s => s.is_perishable || s.ice_handling_required || (s.cargo_type && (
-      s.cargo_type.toLowerCase().includes('milk') ||
-      s.cargo_type.toLowerCase().includes('dairy') ||
-      s.cargo_type.toLowerCase().includes('fish') ||
-      s.cargo_type.toLowerCase().includes('fruit') ||
-      s.cargo_type.toLowerCase().includes('vegetable') ||
-      s.cargo_type.toLowerCase().includes('tomato') ||
-      s.cargo_type.toLowerCase().includes('perish')
-    )));
+    return shipments.filter(s => s.is_perishable && s.ice_handling_required);
   }, [shipments]);
 
   return (
@@ -1347,11 +1349,27 @@ export default function LogisticsHub() {
                               <span className="font-display font-bold text-base text-slate-900">
                                 {trip.from_loc.split(',')[0]} → {trip.to_loc.split(',')[0]}
                               </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                trip.status === 'in_transit' ? 'bg-emerald-100 text-emerald-800 animate-pulse' : 'bg-slate-200 text-slate-700'
-                              }`}>
-                                {trip.status.replace('_', ' ')}
-                              </span>
+                              {trip.status === 'completed' || trip.status === 'delivered' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white shadow-xs flex items-center gap-1">
+                                  <span>✔</span>
+                                  <span>Completed</span>
+                                </span>
+                              ) : trip.status === 'pending_passenger_confirmation' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-600 text-white shadow-xs flex items-center gap-1">
+                                  <span>✔</span>
+                                  <span>Delivered</span>
+                                </span>
+                              ) : trip.status === 'cancelled' || trip.status === 'cancelled_by_driver' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
+                                  Cancelled
+                                </span>
+                              ) : (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                  trip.status === 'in_transit' || trip.status === 'moving' || trip.status === 'started' ? 'bg-emerald-100 text-emerald-800 animate-pulse' : 'bg-slate-200 text-slate-700'
+                                }`}>
+                                  {trip.status?.replace('_', ' ') || 'Scheduled'}
+                                </span>
+                              )}
                               {trip.is_return_leg && (
                                 <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 font-bold text-[10px] border border-indigo-200 flex items-center gap-1">
                                   <span>🔄</span>
@@ -1380,13 +1398,18 @@ export default function LogisticsHub() {
                             <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 font-bold text-[10.5px] border border-purple-200 flex items-center gap-1">
                               🔒 Dedicated: {trip.dedicated_sub_category || 'Isolated Cargo'}
                             </span>
-                          ) : trip.cargo_category === 'Perishable Goods' || trip.has_perishables ? (
+                          ) : trip.cargo_category === 'Perishable Goods' ? (
                             <span className="px-2.5 py-0.5 rounded-full bg-cyan-100 text-cyan-900 font-bold text-[10.5px] border border-cyan-200 flex items-center gap-1">
                               ❄️ Perishable ({trip.cooling_type || 'Cold-Chain'})
                             </span>
                           ) : (
-                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10.5px] border border-slate-200">
-                              📦 Independent Cargo
+                            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10.5px] border border-slate-200 flex items-center gap-1">
+                              <span>📦 Independent Cargo</span>
+                              {trip.bookings && trip.bookings.some(b => b.ice_handling_required) && (
+                                <span className="ml-1 text-[9px] bg-cyan-100 text-cyan-800 px-1.5 py-0.2 rounded font-mono">
+                                  🧊 1 Ice Shipment
+                                </span>
+                              )}
                             </span>
                           )}
 
@@ -1450,7 +1473,49 @@ export default function LogisticsHub() {
 
                       {/* Action Button: Dynamic Distance-Based Inspection Capacity */}
                       <div className="pt-2">
-                        {(!trip.status || (trip.status !== 'in_transit' && trip.status !== 'moving' && trip.status !== 'started' && !trip.is_live)) ? (
+                        {trip.status === 'completed' || trip.status === 'delivered' ? (
+                          <div className="space-y-1.5">
+                            <div className="rounded-xl bg-emerald-50 border border-emerald-300 p-2.5 text-center text-xs text-emerald-900 flex items-center justify-center gap-1.5 font-bold">
+                              <CheckCircle2 size={16} className="text-emerald-600" />
+                              <span>This trip is completed. Cargo has been safely delivered.</span>
+                            </div>
+                            <button
+                              disabled
+                              className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-default flex items-center justify-center gap-1.5 select-none"
+                              title="This trip has been completed and delivered."
+                            >
+                              <CheckCircle2 size={15} className="text-white" />
+                              <span>✔ This Trip is Completed</span>
+                            </button>
+                          </div>
+                        ) : trip.status === 'pending_passenger_confirmation' ? (
+                          <div className="space-y-1.5">
+                            <div className="rounded-xl bg-blue-50 border border-blue-300 p-2.5 text-center text-xs text-blue-900 flex items-center justify-center gap-1.5 font-bold">
+                              <CheckCircle2 size={16} className="text-blue-600" />
+                              <span>Delivery completed with verified proof. Awaiting final signoff.</span>
+                            </div>
+                            <button
+                              disabled
+                              className="w-full py-2.5 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-default flex items-center justify-center gap-1.5 select-none"
+                              title="Delivery proof uploaded. Trip completed."
+                            >
+                              <CheckCircle2 size={15} className="text-white" />
+                              <span>✔ This Trip is Completed (Delivered)</span>
+                            </button>
+                          </div>
+                        ) : (trip.status === 'cancelled' || trip.status === 'cancelled_by_driver' || trip.status === 'cancelled_by_user') ? (
+                          <div className="space-y-1.5">
+                            <div className="rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-center text-xs text-rose-900 flex items-center justify-center gap-1.5 font-medium">
+                              <span>⛔ This trip was cancelled.</span>
+                            </div>
+                            <button
+                              disabled
+                              className="w-full py-2.5 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-80 select-none"
+                            >
+                              <span>Trip Cancelled</span>
+                            </button>
+                          </div>
+                        ) : (!trip.status || (trip.status !== 'in_transit' && trip.status !== 'moving' && trip.status !== 'started' && !trip.is_live)) ? (
                           <div className="space-y-1.5">
                             <div className="rounded-xl bg-amber-50 border border-amber-200/90 p-2.5 text-center text-xs text-amber-900 flex items-center justify-center gap-1.5 font-medium">
                               <span>⏳</span>
@@ -1543,10 +1608,10 @@ export default function LogisticsHub() {
                                   declared_weight_kg: trip.total_booked_kg || trip.total_kg || 450,
                                   weight_compliant: trip.weight_compliant !== false,
                                   safety_parameters_status: trip.safety_parameters_status || 'Passed All Safety Checks',
-                                  cooling_status: trip.has_perishables ? 'Optimal Range' : 'Not Applicable',
-                                  temp_celsius: trip.has_perishables ? 3.5 : '',
+                                  cooling_status: (trip.cargo_category === 'Perishable Goods' || (trip.bookings && trip.bookings.some(b => b.ice_handling_required))) ? 'Optimal Range' : 'Not Applicable',
+                                  temp_celsius: (trip.cargo_category === 'Perishable Goods' || (trip.bookings && trip.bookings.some(b => b.ice_handling_required))) ? 3.5 : '',
                                   cargo_condition: 'Intact & Good',
-                                  ice_status: trip.has_perishables ? 'Adequate' : 'Not Applicable',
+                                  ice_status: (trip.cargo_category === 'Perishable Goods' || (trip.bookings && trip.bookings.some(b => b.ice_handling_required))) ? 'Adequate' : 'Not Applicable',
                                   notes: `Halt ${nextHaltNumber}/${maxInsp}: Cargo security seal verified; weighbridge scale compliance inspected.`,
                                   action_taken: `Halt ${nextHaltNumber}/${maxInsp} seal verified & weighbridge stamped.`,
                                   proof_image: null,
@@ -1586,8 +1651,9 @@ export default function LogisticsHub() {
 
               <div className="grid md:grid-cols-2 gap-4">
                 {shipments.map(s => {
-                  const isLoaded = s.loading_status === 'loaded';
-                  const isUnloaded = s.loading_status === 'unloaded';
+                  const isDeliveredTrip = s.trip_status === 'completed' || s.trip_status === 'delivered' || s.status === 'completed' || s.status === 'delivered';
+                  const isLoaded = s.loading_status === 'loaded' && !isDeliveredTrip;
+                  const isUnloaded = s.loading_status === 'unloaded' || isDeliveredTrip;
 
                   return (
                     <div
@@ -1657,7 +1723,8 @@ export default function LogisticsHub() {
                               seal_number: s.seal_number || `SL-${Math.floor(10000 + Math.random() * 90000)}`,
                               seal_status: 'verified_intact',
                               verified_weight_kg: s.goods_weight_kg,
-                              ice_boxes_added: s.is_perishable ? 2 : 0,
+                              ice_available_at_pickup: Boolean(s.is_perishable && s.ice_handling_required),
+                              ice_boxes_added: (s.is_perishable && s.ice_handling_required) ? 2 : 0,
                               temp_celsius: s.current_temp_c || 3.8,
                               notes: 'Weighed on electronic tare scale and stacked safely. Security seal tag affixed.',
                               submitting: false
@@ -1745,6 +1812,11 @@ export default function LogisticsHub() {
                     const isWarning = temp > 4.0 && temp <= 8.0;
                     const isCritical = temp > 8.0;
 
+                    const isAtPickup = (s.loading_status === 'pending');
+                    const isLoaded = (s.loading_status === 'loaded');
+                    const hasIceAlready = Boolean(s.ice_added) || (Number(s.ice_boxes_count) > 0 && !s.ice_unavailable_at_pickup);
+                    const missedIceAtPickup = isLoaded && (!hasIceAlready || Boolean(s.ice_unavailable_at_pickup));
+
                     return (
                       <div
                         key={s.id}
@@ -1758,9 +1830,24 @@ export default function LogisticsHub() {
                           {/* Top Row */}
                           <div className="flex items-start justify-between gap-2 mb-2">
                             <div>
-                              <span className="px-2.5 py-0.5 rounded-full text-[10.5px] font-bold uppercase tracking-wider bg-white/80 border text-slate-700">
-                                ❄️ Cold-Chain Sensitive
-                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2.5 py-0.5 rounded-full text-[10.5px] font-bold uppercase tracking-wider bg-white/80 border text-slate-700">
+                                  ❄️ Cold-Chain Perishable
+                                </span>
+                                {isAtPickup ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                    ⏳ At Pickup (Starting Point)
+                                  </span>
+                                ) : hasIceAlready ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                    ✔ Ice Supplied ({s.ice_added_stage === 'checkpoint' ? 'Nearest Checkpoint' : 'Pickup'})
+                                  </span>
+                                ) : missedIceAtPickup ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-100 text-rose-900 border border-rose-300 animate-pulse">
+                                    🚨 Ice Missed at Pickup — Needed at Checkpoint
+                                  </span>
+                                ) : null}
+                              </div>
                               <h3 className="font-display font-bold text-lg text-slate-900 mt-1">
                                 {s.cargo_type} ({s.goods_weight_kg} kg)
                               </h3>
@@ -1790,38 +1877,79 @@ export default function LogisticsHub() {
                             <div className="flex items-center justify-between">
                               <span className="text-slate-500">Ice Preservation Timer:</span>
                               <span className="font-mono font-bold text-slate-800">
-                                ~{isOptimal ? '6h 30m safe' : isWarning ? '1h 45m remaining' : 'MELTED'}
+                                {hasIceAlready ? (isOptimal ? '~6h 30m safe' : isWarning ? '~1h 45m remaining' : 'MELTED') : 'Not Preserved (Awaiting Ice)'}
                               </span>
                             </div>
                             <div className="flex items-center justify-between">
-                              <span className="text-slate-500">Ice Boxes / Gel Packs on board:</span>
-                              <span className="font-bold text-slate-800">{s.ice_boxes_count || 1} units</span>
+                              <span className="text-slate-500">Ice Boxes / Coolant on board:</span>
+                              <span className={`font-bold ${hasIceAlready ? 'text-emerald-800' : missedIceAtPickup ? 'text-rose-700 font-bold' : 'text-slate-800'}`}>
+                                {hasIceAlready
+                                  ? `${s.ice_boxes_count || 2} boxes (Supplied once at ${s.ice_added_stage || 'pickup'})`
+                                  : missedIceAtPickup
+                                  ? '0 boxes (Missed at pickup dock)'
+                                  : 'Pending starting point addition'}
+                              </span>
                             </div>
                             <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px]">
-                              <span className="text-slate-500">Transit Leg:</span>
+                              <span className="text-slate-500">Corridor Route:</span>
                               <span className="text-slate-700 font-medium truncate max-w-[200px]">{s.route || s.pickup_place}</span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Ice Action */}
+                        {/* Ice Action - Strictly Available at Pickup, or at Nearest Checkpoint if missed at Pickup */}
                         <div className="pt-3 mt-3 border-t border-slate-200/80">
-                          <button
-                            onClick={() => setIceModal({
-                              isOpen: true,
-                              shipment: s,
-                              ice_kg_added: 10,
-                              ice_type: 'Crushed Flake Ice',
-                              temp_before: temp,
-                              temp_after: Math.max(1.5, temp - 3.0),
-                              notes: 'Topped up crushed flake ice into insulated insulated crates.',
-                              submitting: false
-                            })}
-                            className="w-full py-2.5 bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <Snowflake size={15} />
-                            <span>Replenish Ice / Dry-Ice Packs</span>
-                          </button>
+                          {isAtPickup ? (
+                            <button
+                              onClick={() => setIceModal({
+                                isOpen: true,
+                                shipment: s,
+                                stage: 'pickup',
+                                ice_kg_added: 10,
+                                ice_type: 'Crushed Flake Ice',
+                                temp_before: temp,
+                                temp_after: Math.max(1.5, temp - 3.0),
+                                notes: 'Supplied ice boxes once at starting pickup point.',
+                                submitting: false
+                              })}
+                              className="w-full py-2.5 bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Snowflake size={15} />
+                              <span>🧊 Add Ice Box at Pickup Dock (Starting Point)</span>
+                            </button>
+                          ) : hasIceAlready ? (
+                            <div className="w-full py-2 px-3 bg-slate-100 border border-slate-200 text-slate-500 rounded-xl text-xs flex items-center justify-between gap-1.5">
+                              <span className="flex items-center gap-1.5 font-semibold text-slate-600">
+                                <Lock size={13} className="text-slate-400" />
+                                <span>Ice Added Once ({s.ice_added_stage === 'checkpoint' ? 'Nearest Checkpoint' : 'Pickup Dock'})</span>
+                              </span>
+                              <span className="text-[10px] uppercase font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                Locked (1x Fulfilled)
+                              </span>
+                            </div>
+                          ) : missedIceAtPickup ? (
+                            <button
+                              onClick={() => setIceModal({
+                                isOpen: true,
+                                shipment: s,
+                                stage: 'checkpoint',
+                                ice_kg_added: 10,
+                                ice_type: 'Crushed Flake Ice',
+                                temp_before: temp,
+                                temp_after: Math.max(1.5, temp - 3.0),
+                                notes: 'Ice was unavailable at pickup; supplied at nearest highway inspection point.',
+                                submitting: false
+                              })}
+                              className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
+                            >
+                              <Snowflake size={15} />
+                              <span>❄️ Add Ice Box at Nearest Inspection Point</span>
+                            </button>
+                          ) : (
+                            <div className="w-full py-2 bg-slate-50 border border-slate-200 text-slate-400 rounded-xl text-xs text-center">
+                              Ice Addition Complete
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1920,11 +2048,11 @@ export default function LogisticsHub() {
                           <td className="py-3 px-4 text-slate-700 max-w-xs truncate">{s.route}</td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              s.loading_status === 'unloaded' ? 'bg-purple-100 text-purple-800' :
-                              s.loading_status === 'loaded' ? 'bg-emerald-100 text-emerald-800' :
+                              s.loading_status === 'unloaded' || s.trip_status === 'completed' || s.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                              s.loading_status === 'loaded' ? 'bg-purple-100 text-purple-800' :
                               'bg-amber-100 text-amber-800'
                             }`}>
-                              {(s.loading_status || 'Pending').toUpperCase()}
+                              {s.trip_status === 'completed' || s.status === 'completed' ? '✔ COMPLETED' : (s.loading_status || 'Pending').toUpperCase()}
                             </span>
                           </td>
                         </tr>
@@ -2139,38 +2267,40 @@ export default function LogisticsHub() {
                 </div>
               </div>
 
-              {/* COLD CHAIN INSPECTION (IF PERISHABLE) */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Ice / Cooling Status
-                  </label>
-                  <select
-                    value={checkpointModal.ice_status}
-                    onChange={e => setCheckpointModal(p => ({ ...p, ice_status: e.target.value }))}
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-300 text-xs bg-white"
-                  >
-                    <option value="Adequate">Adequate Ice</option>
-                    <option value="Melting - Re-iced">Melting - Re-iced</option>
-                    <option value="Dry Ice Replaced">Dry Ice Replaced</option>
-                    <option value="Not Applicable">Not Applicable</option>
-                  </select>
-                </div>
+              {/* COLD CHAIN INSPECTION (ONLY IF PERISHABLE TRIP OR SHIPMENT REQUIRES ICE) */}
+              {(checkpointModal.trip?.cargo_category === 'Perishable Goods' || (checkpointModal.trip?.bookings && checkpointModal.trip.bookings.some(b => b.ice_handling_required))) && (
+                <div className="grid grid-cols-2 gap-3 bg-cyan-50/60 p-2.5 rounded-xl border border-cyan-200">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Ice / Cooling Status
+                    </label>
+                    <select
+                      value={checkpointModal.ice_status}
+                      onChange={e => setCheckpointModal(p => ({ ...p, ice_status: e.target.value }))}
+                      className="w-full px-2.5 py-2 rounded-xl border border-slate-300 text-xs bg-white"
+                    >
+                      <option value="Adequate">Adequate Ice</option>
+                      <option value="Melting - Re-iced">Melting - Re-iced</option>
+                      <option value="Dry Ice Replaced">Dry Ice Replaced</option>
+                      <option value="Not Applicable">Not Applicable</option>
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Core Temp (°C)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="e.g. 3.5"
-                    value={checkpointModal.temp_celsius ?? ''}
-                    onChange={e => setCheckpointModal(p => ({ ...p, temp_celsius: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono"
-                  />
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Core Temp (°C)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="e.g. 3.5"
+                      value={checkpointModal.temp_celsius ?? ''}
+                      onChange={e => setCheckpointModal(p => ({ ...p, temp_celsius: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -2269,17 +2399,63 @@ export default function LogisticsHub() {
               </div>
 
               {loadingModal.loading_type === 'pickup' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Ice Boxes / Gel Packs Added
-                  </label>
-                  <input
-                    type="number"
-                    value={loadingModal.ice_boxes_added}
-                    onChange={e => setLoadingModal(p => ({ ...p, ice_boxes_added: e.target.value }))}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono"
-                  />
-                </div>
+                loadingModal.shipment?.is_perishable && loadingModal.shipment?.ice_handling_required ? (
+                  <div className="p-3 bg-cyan-50/80 border border-cyan-300 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-cyan-950 flex items-center gap-1.5">
+                        <Snowflake size={14} className="text-cyan-700" />
+                        <span>Cold-Chain Ice Box Addition (Starting Point)</span>
+                      </label>
+                      <span className="text-[10px] font-mono font-bold bg-cyan-200 text-cyan-900 px-2 py-0.5 rounded-full">
+                        Pickup Only
+                      </span>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={loadingModal.ice_available_at_pickup !== false}
+                        onChange={e => {
+                          const avail = e.target.checked;
+                          setLoadingModal(p => ({
+                            ...p,
+                            ice_available_at_pickup: avail,
+                            ice_boxes_added: avail ? (p.ice_boxes_added || 2) : 0
+                          }));
+                        }}
+                        className="rounded text-cyan-600 focus:ring-cyan-500"
+                      />
+                      <span className="font-semibold text-slate-800">Ice is available & supplied now at pickup</span>
+                    </label>
+
+                    {loadingModal.ice_available_at_pickup !== false ? (
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Number of Ice Boxes / Gel Packs Added:
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={loadingModal.ice_boxes_added || 2}
+                          onChange={e => setLoadingModal(p => ({ ...p, ice_boxes_added: Number(e.target.value) }))}
+                          className="w-full px-3 py-1.5 rounded-lg border border-cyan-300 text-xs font-mono font-bold bg-white"
+                        />
+                        <p className="text-[10.5px] text-cyan-800 mt-1">
+                          ✔ Ice can only be added once at this starting point. After pickup, addition will not be available.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 leading-snug">
+                        ⚠ <strong>Ice not available at pickup:</strong> Flagged for mandatory addition at the <strong>nearest inspection checkpoint</strong> along the highway corridor.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-slate-100 rounded-xl text-[11px] text-slate-600 border border-slate-200">
+                    📦 <strong>Standard Non-Ice Cargo:</strong> This shipment does not require ice coolant boxes.
+                  </div>
+                )
               )}
 
               <div>
@@ -2337,9 +2513,14 @@ export default function LogisticsHub() {
             <div className="flex items-center justify-between pb-3 border-b border-cyan-100 mb-4">
               <div className="flex items-center gap-2">
                 <Snowflake className="text-cyan-600" size={22} />
-                <h3 className="font-display font-bold text-lg text-slate-900">
-                  Ice Replenishment & Cold Stabilization
-                </h3>
+                <div>
+                  <h3 className="font-display font-bold text-base sm:text-lg text-slate-900 leading-tight">
+                    {iceModal.stage === 'pickup' ? '🧊 Add Ice Box at Starting Point (Pickup)' : '❄️ Add Ice Box at Nearest Checkpoint'}
+                  </h3>
+                  <span className="text-[10px] font-mono uppercase font-bold text-cyan-800 bg-cyan-100 px-2 py-0.5 rounded-full inline-block mt-0.5">
+                    {iceModal.stage === 'pickup' ? 'One-Time Starting Point Addition' : 'Deferred Pickup Fallback'}
+                  </span>
+                </div>
               </div>
               <button
                 onClick={() => setIceModal(p => ({ ...p, isOpen: false }))}
@@ -2347,6 +2528,18 @@ export default function LogisticsHub() {
               >
                 <X size={18} />
               </button>
+            </div>
+
+            <div className={`p-2.5 rounded-xl border text-xs mb-3 ${
+              iceModal.stage === 'pickup'
+                ? 'bg-cyan-50 border-cyan-200 text-cyan-950'
+                : 'bg-amber-50 border-amber-200 text-amber-950'
+            }`}>
+              {iceModal.stage === 'pickup' ? (
+                <p>✔ <strong>Pickup Policy:</strong> Ice is added once at this starting point. After the vehicle departs pickup, addition of ice will no longer be available.</p>
+              ) : (
+                <p>⚠ <strong>Checkpoint Fallback:</strong> Ice was unavailable at pickup. Fulfilling the single-addition ice requirement at this nearest inspection point.</p>
+              )}
             </div>
 
             <form onSubmit={handleSubmitIce} className="space-y-3.5">
@@ -2432,7 +2625,7 @@ export default function LogisticsHub() {
                   disabled={iceModal.submitting}
                   className="flex-1 py-2.5 bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
                 >
-                  {iceModal.submitting ? 'Applying Ice Top-Up...' : 'Confirm Ice Replenishment'}
+                  {iceModal.submitting ? 'Applying Ice...' : (iceModal.stage === 'pickup' ? 'Confirm Ice Addition at Pickup' : 'Confirm Ice Addition at Checkpoint')}
                 </button>
                 <button
                   type="button"

@@ -994,6 +994,8 @@ export function PtlUserPricingCard({
   deliveryCoords = null,
   weightKg = 0,
   activeLang = 'en',
+  isIceRequested = false,
+  isTripPerishable = false,
   onPriceCalculated
 }) {
   return (
@@ -1006,6 +1008,8 @@ export function PtlUserPricingCard({
         deliveryCoords={deliveryCoords}
         weightKg={weightKg}
         activeLang={activeLang}
+        isIceRequested={isIceRequested}
+        isTripPerishable={isTripPerishable}
         onPriceCalculated={onPriceCalculated}
       />
     </ComponentErrorBoundary>
@@ -1020,6 +1024,8 @@ function PtlUserPricingCardInternal({
   deliveryCoords = null,
   weightKg = 0,
   activeLang = 'en',
+  isIceRequested = false,
+  isTripPerishable = false,
   onPriceCalculated
 }) {
   const [loading, setLoading] = useState(false);
@@ -1083,7 +1089,9 @@ function PtlUserPricingCardInternal({
               user_delivery_loc: String(deliveryLoc || trip?.to || 'Delivery Location'),
               user_segment_distance_km: distKm,
               user_weight_kg: weightNum,
-              other_sharers: otherSharers
+              other_sharers: otherSharers,
+              is_ice_requested: Boolean(isIceRequested),
+              trip_cargo_category: isTripPerishable ? 'Perishable Goods' : (trip?.cargo_category || 'Independent / General Cargo')
             })
           });
 
@@ -1117,10 +1125,13 @@ function PtlUserPricingCardInternal({
             savings = Math.max(0, tripTotalFare - userPrice);
           }
 
+          const iceFee = (isIceRequested && !isTripPerishable) ? 75 : 0;
+          const finalPriceWithIce = userPrice + iceFee;
+
           const fallbackData = {
             is_shared: isShared,
             sharers_count: otherSharers.length + 1,
-            user_final_price: userPrice,
+            user_final_price: finalPriceWithIce,
             total_vehicle_price: tripTotalFare,
             pricing_rule_applied: isShared ? "AI_PTL_SEGMENT_DISTRIBUTED" : "UNSHARED_FULL_PRICE",
             source: "client_fallback",
@@ -1129,23 +1140,25 @@ function PtlUserPricingCardInternal({
               userWeightKg: weightNum,
               userWorkloadKgKm: userWorkload,
               workloadSharePct: sharePct,
+              iceSurcharge: iceFee,
+              iceNote: isTripPerishable ? "Cold-chain ice included in vehicle base fare (₹0)." : (iceFee > 0 ? "₹75 Cold-Chain Ice Box fee added for on-demand temperature preservation." : "Ambient cargo (no ice needed)."),
               explanation: isShared
                 ? `Calculated on your ${distKm} km sub-route distance (${sharePct}% workload share).`
                 : "Solo booking: Full vehicle base fare applies."
             },
             voice_announcement_text: {
               en: isShared
-                ? `Shared partial load fare confirmed: Your distributed share is ₹${formatInr(userPrice)}, saving you ₹${formatInr(savings)}.`
-                : `Solo booking rate: Full vehicle load price is ₹${formatInr(tripTotalFare)}.`,
+                ? `Shared partial load fare confirmed: Your distributed share is ₹${formatInr(finalPriceWithIce)}, saving you ₹${formatInr(savings)}.`
+                : `Solo booking rate: Full vehicle load price is ₹${formatInr(finalPriceWithIce)}.`,
               hi: isShared
-                ? `साझा आंशिक लोड किराया पुष्ट: आपकी ${distKm} किमी यात्रा पर आपका हिस्सा ₹${formatInr(userPrice)} है, जिससे ₹${formatInr(savings)} की बचत हुई।`
-                : `एकल बुकिंग दर: कुल वाहन लोड किराया ₹${formatInr(tripTotalFare)} है।`
+                ? `साझा आंशिक लोड किराया पुष्ट: आपकी ${distKm} किमी यात्रा पर आपका हिस्सा ₹${formatInr(finalPriceWithIce)} है, जिससे ₹${formatInr(savings)} की बचत हुई।`
+                : `एकल बुकिंग दर: कुल वाहन लोड किराया ₹${formatInr(finalPriceWithIce)} है।`
             }
           };
 
           setPtlData(fallbackData);
           if (callbackRef.current) {
-            callbackRef.current(userPrice, isShared, fallbackData.breakdown);
+            callbackRef.current(finalPriceWithIce, isShared, fallbackData.breakdown);
           }
         }
       } catch (err) {
@@ -1160,7 +1173,7 @@ function PtlUserPricingCardInternal({
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [trip?.id, tripTotalFare, pickupLoc, deliveryLoc, pickupCoords?.lat, pickupCoords?.lng, deliveryCoords?.lat, deliveryCoords?.lng, weightNum]);
+  }, [trip?.id, tripTotalFare, pickupLoc, deliveryLoc, pickupCoords?.lat, pickupCoords?.lng, deliveryCoords?.lat, deliveryCoords?.lng, weightNum, isIceRequested, isTripPerishable]);
 
   // Voice Announcement helper
   const triggerVoiceAnnouncement = useCallback((force = false) => {
@@ -1315,6 +1328,19 @@ function PtlUserPricingCardInternal({
                     <strong>{ptlData.breakdown.workloadSharePct}%</strong>
                   </div>
                 )}
+                <div className="flex justify-between items-center pt-1 border-t border-gold/20 text-slate-700">
+                  <span className="flex items-center gap-1">
+                    <span>❄️</span>
+                    <span>Cold-Chain Ice Coolant Option:</span>
+                  </span>
+                  <strong className={isIceRequested && !isTripPerishable ? "text-cyan-800 font-bold" : "text-emerald-800 font-semibold"}>
+                    {isTripPerishable
+                      ? "Included with Vehicle (₹0 Extra)"
+                      : isIceRequested
+                      ? "+ ₹75 (Ice Box Supplied at Pickup)"
+                      : "Standard Ambient (₹0)"}
+                  </strong>
+                </div>
               </div>
               {ptlData?.breakdown?.explanation && (
                 <p className="text-[10px] text-gray-600 italic pt-1 border-t border-gray-100 mt-1">

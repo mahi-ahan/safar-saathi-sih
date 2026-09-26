@@ -802,6 +802,10 @@ def get_logistics_trips_and_shipments(
             "unloaded_at": r.unloaded_at,
             "unloaded_by": r.unloaded_by,
             "ice_boxes_count": r.ice_boxes_count or 0,
+            "ice_added": bool(getattr(r, "ice_added", False)),
+            "ice_added_stage": getattr(r, "ice_added_stage", None),
+            "ice_added_at": getattr(r, "ice_added_at", None),
+            "ice_unavailable_at_pickup": bool(getattr(r, "ice_unavailable_at_pickup", False)),
             "seal_number": getattr(r, "seal_number", None),
             "seal_status": getattr(r, "seal_status", "Pending") or "Pending",
             "verified_weight_kg": getattr(r, "verified_weight_kg", None),
@@ -856,7 +860,8 @@ def get_logistics_trips_and_shipments(
         is_insp_completed = actual_checkpoints_count >= max_insp
         insp_status = "completed" if is_insp_completed else ("in_progress" if actual_checkpoints_count > 0 else "not_started")
 
-        trip_has_perishables = any(r["is_perishable"] for r in trip_reqs) or bool(getattr(t, "has_perishables", False))
+        trip_is_perishable = (getattr(t, "cargo_category", "") == "Perishable Goods") or bool(getattr(t, "has_perishables", False))
+        has_ice_shipments = any(bool(r.get("ice_handling_required")) for r in trip_reqs)
         total_booked_kg = sum(r["goods_weight_kg"] for r in trip_reqs if r["status"] not in ["cancelled", "rejected"])
 
         for r in trip_reqs:
@@ -898,8 +903,9 @@ def get_logistics_trips_and_shipments(
             "weight_compliant": getattr(t, "weight_compliant", True),
             "cooling_type": getattr(t, "cooling_type", None),
             "target_temp_c": getattr(t, "target_temp_c", None),
-            "has_perishables": trip_has_perishables,
-            "ice_handling_supported": bool(t.ice_handling_supported),
+            "has_perishables": trip_is_perishable,
+            "has_ice_shipments": has_ice_shipments,
+            "ice_handling_supported": bool(trip_is_perishable and t.ice_handling_supported),
             "is_return_leg": bool(getattr(t, "is_return_leg", False)),
             "return_trip_id": getattr(t, "return_trip_id", None),
             "inspection_status": insp_status,
@@ -943,6 +949,10 @@ def get_logistics_trips_and_shipments(
             "unloaded_at": r.unloaded_at,
             "unloaded_by": r.unloaded_by,
             "ice_boxes_count": r.ice_boxes_count or 0,
+            "ice_added": bool(getattr(r, "ice_added", False)),
+            "ice_added_stage": getattr(r, "ice_added_stage", None),
+            "ice_added_at": getattr(r, "ice_added_at", None),
+            "ice_unavailable_at_pickup": bool(getattr(r, "ice_unavailable_at_pickup", False)),
             "seal_number": getattr(r, "seal_number", None),
             "seal_status": getattr(r, "seal_status", "Pending") or "Pending",
             "verified_weight_kg": getattr(r, "verified_weight_kg", None),
@@ -1134,6 +1144,24 @@ def log_checkpoint_inspection(
     ).update(req_updates, synchronize_session=False)
     db.commit()
 
+    # Nearest Inspection Point Fallback:
+    # If ice was unavailable at pickup, add/fulfill ice at this first inspection point
+    if current_count == 0:
+        deferred_reqs = db.query(models.RequestModel).filter(
+            models.RequestModel.trip_id == payload.trip_id,
+            models.RequestModel.is_perishable == True,
+            models.RequestModel.ice_handling_required == True,
+            models.RequestModel.ice_added == False
+        ).all()
+        for dr in deferred_reqs:
+            dr.ice_added = True
+            dr.ice_added_stage = "checkpoint"
+            dr.ice_added_at = timestamp_str
+            dr.ice_unavailable_at_pickup = False
+            dr.ice_boxes_count = max(1, (dr.ice_boxes_count or 0) + 1)
+        if deferred_reqs:
+            db.commit()
+
     # Dispatch automated WhatsApp & SMS quality alert to driver and connected shippers
     if background_tasks:
         try:
@@ -1221,12 +1249,36 @@ def record_loading_event(
                 if trip:
                     trip.seal_number = payload.seal_number
                     trip.seal_status = payload.seal_status or "Sealed & Intact"
-        if payload.ice_boxes_added:
-            req.ice_boxes_count = (req.ice_boxes_count or 0) + int(payload.ice_boxes_added)
+
+        # PERISHABLE & ICE RULES:
+        # Addition of ice box or ice should ONLY show/apply if the user selected a perishable good which needed ice.
+        # Ice can be added only once at the starting point (pickup).
+        # If ice is not available at pickup, flag for nearest inspection point addition.
+        if req.is_perishable and req.ice_handling_required:
+            if payload.ice_boxes_added and int(payload.ice_boxes_added) > 0 and not payload.ice_unavailable_at_pickup:
+                req.ice_boxes_count = int(payload.ice_boxes_added)
+                req.ice_added = True
+                req.ice_added_stage = "pickup"
+                req.ice_added_at = timestamp_str
+                req.ice_unavailable_at_pickup = False
+            else:
+                req.ice_boxes_count = 0
+                req.ice_added = False
+                req.ice_unavailable_at_pickup = True
+        else:
+            req.ice_boxes_count = 0
+            req.ice_added = False
+            req.ice_unavailable_at_pickup = False
+
         if payload.temp_celsius is not None:
             req.current_temp_c = payload.temp_celsius
 
         msg = f"Cargo verified with security seal {req.seal_number or 'applied'} and loaded by Officer {payload.officer_name}."
+        if req.is_perishable and req.ice_handling_required:
+            if req.ice_added:
+                msg += f" (Supplied {req.ice_boxes_count} cold-chain ice boxes at pickup dock)."
+            else:
+                msg += " (Ice unavailable at pickup dock; deferred to nearest highway inspection checkpoint)."
     else:
         req.loading_status = "unloaded"
         req.unloaded_at = timestamp_str
@@ -1252,7 +1304,10 @@ def record_loading_event(
         "seal_status": req.seal_status,
         "timestamp": timestamp_str,
         "cargo_id": req.id,
-        "current_temp_c": req.current_temp_c
+        "current_temp_c": req.current_temp_c,
+        "ice_added": req.ice_added,
+        "ice_boxes_count": req.ice_boxes_count,
+        "ice_unavailable_at_pickup": req.ice_unavailable_at_pickup
     }
 
 
@@ -1267,68 +1322,98 @@ def record_ice_handling(
     db: Session = Depends(get_db)
 ):
     """
-    Manages ice replenishment for perishable commodities (Milk, Fish, Berries, Greens):
-    Records ice type (Crushed ice, Gel pack, Dry ice), kg added, and re-checks core temperature.
+    Manages ice replenishment under strict lifecycle invariants:
+    1. Applicable ONLY if the user selected a perishable good which needed ice.
+    2. Ice can be added ONLY ONCE.
+    3. Addition of ice is available at the time of pickup (starting point).
+       After pickup, addition of ice is locked and NOT available,
+       UNLESS ice was unavailable at pickup, in which case it is added at the nearest inspection point.
     """
     updated_items = 0
     new_temp = payload.temp_after if payload.temp_after is not None else 2.5
+    timestamp_str = datetime.now().strftime("%Y-%m-%d %I:%M %p")
 
+    targets = []
     if payload.request_id:
-        req = db.query(models.RequestModel).filter(models.RequestModel.id == payload.request_id).first()
-        if req:
-            req.current_temp_c = new_temp
-            req.is_perishable = True
-            req.ice_handling_required = True
-            req.ice_boxes_count = (req.ice_boxes_count or 0) + 1
-            updated_items = 1
-
-            if background_tasks:
-                try:
-                    s_phone, s_lang = resolve_user_contact_and_lang(db, user_id=req.user_id, username_or_name=req.farmer_name)
-                    if s_phone:
-                        ice_msg = msgs.msg_ice_replenished(
-                            shipper_name=req.farmer_name or "Shipper",
-                            commodity=req.cargo_type or "Perishable Goods",
-                            ice_kg=payload.ice_kg_added,
-                            ice_type=payload.ice_type,
-                            temp_c=new_temp,
-                            lang=s_lang
-                        )
-                        background_tasks.add_task(dispatch_automated_alert, s_phone, ice_msg)
-                except Exception as e:
-                    print(f"Ice dispatch notice: {e}")
-
+        r = db.query(models.RequestModel).filter(models.RequestModel.id == payload.request_id).first()
+        if r:
+            targets.append(r)
     elif payload.trip_id:
-        reqs = db.query(models.RequestModel).filter(
+        targets = db.query(models.RequestModel).filter(
             models.RequestModel.trip_id == payload.trip_id,
-            models.RequestModel.is_perishable == True
+            models.RequestModel.is_perishable == True,
+            models.RequestModel.ice_handling_required == True
         ).all()
-        for r in reqs:
-            r.current_temp_c = new_temp
-            r.ice_handling_required = True
-            updated_items += 1
 
-            if background_tasks:
-                try:
-                    s_phone, s_lang = resolve_user_contact_and_lang(db, user_id=r.user_id, username_or_name=r.farmer_name)
-                    if s_phone:
-                        ice_msg = msgs.msg_ice_replenished(
-                            shipper_name=r.farmer_name or "Shipper",
-                            commodity=r.cargo_type or "Perishable Goods",
-                            ice_kg=payload.ice_kg_added,
-                            ice_type=payload.ice_type,
-                            temp_c=new_temp,
-                            lang=s_lang
-                        )
-                        background_tasks.add_task(dispatch_automated_alert, s_phone, ice_msg)
-                except Exception as e:
-                    print(f"Ice dispatch notice: {e}")
+    if not targets:
+        raise HTTPException(status_code=404, detail="No perishable shipments requiring ice found.")
+
+    for req in targets:
+        # Rule 1: Must be perishable good which needed ice
+        if not (req.is_perishable and req.ice_handling_required):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ice addition is not available for '{req.cargo_type or 'this cargo'}'. Only perishable goods requiring ice support ice addition."
+            )
+
+        # Rule 2: Ice can be added ONLY ONCE
+        if getattr(req, "ice_added", False):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ice has already been supplied for this shipment at {req.ice_added_stage or 'starting point'} ({req.ice_added_at or ''}). Ice can only be added once."
+            )
+
+        # Rule 3: Available at pickup; after pickup, only at nearest inspection point if unavailable at pickup
+        is_at_pickup = (req.loading_status == "pending")
+        ice_missed_at_pickup = getattr(req, "ice_unavailable_at_pickup", False) or (getattr(req, "ice_boxes_count", 0) == 0)
+
+        trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first() if req.trip_id else None
+        checkpoint_count = getattr(trip, "checkpoint_count", 0) if trip else 0
+
+        if not is_at_pickup:
+            if not ice_missed_at_pickup:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Addition of ice is not available after pickup. Ice can only be added once at the starting point."
+                )
+            if checkpoint_count > 1 and payload.stage != "checkpoint":
+                raise HTTPException(
+                    status_code=400,
+                    detail="The nearest inspection point has already passed. Ice addition is no longer available."
+                )
+
+        req.current_temp_c = new_temp
+        req.is_perishable = True
+        req.ice_handling_required = True
+        boxes_to_add = int(payload.ice_kg_added / 5) if payload.ice_kg_added >= 5 else 1
+        req.ice_boxes_count = max(1, (req.ice_boxes_count or 0) + boxes_to_add)
+        req.ice_added = True
+        req.ice_added_stage = "pickup" if is_at_pickup else "checkpoint"
+        req.ice_added_at = timestamp_str
+        req.ice_unavailable_at_pickup = False
+        updated_items += 1
+
+        if background_tasks:
+            try:
+                s_phone, s_lang = resolve_user_contact_and_lang(db, user_id=req.user_id, username_or_name=req.farmer_name)
+                if s_phone:
+                    ice_msg = msgs.msg_ice_replenished(
+                        shipper_name=req.farmer_name or "Shipper",
+                        commodity=req.cargo_type or "Perishable Goods",
+                        ice_kg=payload.ice_kg_added,
+                        ice_type=payload.ice_type,
+                        temp_c=new_temp,
+                        lang=s_lang
+                    )
+                    background_tasks.add_task(dispatch_automated_alert, s_phone, ice_msg)
+            except Exception as e:
+                print(f"Ice dispatch notice: {e}")
 
     db.commit()
 
     return {
         "status": "success",
-        "message": f"Successfully replenished {payload.ice_kg_added}kg of {payload.ice_type}. Temperature stabilized at {new_temp}°C.",
+        "message": f"Successfully added {payload.ice_kg_added}kg of {payload.ice_type}. Temperature stabilized at {new_temp}°C (One-time addition logged).",
         "ice_kg_added": payload.ice_kg_added,
         "ice_type": payload.ice_type,
         "core_temperature_celsius": new_temp,

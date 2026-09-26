@@ -37,7 +37,7 @@ class TripModel(Base):
   is_return_leg = Column(Boolean, default=False)
   return_discount_pct = Column(Integer, default=0)
   has_perishables = Column(Boolean, default=False)
-  ice_handling_supported = Column(Boolean, default=True)
+  ice_handling_supported = Column(Boolean, default=False)
   current_checkpoint = Column(String, nullable=True)
   checkpoint_count = Column(Integer, default=0)
   cargo_category = Column(String, default="general")
@@ -99,6 +99,10 @@ class RequestModel(Base):
   unloaded_at = Column(String, nullable=True)
   unloaded_by = Column(String, nullable=True)
   ice_boxes_count = Column(Integer, default=0)
+  ice_added = Column(Boolean, default=False)
+  ice_added_stage = Column(String, nullable=True)  # pickup, checkpoint
+  ice_added_at = Column(String, nullable=True)
+  ice_unavailable_at_pickup = Column(Boolean, default=False)
   cargo_category = Column(String, default="general")
   dedicated_sub_category = Column(String, nullable=True)
   is_dedicated = Column(Boolean, default=False)
@@ -108,6 +112,7 @@ class RequestModel(Base):
   weight_compliant = Column(Boolean, default=True)
   cooling_type = Column(String, nullable=True)
   target_temp_c = Column(Float, nullable=True)
+  ice_surcharge = Column(Float, default=0.0)
 
 
 class LogisticsCheckpointModel(Base):

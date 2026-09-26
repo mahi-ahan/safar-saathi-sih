@@ -703,7 +703,7 @@ export function FindVehicles() {
     }
 
     const tripCargoCategory = trip.cargo_category || (trip.is_dedicated ? 'Dedicated / Isolated Cargo' : (trip.has_perishables ? 'Perishable Goods' : 'Independent / General Cargo'));
-    const isPerishable = tripCargoCategory === 'Perishable Goods' || Boolean(trip.has_perishables);
+    const isPerishable = tripCargoCategory === 'Perishable Goods';
     const isDedicated = tripCargoCategory === 'Dedicated / Isolated Cargo' || Boolean(trip.is_dedicated);
 
     setRequests(prev => ({
@@ -713,9 +713,9 @@ export function FindVehicles() {
         cargo_category: tripCargoCategory,
         dedicated_sub_category: trip.dedicated_sub_category || (isDedicated ? 'Pharmaceuticals & Vaccines' : null),
         cooling_type: trip.cooling_type || (isPerishable ? 'Crushed Flake Ice Boxes (Logistics Provided)' : null),
-        is_perishable: isPerishable,
+        is_perishable: prev[trip.id]?.is_perishable !== undefined ? prev[trip.id].is_perishable : isPerishable,
         is_dedicated: isDedicated,
-        ice_handling_required: isPerishable && (trip.ice_handling_supported !== false),
+        ice_handling_required: prev[trip.id]?.ice_handling_required !== undefined ? prev[trip.id].ice_handling_required : (isPerishable && (trip.ice_handling_supported !== false)),
         commodity_name: prev[trip.id]?.commodity_name || '',
         category: prev[trip.id]?.category || 'Agricultural Produce / Grains',
         weight: prev[trip.id]?.weight || '',
@@ -863,12 +863,13 @@ export function FindVehicles() {
           dedicated_sub_category: (trip.cargo_category === 'Dedicated / Isolated Cargo' || trip.is_dedicated) ? (trip.dedicated_sub_category || 'Pharmaceuticals & Vaccines') : null,
           is_dedicated: trip.cargo_category === 'Dedicated / Isolated Cargo' || Boolean(trip.is_dedicated),
           cooling_type: (trip.cargo_category === 'Perishable Goods' || trip.has_perishables) ? (trip.cooling_type || 'Crushed Flake Ice Boxes (Logistics Provided)') : null,
-          is_perishable: trip.cargo_category === 'Perishable Goods' || Boolean(trip.has_perishables),
+          is_perishable: Boolean(r.is_perishable || trip.cargo_category === 'Perishable Goods' || trip.has_perishables),
           cargo_type: r.commodity_name || (trip.cargo_category === 'Dedicated / Isolated Cargo' ? `${trip.dedicated_sub_category}` : 'General Goods'),
-          ice_handling_required: (trip.cargo_category === 'Perishable Goods' || Boolean(trip.has_perishables)) && (trip.ice_handling_supported !== false),
-          current_temp_c: (trip.cargo_category === 'Perishable Goods' || trip.has_perishables) ? 3.8 : null,
+          ice_handling_required: Boolean(r.ice_handling_required),
+          ice_surcharge: (trip.cargo_category !== 'Perishable Goods' && Boolean(r.ice_handling_required)) ? 75 : 0,
+          current_temp_c: Boolean(r.ice_handling_required) ? 3.8 : null,
           loading_status: 'pending',
-          ice_boxes_count: (trip.cargo_category === 'Perishable Goods' || trip.has_perishables) ? 2 : 0
+          ice_boxes_count: 0
         })
       });
 
@@ -1253,7 +1254,7 @@ export function FindVehicles() {
                                 <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 font-bold text-[10.5px] border border-purple-200 flex items-center gap-1">
                                   🔒 Dedicated: {trip.dedicated_sub_category || 'Isolated'}
                                 </span>
-                              ) : trip.cargo_category === 'Perishable Goods' || trip.has_perishables ? (
+                              ) : trip.cargo_category === 'Perishable Goods' ? (
                                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-100 text-cyan-900 font-bold text-[10.5px] border border-cyan-200 flex items-center gap-1">
                                   ❄️ Perishable ({trip.cooling_type || 'Ice Ready'})
                                 </span>
@@ -1614,7 +1615,7 @@ export function FindVehicles() {
                                     ✔ Exclusive Vehicle Allocation: Reserved exclusively for this dedicated cargo category. Cargo will NOT be mixed with other clients' goods.
                                   </p>
                                 </div>
-                              ) : trip.cargo_category === 'Perishable Goods' || trip.has_perishables ? (
+                              ) : trip.cargo_category === 'Perishable Goods' ? (
                                 <div className="p-3 bg-cyan-50/80 border border-cyan-200 rounded-xl space-y-1.5 animate-[fadeIn_0.2s_ease]">
                                   <div className="flex items-center justify-between">
                                     <span className="text-xs font-bold text-cyan-950 flex items-center gap-1.5">
@@ -1679,6 +1680,82 @@ export function FindVehicles() {
                                     onChange={e => updateRequest(trip.id, 'weight', e.target.value)}
                                   />
                                 </Field>
+                              </div>
+
+                              {/* PERISHABLE & ICE REQUIREMENT SELECTION */}
+                              <div className="pt-2.5 border-t border-slate-100">
+                                <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                                  <span className="flex items-center gap-1.5">
+                                    <span>❄️</span>
+                                    <span>Cargo Preservation & Cold-Chain Ice Option</span>
+                                  </span>
+                                  {r.ice_handling_required && (
+                                    <span className="text-[10px] font-mono font-bold bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded-full border border-cyan-200">
+                                      {(trip.cargo_category === 'Perishable Goods' || trip.has_perishables)
+                                        ? '🧊 Cold-Chain Included (₹0 Extra)'
+                                        : '🧊 Ice Added Once at Pickup (+₹75)'}
+                                    </span>
+                                  )}
+                                </label>
+
+                                <div className="grid sm:grid-cols-2 gap-2 text-xs">
+                                  <label className={`p-2.5 rounded-xl border flex items-start gap-2 cursor-pointer transition ${
+                                    r.ice_handling_required
+                                      ? 'bg-cyan-50/90 border-cyan-400 text-cyan-950 ring-1 ring-cyan-400 shadow-xs'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`ice_req_${trip.id}`}
+                                      checked={Boolean(r.ice_handling_required)}
+                                      onChange={() => {
+                                        updateRequest(trip.id, 'ice_handling_required', true);
+                                        updateRequest(trip.id, 'is_perishable', true);
+                                      }}
+                                      className="mt-0.5 text-cyan-600 focus:ring-cyan-500"
+                                    />
+                                    <div>
+                                      <p className="font-bold text-xs flex items-center justify-between gap-1 text-cyan-900">
+                                        <span>🧊 Perishable — Needs Ice Box</span>
+                                        {(trip.cargo_category === 'Perishable Goods' || trip.has_perishables) ? (
+                                          <span className="text-[9.5px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded font-mono">₹0 Included</span>
+                                        ) : (
+                                          <span className="text-[9.5px] font-bold text-cyan-900 bg-cyan-200 px-1.5 py-0.2 rounded font-mono">+₹75 Surcharge</span>
+                                        )}
+                                      </p>
+                                      <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">
+                                        {(trip.cargo_category === 'Perishable Goods' || trip.has_perishables)
+                                          ? "Cold-chain vehicle with temperature monitoring. Ice coolant boxes included in base vehicle fare."
+                                          : "Temperature-sensitive goods on independent cargo. 1 insulated food-grade ice box supplied at pickup (+₹75 fee)."}
+                                      </p>
+                                    </div>
+                                  </label>
+
+                                  <label className={`p-2.5 rounded-xl border flex items-start gap-2 cursor-pointer transition ${
+                                    !r.ice_handling_required
+                                      ? 'bg-emerald-50/90 border-emerald-400 text-emerald-950 ring-1 ring-emerald-400 shadow-xs'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`ice_req_${trip.id}`}
+                                      checked={!r.ice_handling_required}
+                                      onChange={() => {
+                                        updateRequest(trip.id, 'ice_handling_required', false);
+                                      }}
+                                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
+                                    />
+                                    <div>
+                                      <p className="font-bold text-xs flex items-center justify-between gap-1 text-slate-800">
+                                        <span>📦 Dry / Ambient Goods</span>
+                                        <span className="text-[9.5px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded font-mono">₹0 Extra</span>
+                                      </p>
+                                      <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">
+                                        Grains, dry pulses, onions, potatoes, general goods. Ambient shared cargo space with standard Ton-Km fare.
+                                      </p>
+                                    </div>
+                                  </label>
+                                </div>
                               </div>
                             </div>
 
@@ -1758,11 +1835,13 @@ export function FindVehicles() {
                                     <ComponentErrorBoundary>
                                       <PtlUserPricingCard
                                         trip={trip}
-                                        pickupLoc={r.pickup_place || trip.from}
-                                        deliveryLoc={r.delivery_place || trip.to}
+                                        pickupLoc={r.pickupLocation || trip.from}
+                                        deliveryLoc={r.deliveryLocation || trip.to}
                                         pickupCoords={r.pickupCoords}
                                         deliveryCoords={r.deliveryCoords}
                                         weightKg={weightNum}
+                                        isIceRequested={Boolean(r.ice_handling_required)}
+                                        isTripPerishable={trip.cargo_category === 'Perishable Goods' || Boolean(trip.has_perishables)}
                                         activeLang={typeof localStorage !== 'undefined' ? localStorage.getItem('ss_lang') || 'en' : 'en'}
                                         onPriceCalculated={(calculatedPrice, isShared, breakdown) => {
                                           // Callback hook for calculated price
@@ -2921,7 +3000,7 @@ export function OfferTrip() {
     returnDate: '',
     returnDiscountPct: 20,
     returnPickup: '',
-    iceHandlingSupported: true,
+    iceHandlingSupported: false,
     cargoCategory: 'Independent / General Cargo',
     dedicatedSubCategory: 'Pharmaceuticals & Vaccines',
     coolingType: 'Crushed Flake Ice Boxes (Logistics Provided)'
@@ -3659,7 +3738,7 @@ export function OfferTrip() {
           pickup_lat: tripLat,
           pickup_lng: tripLng,
           lang: activeLang,
-          ice_handling_supported: o.iceHandlingSupported !== false,
+          ice_handling_supported: o.cargoCategory === 'Perishable Goods' ? (o.iceHandlingSupported !== false) : false,
           has_perishables: o.cargoCategory === 'Perishable Goods',
           cargo_category: o.cargoCategory,
           dedicated_sub_category: o.cargoCategory === 'Dedicated / Isolated Cargo' ? o.dedicatedSubCategory : null,
@@ -3706,7 +3785,7 @@ export function OfferTrip() {
                 is_return_leg: true,
                 return_trip_id: createdTrip.id,
                 return_discount_pct: retDiscount,
-                ice_handling_supported: o.iceHandlingSupported !== false,
+                ice_handling_supported: o.cargoCategory === 'Perishable Goods' ? (o.iceHandlingSupported !== false) : false,
                 has_perishables: o.cargoCategory === 'Perishable Goods',
                 cargo_category: o.cargoCategory,
                 dedicated_sub_category: o.cargoCategory === 'Dedicated / Isolated Cargo' ? o.dedicatedSubCategory : null,
@@ -3747,7 +3826,7 @@ export function OfferTrip() {
           returnDate: '',
           returnDiscountPct: 20,
           returnPickup: '',
-          iceHandlingSupported: true,
+          iceHandlingSupported: false,
           cargoCategory: 'Independent / General Cargo',
           dedicatedSubCategory: 'Pharmaceuticals & Vaccines',
           coolingType: 'Crushed Flake Ice Boxes (Logistics Provided)'
@@ -4242,7 +4321,7 @@ export function OfferTrip() {
                                 <span>🔒 Dedicated Private:</span>
                                 <span>{trip.dedicated_sub_category || 'Exclusive Cargo'}</span>
                               </span>
-                            ) : trip.cargo_category === 'Perishable Goods' || trip.has_perishables ? (
+                            ) : trip.cargo_category === 'Perishable Goods' ? (
                               <span className="bg-cyan-700 text-white font-bold px-2.5 py-0.5 rounded-full text-[10.5px] flex items-center gap-1 shadow-2xs">
                                 <span>❄️ Perishable:</span>
                                 <span>{trip.cooling_type || 'Cold-Chain Monitored'}</span>
@@ -4253,9 +4332,9 @@ export function OfferTrip() {
                               </span>
                             )}
 
-                            {trip.ice_handling_supported && trip.cargo_category !== 'Dedicated / Isolated Cargo' && (
+                            {((trip.cargo_category === 'Perishable Goods' && trip.ice_handling_supported) || (trip.partners && trip.partners.some(p => p.ice_handling_required))) && (
                               <span className="bg-sky-600 text-white font-semibold px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1">
-                                🧊 Ice Support Active
+                                {trip.cargo_category === 'Perishable Goods' ? '🧊 Ice Support Active' : '🧊 On-Demand Ice (1 Shipper)'}
                               </span>
                             )}
                           </div>
@@ -5539,10 +5618,15 @@ export function OfferTrip() {
                 <select
                   className={`${inputCls} font-semibold`}
                   value={o.cargoCategory}
-                  onChange={e => setO(prev => ({
-                    ...prev,
-                    cargoCategory: e.target.value
-                  }))}
+                  onChange={e => {
+                    const catVal = e.target.value;
+                    setO(prev => ({
+                      ...prev,
+                      cargoCategory: catVal,
+                      iceHandlingSupported: catVal === 'Perishable Goods',
+                      has_perishables: catVal === 'Perishable Goods'
+                    }));
+                  }}
                 >
                   {CARGO_CATEGORIES.map(cat => (
                     <option key={cat} value={cat}>

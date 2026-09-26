@@ -110,12 +110,17 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
     total_kg_km = req.kg_km
     share = req.per_person_share or 0.0
 
+    trip_is_perishable = bool(trip and ((trip.cargo_category == "Perishable Goods") or getattr(trip, "has_perishables", False)))
+    ice_surcharge = 75.0 if (not trip_is_perishable and bool(req.ice_handling_required)) else 0.0
+    req.ice_surcharge = ice_surcharge
+
     if trip:
         total_driver_amount = trip.total_driver_amount if (trip.total_driver_amount and trip.total_driver_amount > 0) else float((trip.price_per_kg or 0) * (trip.total_kg or 1000))
         total_payload, total_kg_km, *rest = recalculate_trip_cost_shares(trip, db)
-        if total_kg_km > 0 and total_driver_amount > 0:
-            share = round((req.kg_km / total_kg_km) * total_driver_amount, 2)
-            req.per_person_share = share
+        share = req.per_person_share or 0.0
+    else:
+        share = round(share + ice_surcharge, 2)
+        req.per_person_share = share
             
     share_pct = round((req.kg_km / total_kg_km) * 100.0, 1) if (total_kg_km and total_kg_km > 0) else 0.0
 
@@ -220,6 +225,7 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
         is_perishable=bool(req.is_perishable),
         cargo_type=req.cargo_type or "General",
         ice_handling_required=bool(req.ice_handling_required),
+        ice_surcharge=float(getattr(req, "ice_surcharge", 0.0) or 0.0),
         current_temp_c=req.current_temp_c,
         loading_status=req.loading_status or "pending",
         loaded_at=req.loaded_at,
@@ -227,6 +233,10 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
         unloaded_at=req.unloaded_at,
         unloaded_by=req.unloaded_by,
         ice_boxes_count=req.ice_boxes_count or 0,
+        ice_added=bool(getattr(req, "ice_added", False)),
+        ice_added_stage=getattr(req, "ice_added_stage", None),
+        ice_added_at=getattr(req, "ice_added_at", None),
+        ice_unavailable_at_pickup=bool(getattr(req, "ice_unavailable_at_pickup", False)),
         cargo_category=req.cargo_category or "general",
         dedicated_sub_category=req.dedicated_sub_category,
         is_dedicated=bool(req.is_dedicated),
@@ -379,11 +389,14 @@ def create_request(
         # Enforce trip's pre-decided cargo category and specializations from Offer a Trip
         if trip:
             final_cargo_category = getattr(trip, "cargo_category", None) or "Independent / General Cargo"
-            final_is_perishable = bool(getattr(trip, "has_perishables", False)) or (final_cargo_category == "Perishable Goods")
-            final_is_dedicated = bool(getattr(trip, "is_dedicated", False)) or (final_cargo_category == "Dedicated / Isolated Cargo")
-            final_dedicated_sub = getattr(trip, "dedicated_sub_category", None) if final_is_dedicated else None
-            final_cooling_type = getattr(trip, "cooling_type", None) if final_is_perishable else None
-            final_ice_required = final_is_perishable and (getattr(trip, "ice_handling_supported", True) is not False)
+            trip_is_perishable = bool(getattr(trip, "has_perishables", False)) or (final_cargo_category == "Perishable Goods")
+            final_is_perishable = trip_is_perishable or bool(req.is_perishable)
+            final_is_dedicated = bool(getattr(trip, "is_dedicated", False)) or (final_cargo_category == "Dedicated / Isolated Cargo") or bool(req.is_dedicated)
+            final_dedicated_sub = getattr(trip, "dedicated_sub_category", None) if final_is_dedicated else req.dedicated_sub_category
+            final_cooling_type = getattr(trip, "cooling_type", None) if trip_is_perishable else req.cooling_type
+            # ONLY if user selected a perishable good which needed ice:
+            final_ice_required = bool(req.ice_handling_required)
+            req_ice_surcharge = 75.0 if (not trip_is_perishable and final_ice_required) else 0.0
         else:
             final_cargo_category = req.cargo_category or "Independent / General Cargo"
             final_is_perishable = bool(req.is_perishable)
@@ -391,6 +404,10 @@ def create_request(
             final_dedicated_sub = req.dedicated_sub_category
             final_cooling_type = req.cooling_type
             final_ice_required = bool(req.ice_handling_required)
+            req_ice_surcharge = 75.0 if final_ice_required else 0.0
+
+        if req_ice_surcharge > 0:
+            initial_share = round(initial_share + req_ice_surcharge, 2)
 
         db_req = models.RequestModel(
             id=req.id,
@@ -420,13 +437,19 @@ def create_request(
             ice_handling_required=final_ice_required,
             current_temp_c=req.current_temp_c,
             loading_status=req.loading_status or "pending",
+            ice_boxes_count=0,
+            ice_added=False,
+            ice_added_stage=None,
+            ice_added_at=None,
+            ice_unavailable_at_pickup=False,
             cargo_category=final_cargo_category,
             dedicated_sub_category=final_dedicated_sub,
             is_dedicated=final_is_dedicated,
             seal_number=req.seal_number,
             seal_status=req.seal_status or "Pending",
             cooling_type=final_cooling_type,
-            target_temp_c=req.target_temp_c
+            target_temp_c=req.target_temp_c,
+            ice_surcharge=req_ice_surcharge
         )
 
         db.add(db_req)

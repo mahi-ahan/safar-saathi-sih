@@ -28,7 +28,6 @@ import {
 import { useLang, VEHICLE_CAPACITY_SPECS, getVehicleCapacitySpec } from './lib'
 import { TTSButton, speakText, stopSpeech } from './tts'
 import { AuthModal, AUTH_ROLE_TEXTS, GOOGLE_CLIENT_ID } from './AuthModal'
-import { sendBookingToDriverWhatsApp, sendAcceptanceToFarmerWhatsApp, sendDeliveryCompleteWhatsApp } from './whatsapp'
 export { LoginPage } from './LoginPage'
 
 import {
@@ -3510,7 +3509,7 @@ export function OfferTrip() {
       });
       if (res.ok) {
         setMyTrips(prev => prev.map(t => t.id === proofModal.tripId ? { ...t, status: 'pending_passenger_confirmation', is_live: false } : t));
-        notify("✔ Delivery proof verified! WhatsApp delivery alerts sent with photos to all shippers.");
+        notify("✔ Delivery proof verified! Proof alerts dispatched to all shippers.");
         setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false });
         
         fetchMyTrips();
@@ -3590,7 +3589,7 @@ export function OfferTrip() {
         body: formData
       });
       if (res.ok) {
-        notify(`✔ Delivery proof sent to ${deliverModal.req.farmer_name || 'Shipper'} via WhatsApp! Waiting for passenger confirmation.`);
+        notify(`✔ Delivery proof submitted for ${deliverModal.req.farmer_name || 'Shipper'}! Waiting for passenger confirmation.`);
         setDeliverModal({ isOpen: false, req: null, proofUrl: null, uploading: false });
         
         fetchMyTrips();
@@ -4802,7 +4801,7 @@ export function OfferTrip() {
                             </span>
                           </div>
                           <p className="text-[11px] text-amber-900 leading-relaxed">
-                            Verified drop-off photos were dispatched to all recipients via WhatsApp. Waiting for passengers to verify and rate in their apps.
+                            Verified drop-off photos were dispatched to all recipients. Waiting for passengers to verify and rate in their apps.
                           </p>
                         </div>
                       ) : isCancelled ? (
@@ -5430,7 +5429,7 @@ export function OfferTrip() {
                           <div className="rounded-xl bg-amber-50 border border-amber-300/80 p-2.5 flex items-center justify-between text-xs font-semibold text-amber-950">
                             <span className="flex items-center gap-1.5">
                               <span>⏳</span>
-                              <span>Drop-off Photo Sent via WhatsApp (Waiting Star Rating)</span>
+                              <span>Drop-off Photo Submitted (Waiting Star Rating)</span>
                             </span>
                             <span className="w-2 h-2 rounded-full bg-amber-600 animate-ping"></span>
                           </div>

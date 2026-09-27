@@ -247,24 +247,3 @@ def get_request_dispatch_alert(
 
     return generate_dispatch_message(dispatch_req)
 
-
-class WebhookPayload(BaseModel):
-    from_phone: Optional[str] = Field(default=None, alias="from")
-    body: Optional[str] = None
-    timestamp: Optional[int] = None
-
-
-@router.post("/webhook")
-def whatsapp_incoming_webhook(payload: WebhookPayload, db: Session = Depends(get_db)):
-    """
-    Receives incoming WhatsApp messages/replies from users or drivers via local gateway.
-    """
-    from_number = payload.from_phone or "Unknown"
-    body_text = payload.body or ""
-    print(f"📩 [Backend Webhook] Received WhatsApp message from {from_number}: '{body_text}'")
-    
-    return {
-        "status": "received",
-        "sender": from_number,
-        "body": body_text
-    }

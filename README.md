@@ -44,32 +44,7 @@ uvicorn main:app --reload
 
 ---
 
-### 2️⃣ Terminal 2: WhatsApp Dispatch Gateway (Port 3001)
-```bash
-# Navigate to the WhatsApp Gateway directory
-cd SIH/backend/whatsapp_server
-
-# Install Node.js dependencies
-npm install
-
-# Start the WhatsApp Gateway
-npm start
-```
-- **Linking a Sender Phone Number**:
-  1. Open [`http://localhost:3001`](http://localhost:3001) in your browser.
-  2. On your phone, open **WhatsApp → Linked Devices → Link a Device**.
-  3. Scan the QR code displayed on the screen.
-  4. Once linked, the status page will display: `📱 Connected Sender: +91XXXXXXXXXX`.
-- **Changing / Resetting Sender Number**:
-  - To switch to a different sender WhatsApp number at any time, click **"🔄 Change Sender Number / Scan New QR"** on [`http://localhost:3001`](http://localhost:3001) (or visit [`http://localhost:3001/logout`](http://localhost:3001/logout)).
-  - Scan the fresh QR code with your new WhatsApp phone number.
-- **Two-Way Messaging & Webhooks**:
-  - **Outbound**: Automatically dispatches localized booking, acceptance, price-drop, and delivery photo proof alerts to driver and shipper phone numbers.
-  - **Inbound**: Listens for incoming WhatsApp replies from users/drivers and forwards them to the backend webhook (`POST /api/notifications/webhook`).
-
----
-
-### 3️⃣ Terminal 3: React Frontend (Port 5173)
+### 2️⃣ Terminal 2: React Frontend (Port 5173)
 ```bash
 # Navigate to the React frontend directory
 cd SIH/safar-saathi

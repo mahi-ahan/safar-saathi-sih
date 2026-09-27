@@ -115,88 +115,6 @@ def resolve_user_contact_and_lang(
     return phone, lang
 
 
-def send_local_gateway_whatsapp(phone: str, message: str, media_path: Optional[str] = None) -> bool:
-    """
-    Sends 100% automated WhatsApp message via the local WhatsApp server microservice (port 3001).
-    Works for ALL WhatsApp numbers with zero fees and unlimited volume. Supports image attachments.
-    """
-    local_port = os.getenv("WHATSAPP_SERVER_PORT", "3001")
-    url = f"http://127.0.0.1:{local_port}/send-message"
-
-    target = clean_phone_number(phone)
-    if not target:
-        return False
-
-    payload = {
-        "phone": target,
-        "message": message
-    }
-
-    if media_path:
-        clean_path = str(media_path).strip()
-        # Strip domain if full localhost URL was passed e.g. http://localhost:8000/uploads/...
-        if "://" in clean_path:
-            parts = clean_path.split("://", 1)[1]
-            if "/" in parts:
-                clean_path = "/" + parts.split("/", 1)[1]
-        
-        if clean_path.startswith("/") or clean_path.startswith("\\"):
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            abs_path = os.path.normpath(os.path.join(base_dir, clean_path.lstrip("/\\")))
-            if os.path.exists(abs_path):
-                payload["media_path"] = abs_path
-            else:
-                alt_path = os.path.normpath(os.path.join(base_dir, "static", clean_path.lstrip("/\\")))
-                if os.path.exists(alt_path):
-                    payload["media_path"] = alt_path
-                else:
-                    logger.warning(f"[Dispatcher] Notice: Media file not found on disk at '{abs_path}' or '{alt_path}'")
-        elif os.path.exists(clean_path):
-            payload["media_path"] = os.path.abspath(clean_path)
-
-    try:
-        res = requests.post(url, json=payload, timeout=1.5)
-        data = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
-        logger.info(f"[LocalGateway] Sent to {target} | Status: {res.status_code} | Resp: {data}")
-        return res.status_code == 200 and data.get("success") is True
-    except Exception as e:
-        logger.debug(f"[LocalGateway] Local WhatsApp server not reachable: {e}")
-        return False
-
-
-def send_automated_ultramsg_whatsapp(phone: str, message: str) -> bool:
-    """
-    Sends 100% automated WhatsApp message via UltraMsg gateway to ANY Indian mobile number.
-    Requires ULTRAMSG_INSTANCE_ID and ULTRAMSG_TOKEN in .env / environment.
-    """
-    instance_id = os.getenv("ULTRAMSG_INSTANCE_ID", "").strip()
-    token = os.getenv("ULTRAMSG_TOKEN", "").strip()
-
-    if not instance_id or not token:
-        return False
-
-    target = clean_phone_number(phone)
-    if not target:
-        return False
-
-    url = f"https://api.ultramsg.com/{instance_id}/messages/chat"
-    payload = {
-        "token": token,
-        "to": target,
-        "body": message,
-        "priority": 10
-    }
-
-    try:
-        res = requests.post(url, json=payload, timeout=10)
-        data = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
-        logger.info(f"[UltraMsg] Sent to {target} | Status: {res.status_code} | Resp: {data}")
-        return res.status_code == 200 and data.get("sent") == "true"
-    except Exception as e:
-        logger.error(f"[UltraMsg] Failed to send automated WhatsApp to {target}: {e}")
-        return False
-
-
 def send_automated_fast2sms(phone: str, message: str) -> bool:
     """
     Sends 100% automated SMS to ANY Indian phone number via Fast2SMS free gateway.
@@ -236,29 +154,18 @@ def send_automated_fast2sms(phone: str, message: str) -> bool:
 def dispatch_automated_alert(phone: str, message: str, fallback_sms: Optional[str] = None, media_path: Optional[str] = None):
     """
     Unified background dispatcher:
-    1. Attempts Unlimited Local WhatsApp Gateway (:3001) with optional media/photo attachment
-    2. Attempts UltraMsg Cloud WhatsApp
-    3. Attempts Fast2SMS
+    Attempts Fast2SMS or logs notification.
     """
     if not phone or not message:
         return
 
     logger.info(f"[Dispatcher] Dispatching automated notification to {phone} (media: {media_path})...")
     
-    # 1. Primary: Unlimited Local WhatsApp Gateway
-    if send_local_gateway_whatsapp(phone, message, media_path=media_path):
-        logger.info(f"[Dispatcher] Automated WhatsApp delivered via Local Gateway to {phone}")
-        return
-
-    # 2. Fallback: UltraMsg Cloud WhatsApp
-    if send_automated_ultramsg_whatsapp(phone, message):
-        logger.info(f"[Dispatcher] Automated WhatsApp delivered via UltraMsg to {phone}")
-        return
-
-    # 3. Fallback: Fast2SMS
+    # 1. Fast2SMS
     sms_text = fallback_sms or message[:160]
     if send_automated_fast2sms(phone, sms_text):
         logger.info(f"[Dispatcher] Automated SMS delivered via Fast2SMS to {phone}")
         return
 
     logger.info(f"[Dispatcher] Logged notification for {phone}: {message[:80]}...")
+

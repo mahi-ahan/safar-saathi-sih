@@ -15,8 +15,9 @@ def get_profile(
         require_roles("user")
     )
 ):
+    role_val = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
     return {
         "message": "User profile",
         "username": current_user.username,
-        "role": current_user.role.value
+        "role": role_val
     }

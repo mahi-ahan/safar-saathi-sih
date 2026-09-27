@@ -1,4 +1,10 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/SIH/backend"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}/SIH/backend"
+    ]
 }

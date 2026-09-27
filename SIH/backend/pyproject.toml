@@ -1,0 +1,9 @@
+[tool.pyrefly]
+search-path = [
+    ".",
+]
+
+[tool.pyright]
+extraPaths = [
+    ".",
+]

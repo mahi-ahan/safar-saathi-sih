@@ -332,7 +332,7 @@ def get_trip_route_patterns(trip: models.TripModel) -> list[str]:
     ]
 
 
-def get_trip_requests(trip: models.TripModel, db: Session, statuses: list[str] = None) -> list[models.RequestModel]:
+def get_trip_requests(trip: models.TripModel, db: Session, statuses: Optional[list[str]] = None) -> list[models.RequestModel]:
     """
     Returns only requests strictly associated with this specific trip instance.
     Primary: Exact trip_id matching.
@@ -1021,7 +1021,9 @@ def update_trip_status(
         raise HTTPException(status_code=404, detail="Trip not found")
 
     if status in ("cancelled", "cancelled_by_driver") and trip.status not in ["pending", "scheduled"]:
-        raise HTTPException(status_code=400, detail="Cannot cancel a trip that has already started.")
+        active_requests_check = get_trip_requests(trip, db, ["accepted", "in_transit", "assigned", "pending_passenger_confirmation"])
+        if len(active_requests_check) > 0:
+            raise HTTPException(status_code=400, detail="Cannot cancel a trip that has already started with active cargo.")
 
     # RETURN TRIP START ENFORCEMENT:
     # Driver CANNOT start return trip until primary outbound trip reaches and confirms Goods Area!
@@ -1220,7 +1222,7 @@ def driver_complete_trip(
     elif delivery_proof_image_url and str(delivery_proof_image_url).strip():
         final_proof_url = str(delivery_proof_image_url).strip()
 
-    if not final_proof_url:
+    if len(active_requests_check) > 0 and not final_proof_url:
         raise HTTPException(
             status_code=400,
             detail="Mandatory Delivery Proof Required: Transporter must upload a verified cargo delivery proof photo (JPEG, PNG, WEBP) to complete the ride."
@@ -1359,8 +1361,9 @@ def cancel_trip(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    if trip.status not in ["pending", "scheduled"]:
-        raise HTTPException(status_code=400, detail="Cannot cancel a trip that has already started.")
+    active_requests = get_trip_requests(trip, db, ["accepted", "in_transit", "assigned", "pending_passenger_confirmation"])
+    if trip.status not in ["pending", "scheduled"] and len(active_requests) > 0:
+        raise HTTPException(status_code=400, detail="Cannot cancel a trip that has already started with active cargo.")
 
     trip.status = "cancelled_by_driver"
     trip.is_live = False
@@ -1386,6 +1389,49 @@ def cancel_trip(
 
     db.commit()
     db.refresh(trip)
+    return serialize_trip_with_meta(trip, db)
+
+
+@router.put(
+    "/{trip_id}/end-empty",
+    response_model=schemas.TripResponse
+)
+def end_empty_trip(
+    trip_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("user", "driver", "admin"))
+):
+    """
+    Concludes an active or scheduled trip (such as a return backhaul run)
+    when no cargo requests were booked (0 active shipments).
+    Marks the trip as 'completed', stops live GPS broadcasting, and clears speed.
+    """
+    trip = db.query(models.TripModel).filter(models.TripModel.id == trip_id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    if trip.status == "completed":
+        return serialize_trip_with_meta(trip, db)
+
+    # Verify no active cargo bookings exist on this trip
+    active_requests = get_trip_requests(
+        trip,
+        db,
+        ["accepted", "in_transit", "assigned", "pending_passenger_confirmation"]
+    )
+    if len(active_requests) > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot end as empty run. This trip has {len(active_requests)} active cargo shipment(s). Please complete deliveries and verify unloading."
+        )
+
+    trip.status = "completed"
+    trip.is_live = False
+    trip.speed = 0.0
+    trip.goods_area_status = "confirmed"
+    db.commit()
+    db.refresh(trip)
+
     return serialize_trip_with_meta(trip, db)
 
 

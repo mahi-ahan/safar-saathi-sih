@@ -188,8 +188,8 @@ def trip_matches_officer_station(
     t,
     station_tokens: set[str],
     s_coords: Optional[tuple[float, float]],
-    trip_checkpoints: list = None,
-    trip_requests: list = None
+    trip_checkpoints: Optional[list] = None,
+    trip_requests: Optional[list] = None
 ) -> bool:
     """
     Strict matching rule:
@@ -1013,7 +1013,7 @@ def get_logistics_trips_and_shipments(
 @router.post("/checkpoint-check")
 def log_checkpoint_inspection(
     payload: schemas.LogisticsCheckpointCreate,
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -1383,7 +1383,7 @@ def record_loading_event(
 @router.post("/ice-handling")
 def record_ice_handling(
     payload: schemas.IceHandlingRequest,
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """

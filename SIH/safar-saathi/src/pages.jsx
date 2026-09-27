@@ -3093,11 +3093,47 @@ export function OfferTrip() {
     }
   };
 
+  const handleEndEmptyTrip = async (tripId) => {
+    const targetTrip = myTrips.find(t => t.id === tripId);
+    const tripName = targetTrip ? `${targetTrip.from_loc || targetTrip.from} → ${targetTrip.to_loc || targetTrip.to}` : `#${tripId}`;
+    if (!window.confirm(`End empty run for ${tripName}? Since no cargo was booked, this journey will be concluded and marked as completed.`)) {
+      return;
+    }
+    if (liveIntervalRef.current && activeLiveTripId === tripId) {
+      clearInterval(liveIntervalRef.current);
+      liveIntervalRef.current = null;
+      setActiveLiveTripId(null);
+    }
+    const token = localStorage.getItem("access_token");
+    try {
+      const res = await fetch(`http://localhost:8000/api/trips/${tripId}/end-empty`, {
+        method: "PUT",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setActiveLiveTripId(null);
+        notify("🏁 Empty run ended successfully! Trip marked as completed.");
+        fetchMyTrips();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        notify(errData.detail || "⚠ Failed to end empty run.");
+      }
+    } catch (err) {
+      console.error("Failed to end empty trip", err);
+      notify("Could not connect to backend.");
+    }
+  };
+
   const cancelTrip = async (tripId) => {
     const targetTrip = myTrips.find(t => t.id === tripId);
-    if (targetTrip && targetTrip.status !== 'pending' && targetTrip.status !== 'scheduled') {
-      notify("⚠ Cannot cancel a trip that has already started.");
+    const activeReqs = (incomingRequests || []).filter(r => r.trip_id === tripId && ['accepted', 'in_transit', 'assigned', 'pending_passenger_confirmation'].includes(r.status));
+    if (targetTrip && targetTrip.status !== 'pending' && targetTrip.status !== 'scheduled' && activeReqs.length > 0) {
+      notify("⚠ Cannot cancel a trip that has already started with active cargo.");
       return;
+    }
+    // If this is a started empty run with no cargo, route to endEmptyTrip instead
+    if (targetTrip && targetTrip.status !== 'pending' && targetTrip.status !== 'scheduled' && activeReqs.length === 0) {
+      return handleEndEmptyTrip(tripId);
     }
     if (!window.confirm("Are you sure you want to cancel this scheduled trip? All connected passengers will be notified immediately.")) {
       return;
@@ -4804,7 +4840,7 @@ export function OfferTrip() {
                                 </p>
                               </div>
                               <button
-                                onClick={() => cancelTrip(trip.id)}
+                                onClick={() => handleEndEmptyTrip(trip.id)}
                                 className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
                                 title="End this empty journey"
                               >

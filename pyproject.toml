@@ -1,0 +1,9 @@
+[tool.pyrefly]
+search-path = [
+    "SIH/backend",
+]
+
+[tool.pyright]
+extraPaths = [
+    "SIH/backend",
+]

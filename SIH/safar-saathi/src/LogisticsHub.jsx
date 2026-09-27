@@ -2152,6 +2152,7 @@ export default function LogisticsHub() {
                             <p className="text-[10px] text-slate-500 font-mono">{s.vehicle}</p>
                           </td>
                           <td className="py-3 px-4 text-slate-700 max-w-xs truncate">{s.route}</td>
+                          <td className="py-3 px-4">
                             {(() => {
                               const parentTrip = trips.find(t => t.id === s.trip_id);
                               const isTripStarted = Boolean(

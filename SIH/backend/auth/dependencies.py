@@ -24,7 +24,8 @@ def require_roles(*required_roles):
         current_user=Depends(get_current_user)
     ):
 
-        if current_user.role.value not in required_roles:
+        user_role = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
+        if user_role not in required_roles:
 
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

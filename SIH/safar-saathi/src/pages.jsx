@@ -1,3 +1,4 @@
+import { API_BASE } from './apiConfig';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google'
 import {
@@ -446,7 +447,7 @@ export function FindVehicles() {
   const fetchTripsAndRequests = useCallback(async () => {
     // 1. Fetch all trips
     try {
-      const tripsRes = await fetch("http://localhost:8000/api/trips");
+      const tripsRes = await fetch(`${API_BASE}/api/trips`);
       const tripsData = await tripsRes.json();
       if (tripsRes.ok && Array.isArray(tripsData)) {
         const mappedTrips = tripsData.map(trip => ({
@@ -543,7 +544,7 @@ export function FindVehicles() {
     const token = localStorage.getItem("access_token");
     if (token) {
       try {
-        const myReqRes = await fetch("http://localhost:8000/api/requests/my", {
+        const myReqRes = await fetch(`${API_BASE}/api/requests/my`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const myReqData = await myReqRes.json();
@@ -608,7 +609,7 @@ export function FindVehicles() {
       const token = localStorage.getItem("access_token");
       if (!token) return;
       try {
-        const res = await fetch("http://localhost:8000/auth/status", {
+        const res = await fetch(`${API_BASE}/auth/status`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const data = await res.json();
@@ -839,7 +840,7 @@ export function FindVehicles() {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     try {
       const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
-      const res = await fetch("http://localhost:8000/api/requests", {
+      const res = await fetch(`${API_BASE}/api/requests`, {
         method: "POST",
         headers: reqHeaders,
         body: JSON.stringify({
@@ -1448,7 +1449,7 @@ export function FindVehicles() {
                               {myReq.pickup_cargo_image_url && (
                                 <div className="flex items-center gap-2">
                                   <a
-                                    href={`http://localhost:8000${myReq.pickup_cargo_image_url}`}
+                                    href={`${API_BASE}${myReq.pickup_cargo_image_url}`}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition shadow-2xs"
@@ -1471,13 +1472,13 @@ export function FindVehicles() {
                                     </span>
                                   </div>
                                   <a
-                                    href={`http://localhost:8000${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
+                                    href={`${API_BASE}${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="block rounded-xl overflow-hidden border-2 border-white shadow group relative max-h-48 bg-slate-900"
                                   >
                                     <img
-                                      src={`http://localhost:8000${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
+                                      src={`${API_BASE}${myReq.delivery_proof_image_url || trip.delivery_proof_image_url}`}
                                       alt="Delivery Proof Photo"
                                       className="w-full h-40 object-cover group-hover:scale-105 transition duration-300"
                                     />
@@ -1522,7 +1523,7 @@ export function FindVehicles() {
                                       if (!window.confirm(t('confirm_cancel', 'Are you sure you want to cancel this booking?'))) return;
                                       const token = localStorage.getItem("access_token");
                                       try {
-                                        const res = await fetch(`http://localhost:8000/api/requests/${myReq.id}`, {
+                                        const res = await fetch(`${API_BASE}/api/requests/${myReq.id}`, {
                                           method: "DELETE",
                                           headers: { "Authorization": `Bearer ${token}` }
                                         });
@@ -1913,7 +1914,7 @@ export function FindVehicles() {
                                           if (token && token !== "null" && token !== "undefined") {
                                             uploadHeaders["Authorization"] = `Bearer ${token}`;
                                           }
-                                          const res = await fetch("http://localhost:8000/api/requests/upload-cargo-image", {
+                                          const res = await fetch(`${API_BASE}/api/requests/upload-cargo-image`, {
                                             method: "POST",
                                             headers: uploadHeaders,
                                             body: formData
@@ -1933,14 +1934,14 @@ export function FindVehicles() {
                                   </label>
                                   {r.pickup_cargo_image_url && (
                                     <a
-                                      href={`http://localhost:8000${r.pickup_cargo_image_url}`}
+                                      href={`${API_BASE}${r.pickup_cargo_image_url}`}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="w-12 h-12 rounded-xl overflow-hidden border-2 border-emerald-500 shrink-0 block hover:opacity-90 shadow-sm"
                                       title="Click to preview uploaded cargo photo"
                                     >
                                       <img
-                                        src={`http://localhost:8000${r.pickup_cargo_image_url}`}
+                                        src={`${API_BASE}${r.pickup_cargo_image_url}`}
                                         alt="Cargo Proof"
                                         className="w-full h-full object-cover"
                                       />
@@ -2507,13 +2508,13 @@ export function FindVehicles() {
                                 </span>
                               </div>
                               <a
-                                href={`http://localhost:8000${req.delivery_proof_image_url}`}
+                                href={`${API_BASE}${req.delivery_proof_image_url}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="block rounded-xl overflow-hidden border-2 border-white shadow group relative max-h-44 bg-slate-900"
                               >
                                 <img
-                                  src={`http://localhost:8000${req.delivery_proof_image_url}`}
+                                  src={`${API_BASE}${req.delivery_proof_image_url}`}
                                   alt="Delivery Proof Photo"
                                   className="w-full h-36 object-cover group-hover:scale-105 transition duration-300"
                                 />
@@ -2527,7 +2528,7 @@ export function FindVehicles() {
                           {req.pickup_cargo_image_url && (
                             <div className="flex items-center gap-2">
                               <a
-                                href={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                                href={`${API_BASE}${req.pickup_cargo_image_url}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-lg hover:bg-emerald-100 transition shadow-2xs"
@@ -2595,7 +2596,7 @@ export function FindVehicles() {
                                 if (!window.confirm("Are you sure you want to cancel this booking?")) return;
                                 const token = localStorage.getItem("access_token");
                                 try {
-                                  const res = await fetch(`http://localhost:8000/api/requests/${req.id}`, {
+                                  const res = await fetch(`${API_BASE}/api/requests/${req.id}`, {
                                     method: "DELETE",
                                     headers: { "Authorization": `Bearer ${token}` }
                                   });
@@ -2637,7 +2638,7 @@ export function FindVehicles() {
                             onClick={async () => {
                               const token = localStorage.getItem("access_token");
                               try {
-                                const res = await fetch(`http://localhost:8000/api/requests/${req.id}`, {
+                                const res = await fetch(`${API_BASE}/api/requests/${req.id}`, {
                                   method: "DELETE",
                                   headers: { "Authorization": `Bearer ${token}` }
                                 });
@@ -2771,7 +2772,7 @@ export function FindVehicles() {
                   e.preventDefault();
                   const token = localStorage.getItem("access_token");
                   try {
-                    const res = await fetch("http://localhost:8000/auth/update-profile", {
+                    const res = await fetch(`${API_BASE}/auth/update-profile`, {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
@@ -2947,9 +2948,9 @@ export function FindVehicles() {
                   <span>📸 Verified Delivery Proof Photo</span>
                 </p>
                 <div className="rounded-xl overflow-hidden border border-blue-300 max-h-48 bg-black/5">
-                  <a href={`http://localhost:8000${completionModal.deliveryProofUrl}`} target="_blank" rel="noreferrer" title="Click to view full photo">
+                  <a href={`${API_BASE}${completionModal.deliveryProofUrl}`} target="_blank" rel="noreferrer" title="Click to view full photo">
                     <img
-                      src={`http://localhost:8000${completionModal.deliveryProofUrl}`}
+                      src={`${API_BASE}${completionModal.deliveryProofUrl}`}
                       alt="Driver Delivery Proof"
                       className="w-full h-44 object-cover hover:scale-105 transition duration-300 cursor-pointer"
                     />
@@ -3002,7 +3003,7 @@ export function FindVehicles() {
                   const token = localStorage.getItem("access_token");
                   const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
                   try {
-                    const res = await fetch(`http://localhost:8000/api/requests/${completionModal.requestId}/confirm-completion?lang=${encodeURIComponent(activeLang)}`, {
+                    const res = await fetch(`${API_BASE}/api/requests/${completionModal.requestId}/confirm-completion?lang=${encodeURIComponent(activeLang)}`, {
                       method: "PUT",
                       headers: {
                         "Content-Type": "application/json",
@@ -3204,7 +3205,7 @@ export function OfferTrip() {
     const token = localStorage.getItem("access_token");
     if (!token) return;
     try {
-      const res = await fetch("http://localhost:8000/api/trips/my?include_completed=true", {
+      const res = await fetch(`${API_BASE}/api/trips/my?include_completed=true`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (res.ok) {
@@ -3237,7 +3238,7 @@ export function OfferTrip() {
     }
     const token = localStorage.getItem("access_token");
     try {
-      const res = await fetch(`http://localhost:8000/api/trips/${tripId}/end-empty`, {
+      const res = await fetch(`${API_BASE}/api/trips/${tripId}/end-empty`, {
         method: "PUT",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -3275,7 +3276,7 @@ export function OfferTrip() {
     }
     const token = localStorage.getItem("access_token");
     try {
-      const res = await fetch(`http://localhost:8000/api/trips/${tripId}/cancel`, {
+      const res = await fetch(`${API_BASE}/api/trips/${tripId}/cancel`, {
         method: "PUT",
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -3284,7 +3285,7 @@ export function OfferTrip() {
         notify("✖ Trip cancelled. Connected passengers have been notified.");
         fetchMyTrips();
         // Also refresh incoming requests
-        const reqRes = await fetch("http://localhost:8000/api/requests/incoming", {
+        const reqRes = await fetch(`${API_BASE}/api/requests/incoming`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const reqData = await reqRes.json();
@@ -3326,7 +3327,7 @@ export function OfferTrip() {
         const token = localStorage.getItem("access_token");
         try {
           // Update status to in_transit
-          const statusRes = await fetch(`http://localhost:8000/api/trips/${trip.id}/status?status=in_transit`, {
+          const statusRes = await fetch(`${API_BASE}/api/trips/${trip.id}/status?status=in_transit`, {
             method: "PUT",
             headers: { "Authorization": `Bearer ${token}` }
           });
@@ -3338,7 +3339,7 @@ export function OfferTrip() {
           }
 
           // Initial location push
-          await fetch(`http://localhost:8000/api/trips/${trip.id}/location`, {
+          await fetch(`${API_BASE}/api/trips/${trip.id}/location`, {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
@@ -3378,7 +3379,7 @@ export function OfferTrip() {
 
                 try {
                   if (!isLiveActiveRef.current) return;
-                  await fetch(`http://localhost:8000/api/trips/${trip.id}/location`, {
+                  await fetch(`${API_BASE}/api/trips/${trip.id}/location`, {
                     method: "PUT",
                     headers: {
                       "Content-Type": "application/json",
@@ -3454,7 +3455,7 @@ export function OfferTrip() {
       if (token && token !== "null" && token !== "undefined") {
         uploadHeaders["Authorization"] = `Bearer ${token}`;
       }
-      const res = await fetch("http://localhost:8000/api/trips/upload-delivery-proof", {
+      const res = await fetch(`${API_BASE}/api/trips/upload-delivery-proof`, {
         method: "POST",
         headers: uploadHeaders,
         body: formData
@@ -3503,7 +3504,7 @@ export function OfferTrip() {
     }
     try {
       const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
-      const res = await fetch(`http://localhost:8000/api/trips/${proofModal.tripId}/complete?delivery_proof_image_url=${encodeURIComponent(proofModal.proofUrl)}&lang=${encodeURIComponent(activeLang)}`, {
+      const res = await fetch(`${API_BASE}/api/trips/${proofModal.tripId}/complete?delivery_proof_image_url=${encodeURIComponent(proofModal.proofUrl)}&lang=${encodeURIComponent(activeLang)}`, {
         method: "PUT",
         headers
       });
@@ -3513,7 +3514,7 @@ export function OfferTrip() {
         setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false });
         
         fetchMyTrips();
-        const reqRes = await fetch("http://localhost:8000/api/requests/incoming", {
+        const reqRes = await fetch(`${API_BASE}/api/requests/incoming`, {
           headers
         });
         const reqData = await reqRes.json().catch(() => []);
@@ -3542,7 +3543,7 @@ export function OfferTrip() {
       if (token && token !== "null" && token !== "undefined") {
         uploadHeaders["Authorization"] = `Bearer ${token}`;
       }
-      const res = await fetch("http://localhost:8000/api/requests/upload-delivery-proof", {
+      const res = await fetch(`${API_BASE}/api/requests/upload-delivery-proof`, {
         method: "POST",
         headers: uploadHeaders,
         body: formData
@@ -3583,7 +3584,7 @@ export function OfferTrip() {
       formData.append("delivery_proof_image_url", deliverModal.proofUrl);
       formData.append("lang", activeLang);
 
-      const res = await fetch(`http://localhost:8000/api/requests/${deliverModal.req.id}/deliver-proof`, {
+      const res = await fetch(`${API_BASE}/api/requests/${deliverModal.req.id}/deliver-proof`, {
         method: "POST",
         headers,
         body: formData
@@ -3593,7 +3594,7 @@ export function OfferTrip() {
         setDeliverModal({ isOpen: false, req: null, proofUrl: null, uploading: false });
         
         fetchMyTrips();
-        const reqRes = await fetch("http://localhost:8000/api/requests/incoming", { headers });
+        const reqRes = await fetch(`${API_BASE}/api/requests/incoming`, { headers });
         const reqData = await reqRes.json().catch(() => []);
         if (reqRes.ok && Array.isArray(reqData)) {
           setIncomingRequests(reqData);
@@ -3682,7 +3683,7 @@ export function OfferTrip() {
     };
 
     try {
-      const res = await fetch("http://localhost:8000/api/trips/optimize-stops", {
+      const res = await fetch(`${API_BASE}/api/trips/optimize-stops`, {
         method: "POST",
         headers,
         body: JSON.stringify(payload)
@@ -3708,7 +3709,7 @@ export function OfferTrip() {
       const token = localStorage.getItem("access_token");
       if (!token) return;
       try {
-        const res = await fetch("http://localhost:8000/auth/status", {
+        const res = await fetch(`${API_BASE}/auth/status`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const data = await res.json();
@@ -3730,7 +3731,7 @@ export function OfferTrip() {
       }
 
       try {
-        const reqRes = await fetch("http://localhost:8000/api/requests/incoming", {
+        const reqRes = await fetch(`${API_BASE}/api/requests/incoming`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const reqData = await reqRes.json();
@@ -3747,7 +3748,7 @@ export function OfferTrip() {
       fetchMyTrips();
       const token = localStorage.getItem("access_token");
       if (token) {
-        fetch("http://localhost:8000/api/requests/incoming", {
+        fetch(`${API_BASE}/api/requests/incoming`, {
           headers: { "Authorization": `Bearer ${token}` }
         }).then(r => r.json()).then(d => {
           if (Array.isArray(d)) setIncomingRequests(d);
@@ -3797,7 +3798,7 @@ export function OfferTrip() {
       formData.append('file', file);
       formData.append('doc_type', docType);
 
-      const res = await fetch("http://localhost:8000/auth/upload-document", {
+      const res = await fetch(`${API_BASE}/auth/upload-document`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` },
         body: formData
@@ -3928,7 +3929,7 @@ export function OfferTrip() {
       // Send trip to backend
       const token = localStorage.getItem("access_token");
       const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
-      const res = await fetch("http://localhost:8000/api/trips", {
+      const res = await fetch(`${API_BASE}/api/trips`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -3972,7 +3973,7 @@ export function OfferTrip() {
           try {
             const retDiscount = Number(o.returnDiscountPct) || 20;
             const returnFare = Math.round(desiredPrice * (1 - retDiscount / 100));
-            const returnRes = await fetch("http://localhost:8000/api/trips", {
+            const returnRes = await fetch(`${API_BASE}/api/trips`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -4719,13 +4720,13 @@ export function OfferTrip() {
 
                                     {p.delivery_proof_image_url && (
                                       <a
-                                        href={`http://localhost:8000${p.delivery_proof_image_url}`}
+                                        href={`${API_BASE}${p.delivery_proof_image_url}`}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="w-7 h-7 rounded-lg overflow-hidden border border-emerald-400 shrink-0 block hover:opacity-80 shadow-2xs"
                                         title="View Drop-off Photo Proof for this shipper"
                                       >
-                                        <img src={`http://localhost:8000${p.delivery_proof_image_url}`} alt="Proof" className="w-full h-full object-cover" />
+                                        <img src={`${API_BASE}${p.delivery_proof_image_url}`} alt="Proof" className="w-full h-full object-cover" />
                                       </a>
                                     )}
                                   </div>
@@ -4759,13 +4760,13 @@ export function OfferTrip() {
                             </span>
                           </div>
                           <a
-                            href={`http://localhost:8000${trip.delivery_proof_image_url}`}
+                            href={`${API_BASE}${trip.delivery_proof_image_url}`}
                             target="_blank"
                             rel="noreferrer"
                             className="block rounded-xl overflow-hidden border-2 border-white shadow group relative max-h-44 bg-slate-900"
                           >
                             <img
-                              src={`http://localhost:8000${trip.delivery_proof_image_url}`}
+                              src={`${API_BASE}${trip.delivery_proof_image_url}`}
                               alt="Delivery Proof Photo"
                               className="w-full h-36 object-cover group-hover:scale-105 transition duration-300"
                             />
@@ -4937,7 +4938,7 @@ export function OfferTrip() {
                                   onClick={async () => {
                                     try {
                                       const token = localStorage.getItem("access_token");
-                                      const res = await fetch(`http://localhost:8000/api/trips/${trip.id}/goods-area/confirm`, {
+                                      const res = await fetch(`${API_BASE}/api/trips/${trip.id}/goods-area/confirm`, {
                                         method: 'POST',
                                         headers: { 'Authorization': `Bearer ${token}` }
                                       });
@@ -5181,14 +5182,14 @@ export function OfferTrip() {
                         <div className="rounded-xl bg-gold/10 border border-gold/30 p-2.5 mb-3 flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <a
-                              href={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                              href={`${API_BASE}${req.pickup_cargo_image_url}`}
                               target="_blank"
                               rel="noreferrer"
                               className="w-12 h-12 rounded-xl overflow-hidden border border-gold/40 shrink-0 block hover:opacity-90 shadow-2xs"
                               title="Click to inspect full cargo photo"
                             >
                               <img
-                                src={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                                src={`${API_BASE}${req.pickup_cargo_image_url}`}
                                 alt="Shipper Cargo"
                                 className="w-full h-full object-cover"
                               />
@@ -5201,7 +5202,7 @@ export function OfferTrip() {
                             </div>
                           </div>
                           <a
-                            href={`http://localhost:8000${req.pickup_cargo_image_url}`}
+                            href={`${API_BASE}${req.pickup_cargo_image_url}`}
                             target="_blank"
                             rel="noreferrer"
                             className="px-2.5 py-1 bg-white hover:bg-gold/10 text-green-deep font-semibold text-[11px] rounded-lg border border-gold/30 shrink-0 transition shadow-2xs"
@@ -5249,7 +5250,7 @@ export function OfferTrip() {
                               const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
                               try {
                                 const res = await fetch(
-                                  `http://localhost:8000/api/requests/${req.id}/status?status=accepted&lang=${encodeURIComponent(activeLang)}`,
+                                  `${API_BASE}/api/requests/${req.id}/status?status=accepted&lang=${encodeURIComponent(activeLang)}`,
                                   {
                                     method: "PUT",
                                     headers: { "Authorization": `Bearer ${token}` }
@@ -5258,7 +5259,7 @@ export function OfferTrip() {
                                 if (res.ok) {
                                   notify(`✔ Accepted request from ${req.farmer_name}`);
                                   const reqRes = await fetch(
-                                    "http://localhost:8000/api/requests/incoming",
+                                    `${API_BASE}/api/requests/incoming`,
                                     { headers: { "Authorization": `Bearer ${token}` } }
                                   );
                                   const reqData = await reqRes.json();
@@ -5281,7 +5282,7 @@ export function OfferTrip() {
                               const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
                               try {
                                 const res = await fetch(
-                                  `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has rejected this request.")}&lang=${encodeURIComponent(activeLang)}`,
+                                  `${API_BASE}/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has rejected this request.")}&lang=${encodeURIComponent(activeLang)}`,
                                   {
                                     method: "PUT",
                                     headers: { "Authorization": `Bearer ${token}` }
@@ -5290,7 +5291,7 @@ export function OfferTrip() {
                                 if (res.ok) {
                                   notify(`✖ Rejected request from ${req.farmer_name}`);
                                   const reqRes = await fetch(
-                                    "http://localhost:8000/api/requests/incoming",
+                                    `${API_BASE}/api/requests/incoming`,
                                     { headers: { "Authorization": `Bearer ${token}` } }
                                   );
                                   const reqData = await reqRes.json();
@@ -5334,7 +5335,7 @@ export function OfferTrip() {
                                   const token = localStorage.getItem("access_token");
                                   try {
                                     const res = await fetch(
-                                      `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has cancelled this ride.")}`,
+                                      `${API_BASE}/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has cancelled this ride.")}`,
                                       {
                                         method: "PUT",
                                         headers: { "Authorization": `Bearer ${token}` }
@@ -5343,7 +5344,7 @@ export function OfferTrip() {
                                     if (res.ok) {
                                       notify(`✖ Cancelled ride for ${req.farmer_name}. Passenger notified.`);
                                       const reqRes = await fetch(
-                                        "http://localhost:8000/api/requests/incoming",
+                                        `${API_BASE}/api/requests/incoming`,
                                         { headers: { "Authorization": `Bearer ${token}` } }
                                       );
                                       const reqData = await reqRes.json();
@@ -5392,7 +5393,7 @@ export function OfferTrip() {
                                     const token = localStorage.getItem("access_token");
                                     try {
                                       const res = await fetch(
-                                        `http://localhost:8000/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has cancelled this ride.")}`,
+                                        `${API_BASE}/api/requests/${req.id}/status?status=cancelled_by_driver&reason=${encodeURIComponent("The driver has cancelled this ride.")}`,
                                         {
                                           method: "PUT",
                                           headers: { "Authorization": `Bearer ${token}` }
@@ -5401,7 +5402,7 @@ export function OfferTrip() {
                                       if (res.ok) {
                                         notify(`✖ Cancelled ride for ${req.farmer_name}. Passenger notified.`);
                                         const reqRes = await fetch(
-                                          "http://localhost:8000/api/requests/incoming",
+                                          `${API_BASE}/api/requests/incoming`,
                                           { headers: { "Authorization": `Bearer ${token}` } }
                                         );
                                         const reqData = await reqRes.json();
@@ -5437,13 +5438,13 @@ export function OfferTrip() {
                             <div className="flex items-center justify-between bg-white/90 p-2 rounded-xl border border-amber-200 shadow-2xs gap-2">
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <a
-                                  href={`http://localhost:8000${req.delivery_proof_image_url}`}
+                                  href={`${API_BASE}${req.delivery_proof_image_url}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="w-11 h-11 rounded-lg overflow-hidden border border-amber-300 shrink-0 block hover:opacity-90 shadow-2xs"
                                 >
                                   <img
-                                    src={`http://localhost:8000${req.delivery_proof_image_url}`}
+                                    src={`${API_BASE}${req.delivery_proof_image_url}`}
                                     alt="Shipper Drop-off Proof"
                                     className="w-full h-full object-cover"
                                   />
@@ -5454,7 +5455,7 @@ export function OfferTrip() {
                                 </div>
                               </div>
                               <a
-                                href={`http://localhost:8000${req.delivery_proof_image_url}`}
+                                href={`${API_BASE}${req.delivery_proof_image_url}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[10.5px] rounded-lg transition shrink-0"
@@ -6248,7 +6249,7 @@ export function OfferTrip() {
                   e.preventDefault();
                   const token = localStorage.getItem("access_token");
                   try {
-                    const res = await fetch("http://localhost:8000/auth/update-profile", {
+                    const res = await fetch(`${API_BASE}/auth/update-profile`, {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
@@ -6478,7 +6479,7 @@ export function OfferTrip() {
               {deliverModal.proofUrl && (
                 <div className="rounded-2xl border-2 border-emerald-500 overflow-hidden bg-black/5 p-2">
                   <img
-                    src={`http://localhost:8000${deliverModal.proofUrl}`}
+                    src={`${API_BASE}${deliverModal.proofUrl}`}
                     alt="Drop-off Proof Preview"
                     className="w-full h-44 object-cover rounded-xl"
                   />
@@ -6616,7 +6617,7 @@ export function OfferTrip() {
               {proofModal.proofUrl && (
                 <div className="rounded-2xl border-2 border-emerald-500 overflow-hidden bg-black/5 p-2">
                   <img
-                    src={`http://localhost:8000${proofModal.proofUrl}`}
+                    src={`${API_BASE}${proofModal.proofUrl}`}
                     alt="Delivery Proof Preview"
                     className="w-full h-44 object-cover rounded-xl"
                   />

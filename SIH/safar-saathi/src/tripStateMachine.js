@@ -11,6 +11,7 @@
  * 6. Per-trip state isolation (keyed by unique tripId/vehicleId).
  * 7. Duplicate actions strictly prevented (one-way terminal transitions).
  */
+import { API_BASE } from './apiConfig';
 
 export const INSPECTION_STATES = {
   NOT_STARTED: 'not_started',
@@ -220,7 +221,7 @@ export async function actionStartInspection(tripId, token = null) {
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      await fetch(`http://localhost:8000/api/trips/${tripId}/inspection/start`, {
+      await fetch(`${API_BASE}/api/trips/${tripId}/inspection/start`, {
         method: 'POST',
         headers
       });
@@ -260,7 +261,7 @@ export async function actionCompleteInspection(tripId, payload = {}, token = nul
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      await fetch(`http://localhost:8000/api/trips/${tripId}/inspection/complete`, {
+      await fetch(`${API_BASE}/api/trips/${tripId}/inspection/complete`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload)
@@ -292,7 +293,7 @@ export async function actionReachGoodsArea(tripId, token = null) {
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      await fetch(`http://localhost:8000/api/trips/${tripId}/goods-area/reach`, {
+      await fetch(`${API_BASE}/api/trips/${tripId}/goods-area/reach`, {
         method: 'POST',
         headers
       });
@@ -326,7 +327,7 @@ export async function actionConfirmGoodsArea(tripId, token = null) {
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      await fetch(`http://localhost:8000/api/trips/${tripId}/goods-area/confirm`, {
+      await fetch(`${API_BASE}/api/trips/${tripId}/goods-area/confirm`, {
         method: 'POST',
         headers
       });
@@ -360,7 +361,7 @@ export async function actionStartReturnTrip(tripId, token = null) {
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      await fetch(`http://localhost:8000/api/trips/${tripId}/return-trip/start`, {
+      await fetch(`${API_BASE}/api/trips/${tripId}/return-trip/start`, {
         method: 'POST',
         headers
       });

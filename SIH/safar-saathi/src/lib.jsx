@@ -4,6 +4,7 @@ import React, {
   useEffect,
   useState
 } from 'react'
+import { API_BASE } from './apiConfig'
 
 /* =========================================================
    LANGUAGES
@@ -1358,7 +1359,7 @@ export function LangProvider({ children }) {
       document.documentElement.lang = newLang
       const token = localStorage.getItem('access_token')
       if (token) {
-        fetch('http://localhost:8000/auth/set-lang', {
+        fetch(`${API_BASE}/auth/set-lang`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

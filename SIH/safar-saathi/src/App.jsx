@@ -14,6 +14,7 @@ import LoginPage from './LoginPage';
 import { Home, FindVehicles, OfferTrip } from './pages';
 import LogisticsHub from './LogisticsHub';
 import Maps from './maps';
+import { API_BASE } from './apiConfig';
 
 import {
   Mic,
@@ -361,7 +362,7 @@ function MaargMitra() {
           return;
         }
         try {
-          const res = await fetch("http://localhost:8000/auth/status", {
+          const res = await fetch(`${API_BASE}/auth/status`, {
             headers: { "Authorization": `Bearer ${token}` }
           });
           const data = await res.json();
@@ -740,7 +741,7 @@ function ProtectedRoute({ children, requiredType }) {
       }
 
       try {
-        const res = await fetch("http://localhost:8000/auth/status", {
+        const res = await fetch(`${API_BASE}/auth/status`, {
           headers: { "Authorization": `Bearer ${token}` }
         })
 

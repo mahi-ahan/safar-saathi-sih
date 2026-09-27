@@ -41,7 +41,7 @@ import { TTSButton } from './tts';
 import { LocationAutocomplete, geocodeIndianLocation } from './ui';
 import Maps from './maps';
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from './apiConfig';
 
 export function isOfficerAuthorizedForTarget(officerStation, targetLocation, checkpointObj) {
   if (!officerStation || !targetLocation) return false;

@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useLang } from './lib';
 import { speakText, stopSpeech } from './tts';
 import { GOOGLE_CLIENT_ID, AUTH_ROLE_TEXTS } from './AuthModal';
+import { API_BASE } from './apiConfig';
 
 export function LoginPage() {
   const { lang, t } = useLang();
@@ -45,7 +46,7 @@ export function LoginPage() {
     setRoleError(null);
 
     try {
-      const res = await fetch("http://localhost:8000/auth/google-login", {
+      const res = await fetch(`${API_BASE}/auth/google-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

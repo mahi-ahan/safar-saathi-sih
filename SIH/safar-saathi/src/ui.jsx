@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { X } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { API_BASE } from './apiConfig'
 
 export const inputCls = 'w-full rounded-xl border border-gold/40 bg-paper px-3 py-2.5 text-sm outline-none transition focus:border-green-deep focus:ring-2 focus:ring-green-soft/30'
 
@@ -672,7 +673,7 @@ export function AiPriceGuardrail({
         }
         if (isMounted) setRoadDist(distKm);
 
-        const res = await fetch("http://localhost:8000/api/calculate-fare", {
+        const res = await fetch(`${API_BASE}/api/calculate-fare`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1077,7 +1078,7 @@ function PtlUserPricingCardInternal({
           : [];
 
         try {
-          const res = await fetch("http://localhost:8000/api/calculate-ptl-fare", {
+          const res = await fetch(`${API_BASE}/api/calculate-ptl-fare`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

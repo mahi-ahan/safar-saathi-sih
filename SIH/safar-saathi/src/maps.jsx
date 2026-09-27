@@ -6,6 +6,7 @@ import React, {
 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { API_BASE } from './apiConfig'
 import { geocodeIndianLocation } from './ui'
 import {
   INSPECTION_STATES,
@@ -900,7 +901,7 @@ function Maps({
         // 1. Fetch real trips from backend
         let apiTrips = [];
         try {
-          const res = await fetch("http://localhost:8000/api/trips");
+          const res = await fetch(`${API_BASE}/api/trips`);
           if (res.ok) {
             const data = await res.json();
             if (Array.isArray(data)) {

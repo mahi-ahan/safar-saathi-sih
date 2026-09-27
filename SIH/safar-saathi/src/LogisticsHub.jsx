@@ -252,6 +252,9 @@ export default function LogisticsHub() {
     ice_boxes_added: 2,
     temp_celsius: 3.8,
     notes: '',
+    delivery_proof_image_url: null,  // URL after upload (for drop type)
+    proof_preview: null,             // Local preview blob URL
+    proof_uploading: false,
     submitting: false
   });
 
@@ -269,13 +272,6 @@ export default function LogisticsHub() {
   const [corridorMapModal, setCorridorMapModal] = useState({ isOpen: false, trip: null });
   const [selectedMapTripId, setSelectedMapTripId] = useState(null);
 
-  const [stationModal, setStationModal] = useState({
-    isOpen: false,
-    selectedStation: '',
-    customStation: '',
-    isSubmitting: false
-  });
-
   const [notificationBanner, setNotificationBanner] = useState(null);
 
   const showBanner = (msg, type = 'success') => {
@@ -283,113 +279,11 @@ export default function LogisticsHub() {
     setTimeout(() => setNotificationBanner(null), 4000);
   };
 
-  // Switch or Transfer Active Officer Station
-  const handleSwitchStation = async (targetStationName, targetLat = null, targetLng = null) => {
-    if (!targetStationName || !targetStationName.trim()) return;
-    const cleanName = targetStationName.trim();
-    setStationModal(p => ({ ...p, isSubmitting: true }));
-    try {
-      const res = await fetch(`${API_BASE}/api/logistics/switch-station`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(localStorage.getItem("access_token") ? { "Authorization": `Bearer ${localStorage.getItem("access_token")}` } : {})
-        },
-        body: JSON.stringify({
-          officer_name: officer?.name || 'Field Officer',
-          officer_phone: officer?.phone_number || '',
-          new_station: cleanName,
-          station_lat: targetLat,
-          station_lng: targetLng
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.officer) {
-        const updated = {
-          ...(officer || {}),
-          ...data.officer,
-          station: data.officer.station || cleanName,
-          station_lat: data.officer.station_lat ?? targetLat,
-          station_lng: data.officer.station_lng ?? targetLng
-        };
-        localStorage.setItem("logistics_officer", JSON.stringify(updated));
-        setOfficer(updated);
-        showBanner(`🔄 Station Transferred: You are now stationed at "${cleanName}"!`);
-      } else {
-        const updated = {
-          ...(officer || {}),
-          station: cleanName,
-          station_lat: targetLat,
-          station_lng: targetLng
-        };
-        localStorage.setItem("logistics_officer", JSON.stringify(updated));
-        setOfficer(updated);
-        showBanner(`🔄 Station Transferred: You are now stationed at "${cleanName}"!`);
-      }
-      setStationModal({ isOpen: false, selectedStation: '', customStation: '', isSubmitting: false });
-    } catch (err) {
-      console.error("Switch station error", err);
-      const updated = {
-        ...(officer || {}),
-        station: cleanName,
-        station_lat: targetLat,
-        station_lng: targetLng
-      };
-      localStorage.setItem("logistics_officer", JSON.stringify(updated));
-      setOfficer(updated);
-      showBanner(`🔄 Station Transferred: Operating at "${cleanName}"!`);
-      setStationModal({ isOpen: false, selectedStation: '', customStation: '', isSubmitting: false });
-    }
+  // Station transfer is permanently disabled per business rules (Single Location Policy)
+  const handleSwitchStation = () => {
+    showBanner("🔒 Station switching disabled. Each officer account is strictly bound to its assigned posting jurisdiction. Please log in with the account designated for that station.", "error");
   };
 
-  // Dynamically extract all corridor waypoints & stops across active trips
-  const availableRouteStations = useMemo(() => {
-    const list = new Map();
-    const defaults = [
-      { name: "Howrah Truck Terminal & Logistics Hub", city: "Howrah", type: "Origin Terminal / Pickup Dock" },
-      { name: "Kharagpur NH-16 Highway Toll & Weighbridge Hub", city: "Kharagpur", type: "Highway Checkpoint #1" },
-      { name: "Balasore Sergarh Highway Inspection Post", city: "Balasore", type: "Highway Checkpoint #2" },
-      { name: "Bhadrak Charampa Transit Checkpoint", city: "Bhadrak", type: "Highway Checkpoint #3" },
-      { name: "Cuttack Manguli Toll & Transit Hub", city: "Cuttack", type: "Highway Checkpoint #4" },
-      { name: "Bhubaneswar Mandi & Logistics Terminal", city: "Bhubaneswar", type: "Destination Delivery Hub" }
-    ];
-    defaults.forEach(d => list.set(d.name, d));
-
-    trips.forEach(t => {
-      if (t.from_loc) {
-        list.set(t.from_loc, { name: t.from_loc, city: t.from_loc.split(',')[0], type: "Trip Origin Dock" });
-      }
-      if (t.to_loc) {
-        list.set(t.to_loc, { name: t.to_loc, city: t.to_loc.split(',')[0], type: "Trip Destination Drop" });
-      }
-      if (t.designated_checkpoints && Array.isArray(t.designated_checkpoints)) {
-        t.designated_checkpoints.forEach((cp, idx) => {
-          if (cp.checkpoint_name) {
-            list.set(cp.checkpoint_name, {
-              name: cp.checkpoint_name,
-              city: cp.station_city || `Halt #${idx + 1}`,
-              type: `Route Checkpoint #${idx + 1}`,
-              lat: cp.lat,
-              lng: cp.lng
-            });
-          }
-        });
-      }
-    });
-
-    shipments.forEach(s => {
-      const effPickup = s.pickup_place || (s.route?.includes('→') ? s.route.split('→')[0]?.trim() : (s.route?.includes('->') ? s.route.split('->')[0]?.trim() : ''));
-      const effDrop = s.delivery_place || s.drop_place || (s.route?.includes('→') ? s.route.split('→')[1]?.trim() : (s.route?.includes('->') ? s.route.split('->')[1]?.trim() : ''));
-      if (effPickup) {
-        list.set(effPickup, { name: effPickup, city: effPickup.split(',')[0], type: "Cargo Pickup Dock" });
-      }
-      if (effDrop) {
-        list.set(effDrop, { name: effDrop, city: effDrop.split(',')[0], type: "Cargo Delivery Destination" });
-      }
-    });
-
-    return Array.from(list.values());
-  }, [trips, shipments]);
 
 
   // Fetch Unified Trips, Shipments, Corridors & Metrics Dynamically
@@ -894,7 +788,8 @@ export default function LogisticsHub() {
           ice_boxes_added: (isPerishWithIce && isIceAvail) ? (Number(loadingModal.ice_boxes_added) || 0) : 0,
           ice_unavailable_at_pickup: isPerishWithIce && !isIceAvail,
           temp_celsius: Number(loadingModal.temp_celsius) || 3.5,
-          notes: loadingModal.notes
+          notes: loadingModal.notes,
+          delivery_proof_image_url: loadingModal.delivery_proof_image_url || null
         })
       });
 
@@ -959,7 +854,8 @@ export default function LogisticsHub() {
   const activeLoadingShipments = useMemo(() => {
     return shipments.filter(s => {
       if (!s.trip_id) return false;
-      if (['cancelled', 'cancelled_by_driver', 'rejected'].includes(s.status)) return false;
+      // Before driver accepts, request is 'pending' - hide from logistics cargo handling queue
+      if (['pending', 'cancelled', 'cancelled_by_driver', 'rejected'].includes(s.status)) return false;
       if (['cancelled', 'cancelled_by_driver'].includes(s.trip_status)) return false;
       const parentTrip = trips.find(t => t.id === s.trip_id);
       if (parentTrip && ['cancelled', 'cancelled_by_driver'].includes(parentTrip.status)) return false;
@@ -1045,13 +941,23 @@ export default function LogisticsHub() {
   const perishableShipments = useMemo(() => {
     return shipments.filter(s => {
       if (!s.trip_id) return false;
-      if (['cancelled', 'cancelled_by_driver', 'rejected'].includes(s.status)) return false;
+      // Before driver accepts, request is 'pending' - hide from ice queue
+      if (['pending', 'cancelled', 'cancelled_by_driver', 'rejected'].includes(s.status)) return false;
       if (['cancelled', 'cancelled_by_driver'].includes(s.trip_status)) return false;
       const parentTrip = trips.find(t => t.id === s.trip_id);
       if (parentTrip && ['cancelled', 'cancelled_by_driver'].includes(parentTrip.status)) return false;
       return s.is_perishable && s.ice_handling_required;
     });
   }, [shipments, trips]);
+
+  // Tab 4 Confirmed Manifest Cargo Ledger (Excludes unaccepted/pending requests)
+  const confirmedLedgerShipments = useMemo(() => {
+    return shipments.filter(s => {
+      if (!s.trip_id) return false;
+      if (['pending', 'cancelled', 'cancelled_by_driver', 'rejected'].includes(s.status)) return false;
+      return true;
+    });
+  }, [shipments]);
 
   return (
     <div className="w-full min-h-screen bg-[#F4F6F5] text-slate-800 pb-20">
@@ -1161,15 +1067,6 @@ export default function LogisticsHub() {
             </div>
 
             <div className="flex items-center gap-2.5 self-stretch sm:self-auto justify-end shrink-0 relative z-10 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setStationModal({ isOpen: true, selectedStation: officer.station || '', customStation: '', isSubmitting: false })}
-                className="px-4 py-2.5 bg-cyan-500/25 hover:bg-cyan-500/40 text-cyan-200 border border-cyan-400/40 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
-                title="Switch your officer posting location to another checkpoint or terminal along the route"
-              >
-                <Compass size={14} className="text-cyan-300" />
-                <span>🔄 Switch / Transfer Station</span>
-              </button>
               <button
                 type="button"
                 onClick={fetchData}
@@ -1789,7 +1686,7 @@ export default function LogisticsHub() {
                 📋
               </div>
             </div>
-            <p className="font-display font-extrabold text-2xl text-slate-800 mt-2">{shipments.length}</p>
+            <p className="font-display font-extrabold text-2xl text-slate-800 mt-2">{confirmedLedgerShipments.length}</p>
             <p className="text-[11px] text-purple-700 font-medium mt-0.5">{metrics.inspections_today} inspections today</p>
           </div>
         </div>
@@ -1815,7 +1712,7 @@ export default function LogisticsHub() {
             }`}
           >
             <ClipboardCheck size={15} />
-            <span>2. Loading (Pickup) & Unloading (Drop)</span>
+            <span>2. Loading (Pickup) & Unloading (Drop) ({activeLoadingShipments.length})</span>
           </button>
 
           <button
@@ -1835,7 +1732,7 @@ export default function LogisticsHub() {
             }`}
           >
             <Layers size={15} />
-            <span>4. Cross-Connected Manifest</span>
+            <span>4. Cross-Connected Manifest ({confirmedLedgerShipments.length})</span>
           </button>
 
           <button
@@ -2360,7 +2257,7 @@ export default function LogisticsHub() {
                                     Assigned Station: <strong>{trip.next_inspection_point}</strong>
                                   </p>
                                   <p className="text-[11px] text-amber-700">
-                                    Your Station: <span className="font-mono font-semibold">{officer?.station || 'Unassigned'}</span> · Only the officer stationed at this checkpoint location can perform this inspection.
+                                    Your Station: <span className="font-mono font-semibold">{officer?.station || 'Unassigned'}</span> · Only the officer account stationed at this checkpoint location can perform this inspection.
                                   </p>
                                 </div>
                                 <button
@@ -2370,15 +2267,6 @@ export default function LogisticsHub() {
                                 >
                                   <Lock size={14} />
                                   <span>🔒 Locked · Awaiting Officer at Halt #{nextHaltNumber}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSwitchStation(trip.next_inspection_point, trip.next_inspection_lat, trip.next_inspection_lng)}
-                                  className="w-full py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11.5px] rounded-xl border border-emerald-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                                  title={`Transfer active station to ${trip.next_inspection_point}`}
-                                >
-                                  <Compass size={13} className="text-emerald-700" />
-                                  <span>🔄 Transfer Station to Halt #{nextHaltNumber} ({desCp?.station_city || `Halt #${nextHaltNumber}`})</span>
                                 </button>
                                 <button
                                   type="button"
@@ -2640,6 +2528,27 @@ export default function LogisticsHub() {
                             )}
                           </div>
 
+                          {/* Delivery Proof Image */}
+                          {s.delivery_proof_image_url && (
+                            <div className="mt-2.5 p-2.5 bg-violet-50 border border-violet-200 rounded-xl space-y-1.5">
+                              <p className="text-[11px] font-bold text-violet-900">📸 Delivery Proof Photo</p>
+                              <a
+                                href={`${API_BASE}${s.delivery_proof_image_url}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block"
+                              >
+                                <img
+                                  src={`${API_BASE}${s.delivery_proof_image_url}`}
+                                  alt="Delivery proof"
+                                  className="w-full max-h-32 object-cover rounded-lg border border-violet-300 hover:opacity-90 transition cursor-zoom-in"
+                                />
+                              </a>
+                              <p className="text-[10px] text-violet-600 text-center">Tap to view full image</p>
+                            </div>
+                          )}
+
+
                           {!isLoaded && !isUnloaded && (
                             <div className="mt-2.5 p-2 bg-amber-50/90 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-center gap-1.5 font-medium">
                               <AlertTriangle size={13} className="text-amber-600 shrink-0" />
@@ -2671,13 +2580,6 @@ export default function LogisticsHub() {
                                   >
                                     <Lock size={13} className="text-amber-600" />
                                     <span>🔒 Loading Locked (Only {pickupCityName} Officer)</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSwitchStation(effectivePickupPlace)}
-                                    className="w-full py-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 underline text-center cursor-pointer"
-                                  >
-                                    🔄 Switch Station to {pickupCityName}
                                   </button>
                                 </div>
                               );
@@ -2764,13 +2666,6 @@ export default function LogisticsHub() {
                                     >
                                       <Lock size={13} className="text-amber-600" />
                                       <span>🔒 Unload Locked (Only {dropCityName} Officer)</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSwitchStation(effectiveDeliveryPlace)}
-                                      className="w-full py-1 text-[11px] font-bold text-purple-700 hover:text-purple-900 underline text-center cursor-pointer"
-                                    >
-                                      🔄 Switch Station to {dropCityName}
                                     </button>
                                   </div>
                                 );
@@ -2989,13 +2884,6 @@ export default function LogisticsHub() {
                                     <Lock size={13} className="text-cyan-700" />
                                     <span>🔒 Ice Locked (Only {s.pickup_place?.split(',')?.[0]} Officer)</span>
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSwitchStation(s.pickup_place)}
-                                    className="w-full py-1 text-[11px] font-bold text-cyan-700 hover:text-cyan-900 underline text-center cursor-pointer"
-                                  >
-                                    🔄 Switch Station to {s.pickup_place?.split(',')?.[0]}
-                                  </button>
                                 </div>
                               );
                             }
@@ -3053,13 +2941,6 @@ export default function LogisticsHub() {
                                   >
                                     <Lock size={14} className="text-cyan-600" />
                                     <span>🔒 Ice Locked (Awaiting Officer at {targetNearestHalt?.split(' - ')?.[1] || 'Halt'})</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSwitchStation(targetNearestHalt)}
-                                    className="w-full py-1 text-[11px] font-bold text-cyan-700 hover:text-cyan-900 underline text-center cursor-pointer"
-                                  >
-                                    🔄 Switch Station to {targetNearestHalt?.split(' - ')?.[1] || targetNearestHalt}
                                   </button>
                                 </div>
                               );
@@ -3124,7 +3005,7 @@ export default function LogisticsHub() {
                 </div>
               </div>
 
-              {shipments.length === 0 ? (
+              {confirmedLedgerShipments.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
                   <p className="text-sm">No cargo records found.</p>
                 </div>
@@ -3146,7 +3027,7 @@ export default function LogisticsHub() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {shipments.map(s => (
+                      {confirmedLedgerShipments.map(s => (
                         <tr key={s.id} className="hover:bg-slate-50/80 transition">
                           <td className="py-3 px-4 font-mono font-bold text-slate-700">#{s.id.slice(-6)}</td>
                           <td className="py-3 px-4">
@@ -3760,10 +3641,79 @@ export default function LogisticsHub() {
                 return null;
               })()}
 
+              {/* DELIVERY PROOF PHOTO — only for drop/unload */}
+              {loadingModal.loading_type === 'drop' && (
+                <div className="p-3 bg-violet-50 border border-violet-200 rounded-xl space-y-2">
+                  <label className="block text-xs font-bold text-violet-900">
+                    📸 Delivery Proof Photo <span className="text-rose-600">*</span>
+                  </label>
+                  <p className="text-[11px] text-violet-700">Capture or upload a photo confirming cargo handover to the consignee at the final destination.</p>
+                  <div className="flex items-center gap-3">
+                    <label
+                      htmlFor="delivery-proof-upload"
+                      className="flex-1 cursor-pointer py-2 px-3 rounded-xl border-2 border-dashed border-violet-300 hover:border-violet-500 bg-white text-center text-xs font-semibold text-violet-700 hover:text-violet-900 transition"
+                    >
+                      {loadingModal.proof_uploading
+                        ? '⏳ Uploading…'
+                        : loadingModal.delivery_proof_image_url
+                        ? '✅ Photo Uploaded – Replace?'
+                        : '📷 Tap to capture / upload photo'}
+                      <input
+                        id="delivery-proof-upload"
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          // Show preview immediately
+                          const previewUrl = URL.createObjectURL(file);
+                          setLoadingModal(p => ({ ...p, proof_preview: previewUrl, proof_uploading: true }));
+                          try {
+                            const fd = new FormData();
+                            fd.append('file', file);
+                            const uploadRes = await fetch(`${API_BASE}/api/requests/upload-delivery-proof`, {
+                              method: 'POST',
+                              body: fd
+                            });
+                            const uploadData = await uploadRes.json();
+                            if (uploadRes.ok && uploadData.delivery_proof_image_url) {
+                              setLoadingModal(p => ({
+                                ...p,
+                                delivery_proof_image_url: uploadData.delivery_proof_image_url,
+                                proof_uploading: false
+                              }));
+                            } else {
+                              showBanner(uploadData.detail || 'Photo upload failed.', 'error');
+                              setLoadingModal(p => ({ ...p, proof_uploading: false, proof_preview: null }));
+                            }
+                          } catch {
+                            showBanner('Could not upload proof photo.', 'error');
+                            setLoadingModal(p => ({ ...p, proof_uploading: false, proof_preview: null }));
+                          }
+                        }}
+                      />
+                    </label>
+                    {loadingModal.proof_preview && (
+                      <img
+                        src={loadingModal.proof_preview}
+                        alt="Delivery proof preview"
+                        className="h-14 w-14 rounded-xl object-cover border-2 border-violet-400 shadow-md flex-shrink-0"
+                      />
+                    )}
+                  </div>
+                  {!loadingModal.delivery_proof_image_url && !loadingModal.proof_uploading && (
+                    <p className="text-[10.5px] text-rose-600 font-semibold">⚠ Photo is required to complete the handover.</p>
+                  )}
+                </div>
+              )}
+
+
               <div className="pt-2 flex items-center gap-2">
                 <button
                   type="submit"
-                  disabled={loadingModal.submitting || (loadingModal.loading_type === 'drop' && !(() => {
+                  disabled={loadingModal.submitting || loadingModal.proof_uploading || (loadingModal.loading_type === 'drop' && !(() => {
                     const parentTrip = trips.find(t => t.id === loadingModal.shipment?.trip_id);
                     const isTripStarted = Boolean(
                       loadingModal.shipment?.trip_started ||
@@ -3771,7 +3721,8 @@ export default function LogisticsHub() {
                       (['in_transit', 'moving', 'started', 'pending_passenger_confirmation', 'completed'].includes(loadingModal.shipment?.trip_status) || loadingModal.shipment?.is_live)
                     );
                     const isUnloadPermitted = (loadingModal.shipment?.is_unload_allowed !== undefined ? loadingModal.shipment.is_unload_allowed : (parentTrip?.is_unload_allowed !== undefined ? parentTrip.is_unload_allowed : true)) && (parentTrip?.inspections_remaining ?? (loadingModal.shipment?.inspections_remaining ?? 0)) === 0;
-                    return isTripStarted && isUnloadPermitted;
+                    const hasProofPhoto = Boolean(loadingModal.delivery_proof_image_url);
+                    return isTripStarted && isUnloadPermitted && hasProofPhoto;
                   })())}
                   className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
                 >
@@ -4021,131 +3972,6 @@ export default function LogisticsHub() {
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* MODAL 5: OFFICER STATION TRANSFER & SWITCH MODAL */}
-      {/* ============================================================== */}
-
-      {stationModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/65 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 animate-scaleIn">
-            <div className="p-5 bg-gradient-to-r from-slate-900 via-teal-950 to-emerald-950 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
-                  <Compass size={22} />
-                </div>
-                <div>
-                  <h3 className="font-display font-extrabold text-base sm:text-lg text-white">
-                    🔄 Switch / Transfer Posting Station
-                  </h3>
-                  <p className="text-xs text-emerald-200/80 mt-0.5">
-                    Select an official checkpoint or cargo dock to test that specific officer's duties
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStationModal(p => ({ ...p, isOpen: false }))}
-                className="p-1.5 rounded-full hover:bg-white/20 transition cursor-pointer text-slate-300 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
-              {/* Current Active Station Pill */}
-              <div className="bg-emerald-50 border border-emerald-300/80 rounded-2xl p-3.5 flex items-center justify-between gap-3">
-                <div>
-                  <span className="text-[10.5px] uppercase font-mono font-bold tracking-wider text-emerald-800">
-                    Currently Operating Station
-                  </span>
-                  <p className="font-bold text-sm text-slate-900">{officer?.station || 'Unassigned Station'}</p>
-                </div>
-                <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-bold shadow-xs">
-                  Active Posting
-                </span>
-              </div>
-
-              {/* Highway Corridor Checkpoints & Terminal Docks */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Corridor Inspection Checkpoints & Docks Along Route
-                </label>
-                <div className="grid sm:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
-                  {availableRouteStations.map((st, idx) => {
-                    const isCurrent = (officer?.station || '').trim().toLowerCase() === (st.name || '').trim().toLowerCase();
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleSwitchStation(st.name, st.lat, st.lng)}
-                        className={`text-left p-3 rounded-2xl border transition flex flex-col justify-between cursor-pointer ${
-                          isCurrent
-                            ? 'bg-emerald-100/70 border-emerald-400 ring-2 ring-emerald-500/30 shadow-xs'
-                            : 'bg-white hover:bg-emerald-50/60 border-slate-200 hover:border-emerald-300 shadow-2xs'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                            st.type?.includes('Checkpoint') ? 'bg-amber-100 text-amber-900 border border-amber-300' :
-                            st.type?.includes('Pickup') ? 'bg-cyan-100 text-cyan-900 border border-cyan-300' :
-                            'bg-purple-100 text-purple-900 border border-purple-300'
-                          }`}>
-                            {st.type}
-                          </span>
-                          {isCurrent && (
-                            <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-1">
-                              <CheckCircle2 size={12} /> Active
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-bold text-xs text-slate-800 leading-snug line-clamp-2">{st.name}</p>
-                        <div className="mt-2 text-[10.5px] text-slate-500 flex items-center justify-between">
-                          <span>📍 {st.city}</span>
-                          <span className="text-emerald-700 font-bold hover:underline">Select & Transfer →</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Custom Station Input */}
-              <div className="bg-white rounded-2xl p-4 border border-slate-200 space-y-2.5">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Or Type Custom Checkpoint / City Station Name
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={stationModal.customStation}
-                    onChange={e => setStationModal(p => ({ ...p, customStation: e.target.value }))}
-                    placeholder="e.g. Kharagpur Highway Toll Hub, Balasore Post..."
-                    className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:outline-emerald-600"
-                  />
-                  <button
-                    type="button"
-                    disabled={!stationModal.customStation.trim() || stationModal.isSubmitting}
-                    onClick={() => handleSwitchStation(stationModal.customStation.trim())}
-                    className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
-                  >
-                    Transfer
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => setStationModal(p => ({ ...p, isOpen: false }))}
-                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl cursor-pointer transition"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -677,6 +677,7 @@ class LoadingEventRequest(BaseModel):
     ice_unavailable_at_pickup: Optional[bool] = False
     temp_celsius: Optional[float] = None
     notes: Optional[str] = None
+    delivery_proof_image_url: Optional[str] = None  # Photo proof captured at final unload
 
 
 class IceHandlingRequest(BaseModel):

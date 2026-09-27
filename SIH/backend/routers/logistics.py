@@ -1063,49 +1063,14 @@ def switch_officer_station(
     db: Session = Depends(get_db)
 ):
     """
-    Transfers or switches officer's active assigned station posting along the corridor.
-    Allows seamless operational testing and dynamic officer handoffs at distinct checkpoints.
+    Station switching is permanently disabled.
+    Each logistics officer is assigned to a single fixed posting jurisdiction.
+    To operate at another station, an officer account for that specific location must be used.
     """
-    clean_station = payload.new_station.strip()
-    if not clean_station:
-        raise HTTPException(status_code=400, detail="New station name is required.")
-
-    resolved_lat = payload.station_lat
-    resolved_lng = payload.station_lng
-    coords = resolve_coords(clean_station, payload.station_lat, payload.station_lng)
-    if coords:
-        resolved_lat, resolved_lng = coords
-
-    officer_data = {
-        "name": payload.officer_name or "Field Officer",
-        "phone_number": payload.officer_phone or "",
-        "station": clean_station,
-        "station_lat": resolved_lat,
-        "station_lng": resolved_lng
-    }
-
-    if current_user and current_user.profile:
-        current_user.profile.assigned_station = clean_station
-        if resolved_lat is not None:
-            current_user.profile.station_lat = resolved_lat
-        if resolved_lng is not None:
-            current_user.profile.station_lng = resolved_lng
-        db.commit()
-        db.refresh(current_user.profile)
-        officer_data["id"] = current_user.id
-        officer_data["username"] = current_user.username
-        officer_data["name"] = current_user.profile.full_name or officer_data["name"]
-        officer_data["phone_number"] = current_user.profile.phone_number or officer_data["phone_number"]
-        officer_data["station"] = current_user.profile.assigned_station
-        officer_data["station_lat"] = current_user.profile.station_lat
-        officer_data["station_lng"] = current_user.profile.station_lng
-        officer_data["is_verified"] = current_user.profile.is_verified
-
-    return {
-        "status": "success",
-        "message": f"Assigned station transferred to {clean_station}.",
-        "officer": officer_data
-    }
+    raise HTTPException(
+        status_code=403,
+        detail="Station switching is not permitted. Each officer account is strictly bound to its assigned posting location. Please log in with the account designated for that station."
+    )
 
 
 # =========================================================
@@ -1273,7 +1238,7 @@ def get_logistics_trips_and_shipments(
             corridor_stats[c_key]["has_perishables"] = True
 
     for r in all_requests:
-        if r.trip_id:
+        if r.trip_id and r.status not in ["pending", "cancelled", "cancelled_by_driver", "rejected"]:
             for c_val in corridor_stats.values():
                 if r.trip_id in c_val["trip_ids"]:
                     c_val["shipments_count"] += 1
@@ -1308,9 +1273,14 @@ def get_logistics_trips_and_shipments(
             "action_taken": cp.action_taken
         })
 
-    # Group requests by trip_id
+    # Group requests by trip_id (only accepted / confirmed cargo bookings)
     requests_by_trip = {}
     for r in all_requests:
+        # Ignore unaccepted bookings (pending driver acceptance), cancelled, or rejected requests
+        if not r.trip_id or r.status in ["pending", "cancelled", "cancelled_by_driver", "rejected"]:
+            continue
+        if r.status not in ["accepted", "in_transit", "moving", "started", "pending_passenger_confirmation", "delivered", "completed"]:
+            continue
         t_obj = next((t for t in all_trips if t.id == r.trip_id), None)
         deliv_place_val = extract_delivery_destination(r.route, t_obj.to_loc if t_obj else None)
         req_dict = {
@@ -1480,13 +1450,17 @@ def get_logistics_trips_and_shipments(
             "can_start_trip": is_load_verified
         })
 
-    # Flat list of active cargo shipments (excludes cancelled requests and deactivated trips)
+    # Flat list of active cargo shipments (excludes unaccepted pending requests, cancelled requests, and deactivated trips)
     flat_shipments = []
     active_filtered_trip_ids = {t.id for t in filtered_trips if t.status not in ["cancelled", "cancelled_by_driver"]}
     for r in all_requests:
         if not r.trip_id or r.trip_id not in active_filtered_trip_ids:
             continue
-        if r.status in ["cancelled", "cancelled_by_driver", "rejected"]:
+        # CRITICAL FIX: Before driver accepts the booking/trip, do NOT include in logistics flat_shipments!
+        # Shipper user info, cargo handling, and ice options must NEVER appear for pending requests.
+        if r.status in ["pending", "cancelled", "cancelled_by_driver", "rejected"]:
+            continue
+        if r.status not in ["accepted", "in_transit", "moving", "started", "pending_passenger_confirmation", "delivered", "completed"]:
             continue
         t = next((trip for trip in all_trips if trip.id == r.trip_id), None)
         if not t or t.status in ["cancelled", "cancelled_by_driver"]:
@@ -1959,6 +1933,9 @@ def record_loading_event(
         req.status = "completed"
         if payload.temp_celsius is not None:
             req.current_temp_c = payload.temp_celsius
+        # Save delivery proof image captured by logistics officer at destination
+        if payload.delivery_proof_image_url:
+            req.delivery_proof_image_url = payload.delivery_proof_image_url
 
         # Mark parent trip completed if all active cargo shipments are unloaded
         if req.trip_id and trip:
@@ -1992,7 +1969,8 @@ def record_loading_event(
         "current_temp_c": req.current_temp_c,
         "ice_added": req.ice_added,
         "ice_boxes_count": req.ice_boxes_count,
-        "ice_unavailable_at_pickup": req.ice_unavailable_at_pickup
+        "ice_unavailable_at_pickup": req.ice_unavailable_at_pickup,
+        "delivery_proof_image_url": req.delivery_proof_image_url
     }
 
 

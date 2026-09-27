@@ -5559,9 +5559,11 @@ export function OfferTrip() {
                   type="date"
                   className={inputCls}
                   value={o.date}
+                  min={new Date().toISOString().split('T')[0]}
                   onChange={e => setO({ ...o, date: e.target.value })}
                 />
               </Field>
+
 
               <Field label={t('driver.vehicle', 'Vehicle Type')}>
                 <select

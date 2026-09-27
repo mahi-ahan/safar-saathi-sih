@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends
 
 from auth.dependencies import require_roles
 
-
 router = APIRouter(
     prefix="/users",
     tags=["Users"]

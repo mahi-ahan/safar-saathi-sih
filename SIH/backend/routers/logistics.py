@@ -1,27 +1,28 @@
 import os
-import uuid
+import re
+import secrets
 import shutil
+import uuid
 from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
-from sqlalchemy.orm import Session
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 import models
 import schemas
-from database import get_db
+import services.messages as msgs
+from auth.dependencies import get_optional_current_user
 from auth.security import (
     create_access_token,
     hash_password,
-    verify_password,
     validate_password_strength,
-    validate_username_format
+    validate_username_format,
+    verify_password,
 )
-from auth.dependencies import get_optional_current_user
+from database import get_db
 from routers.trips import calculate_haversine_km, distance_to_segment_km
 from services.dispatcher import dispatch_automated_alert, resolve_user_contact_and_lang
-import services.messages as msgs
-import re
 
 router = APIRouter(
     prefix="/api/logistics",
@@ -176,7 +177,7 @@ CANONICAL_INDIAN_STATES = {
 }
 
 
-def extract_state_from_location(text: Optional[str]) -> Optional[str]:
+def extract_state_from_location(text: str | None) -> str | None:
     """
     Extracts canonical state from location string or city tokens.
     """
@@ -208,7 +209,7 @@ def extract_city_tokens(raw_text: str) -> set[str]:
     return set(words)
 
 
-def resolve_coords(text: str, lat: Optional[float] = None, lng: Optional[float] = None) -> Optional[tuple[float, float]]:
+def resolve_coords(text: str, lat: float | None = None, lng: float | None = None) -> tuple[float, float] | None:
     """
     Resolves (lat, lng).
     Prioritizes known city coordinates from declared text so browser GPS / device coordinates
@@ -223,7 +224,7 @@ def resolve_coords(text: str, lat: Optional[float] = None, lng: Optional[float] 
     return None
 
 
-def extract_delivery_destination(route: Optional[str], trip_to_loc: Optional[str] = None) -> str:
+def extract_delivery_destination(route: str | None, trip_to_loc: str | None = None) -> str:
     """
     Extracts explicit destination city / terminal from request route (e.g. 'Howrah → Bhubaneswar')
     or linked trip's to_loc.
@@ -368,9 +369,9 @@ KNOWN_ROUTE_CHECKPOINTS = {
 
 
 def is_officer_station_authorized_for_target(
-    officer_station: Optional[str],
-    target_location: Optional[str],
-    checkpoint_obj: Optional[dict] = None
+    officer_station: str | None,
+    target_location: str | None,
+    checkpoint_obj: dict | None = None
 ) -> bool:
     """
     Strict station authorization gate:
@@ -381,14 +382,14 @@ def is_officer_station_authorized_for_target(
     """
     if not officer_station or not target_location:
         return False
-    
+
     s_clean = officer_station.strip().lower()
     t_clean = target_location.strip().lower()
-    
+
     # 1. Exact string match
     if s_clean == t_clean:
         return True
-    
+
     # 2. Checkpoint point numbering match (e.g. "point #2", "#2", "halt #2")
     p_off = re.search(r'#(\d+)|point\s*(\d+)|halt\s*(\d+)', s_clean)
     p_tgt = re.search(r'#(\d+)|point\s*(\d+)|halt\s*(\d+)', t_clean)
@@ -402,7 +403,7 @@ def is_officer_station_authorized_for_target(
         if 'point' in t_clean or '#' in t_clean:
             # Check if officer station explicitly contains point #
             return False
-    
+
     # 3. Check station_city from checkpoint metadata if provided
     if checkpoint_obj and checkpoint_obj.get("station_city"):
         city_clean = checkpoint_obj["station_city"].strip().lower()
@@ -433,19 +434,19 @@ def get_route_designated_checkpoints(from_loc: str, to_loc: str, distance_km: fl
     """
     f_tokens = extract_city_tokens(from_loc)
     t_tokens = extract_city_tokens(to_loc)
-    
+
     for f_tok in f_tokens:
         for t_tok in t_tokens:
             if (f_tok, t_tok) in KNOWN_ROUTE_CHECKPOINTS:
                 return KNOWN_ROUTE_CHECKPOINTS[(f_tok, t_tok)]
-    
+
     max_insp = get_max_inspections_for_distance(distance_km)
     o_coords = resolve_coords(from_loc)
     d_coords = resolve_coords(to_loc)
-    
+
     from_city = from_loc.split(',')[0].strip() if from_loc else "Origin"
     to_city = to_loc.split(',')[0].strip() if to_loc else "Destination"
-    
+
     waypoints = []
     for i in range(1, max_insp + 1):
         frac = i / (max_insp + 1)
@@ -475,7 +476,7 @@ def get_trip_inspection_progression(trip, actual_checkpoints: list, distance_km:
     base_max = get_max_inspections_for_distance(distance_km)
     max_insp = max(base_max, len(designated))
     count_done = len(actual_checkpoints)
-    
+
     if count_done < max_insp:
         next_wp = designated[count_done] if count_done < len(designated) else {
             "checkpoint_name": f"{getattr(trip, 'to_loc', 'Destination').split(',')[0].strip()} Pre-Drop Highway Inspection Plaza",
@@ -514,11 +515,11 @@ def get_trip_inspection_progression(trip, actual_checkpoints: list, distance_km:
 def trip_matches_officer_station(
     t,
     station_tokens: set[str],
-    s_coords: Optional[tuple[float, float]],
-    station_state: Optional[str] = None,
-    trip_checkpoints: Optional[list] = None,
-    trip_requests: Optional[list] = None,
-    officer_station_raw: Optional[str] = None
+    s_coords: tuple[float, float] | None,
+    station_state: str | None = None,
+    trip_checkpoints: list | None = None,
+    trip_requests: list | None = None,
+    officer_station_raw: str | None = None
 ) -> bool:
 
     """
@@ -642,15 +643,15 @@ def trip_matches_officer_station(
 
 
 
-def check_officer_password(plain_password: str, stored_password: Optional[str]) -> bool:
+def check_officer_password(plain_password: str, stored_password: str | None) -> bool:
     if not stored_password or not plain_password:
         return False
     try:
         if verify_password(plain_password, stored_password):
             return True
     except Exception:
-        pass
-    return plain_password == stored_password
+        return secrets.compare_digest(plain_password, stored_password)
+    return secrets.compare_digest(plain_password, stored_password)
 
 
 # =========================================================
@@ -1059,7 +1060,7 @@ def upload_logistics_id_proof(file: UploadFile = File(...)):
 @router.post("/switch-station")
 def switch_officer_station(
     payload: schemas.StationSwitchRequest,
-    current_user: Optional[models.User] = Depends(get_optional_current_user),
+    current_user: models.User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1080,12 +1081,12 @@ def switch_officer_station(
 
 @router.get("/trips-and-shipments")
 def get_logistics_trips_and_shipments(
-    route_search: Optional[str] = None,
-    state_filter: Optional[str] = None,
-    officer_station: Optional[str] = None,
-    officer_lat: Optional[float] = None,
-    officer_lng: Optional[float] = None,
-    current_user: Optional[models.User] = Depends(get_optional_current_user),
+    route_search: str | None = None,
+    state_filter: str | None = None,
+    officer_station: str | None = None,
+    officer_lat: float | None = None,
+    officer_lng: float | None = None,
+    current_user: models.User | None = Depends(get_optional_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1206,7 +1207,7 @@ def get_logistics_trips_and_shipments(
         from_city = t.from_loc.split(',')[0].strip() if t.from_loc else "Origin Hub"
         to_city = t.to_loc.split(',')[0].strip() if t.to_loc else "Destination Hub"
         c_key = f"{from_city} → {to_city}"
-        
+
         # Determine state
         state_name = "India"
         if t.state and str(t.state).strip():
@@ -1372,7 +1373,6 @@ def get_logistics_trips_and_shipments(
 
         trip_is_perishable = (getattr(t, "cargo_category", "") == "Perishable Goods") or bool(getattr(t, "has_perishables", False))
         has_ice_shipments = any(bool(r.get("ice_handling_required")) for r in trip_reqs)
-        trip_has_perishables = trip_is_perishable or any(r["is_perishable"] for r in trip_reqs)
         total_booked_kg = sum(r["goods_weight_kg"] for r in trip_reqs if r["status"] not in ["cancelled", "rejected", "cancelled_by_driver"])
 
         active_cargo = [r for r in trip_reqs if r["status"] not in ["cancelled", "rejected", "cancelled_by_driver"]]
@@ -1606,7 +1606,7 @@ def log_checkpoint_inspection(
     expected_next_cp = prog["next_inspection_point"]
     target_cp = payload.checkpoint_name or expected_next_cp
     officer_station = (payload.officer_station or "").strip()
-    
+
     if officer_station:
         des_cp = next((d for d in prog.get("designated_checkpoints", []) if (d.get("checkpoint_name") or "").lower() == target_cp.lower()), None)
         if not is_officer_station_authorized_for_target(officer_station, target_cp, des_cp):

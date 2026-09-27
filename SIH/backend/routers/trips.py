@@ -1,20 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
-from typing import Optional
-import os
-import uuid
-import shutil
 import math
+import os
+import shutil
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
 import models
 import schemas
-
-from database import get_db
-from auth.dependencies import require_roles
-from services.dispatcher import dispatch_automated_alert, resolve_user_contact_and_lang
 import services.messages as msgs
+from auth.dependencies import require_roles
+from database import get_db
 from services import trip_state_machine
-from datetime import datetime
+from services.dispatcher import dispatch_automated_alert, resolve_user_contact_and_lang
 
 router = APIRouter(
     prefix="/api/trips",
@@ -107,27 +107,27 @@ def distance_to_segment_km(p_lat: float, p_lng: float, a_lat: float, a_lng: floa
     """
     R = 6371.0  # Earth radius in km
     phi_0 = math.radians((a_lat + b_lat + p_lat) / 3.0)
-    
+
     x_a = R * math.radians(a_lng) * math.cos(phi_0)
     y_a = R * math.radians(a_lat)
-    
+
     x_b = R * math.radians(b_lng) * math.cos(phi_0)
     y_b = R * math.radians(b_lat)
-    
+
     x_p = R * math.radians(p_lng) * math.cos(phi_0)
     y_p = R * math.radians(p_lat)
-    
+
     dx = x_b - x_a
     dy = y_b - y_a
     l2 = dx * dx + dy * dy
-    
+
     if l2 == 0:
         return math.hypot(x_p - x_a, y_p - y_a)
-        
+
     t = max(0.0, min(1.0, ((x_p - x_a) * dx + (y_p - y_a) * dy) / l2))
     proj_x = x_a + t * dx
     proj_y = y_a + t * dy
-    
+
     return math.hypot(x_p - proj_x, y_p - proj_y)
 
 
@@ -332,7 +332,7 @@ def get_trip_route_patterns(trip: models.TripModel) -> list[str]:
     ]
 
 
-def get_trip_requests(trip: models.TripModel, db: Session, statuses: Optional[list[str]] = None) -> list[models.RequestModel]:
+def get_trip_requests(trip: models.TripModel, db: Session, statuses: list[str] | None = None) -> list[models.RequestModel]:
     """
     Returns only requests strictly associated with this specific trip instance.
     Primary: Exact trip_id matching.
@@ -393,14 +393,14 @@ def recalculate_trip_cost_shares(trip: models.TripModel, db: Session):
     total_kg_km = 0.0
     for req in active_requests:
         req_weight = float(req.goods_weight_kg if req.goods_weight_kg is not None else (req.kg or 0))
-        
+
         # Calculate exact distance from locked-in pickup & delivery coordinates if available
         exact_dist = calculate_haversine_km(req.pickup_lat or 0.0, req.pickup_lng or 0.0, req.delivery_lat or 0.0, req.delivery_lng or 0.0)
         if exact_dist > 0:
             req_dist = exact_dist
         else:
             req_dist = float(req.distance_km if (req.distance_km and req.distance_km > 0) else trip_default_dist)
-        
+
         req.distance_km = req_dist
         req_workload = round(req_weight * req_dist, 2)
         req.kg_km = req_workload
@@ -591,7 +591,7 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
     # A trip MUST have at least one accepted cargo shipment to start, AND all accepted cargo must be verified by logistics!
     active_cargo = get_trip_requests(trip, db, ["accepted", "assigned"])
     unverified_cargo = [r for r in active_cargo if getattr(r, "loading_status", "pending") != "loaded"]
-    
+
     if len(active_cargo) == 0:
         is_load_verified = False
         unverified_cargo_count = 0
@@ -861,7 +861,7 @@ def create_trip(
         raise HTTPException(status_code=400, detail="Vehicle type selection is mandatory.")
     if not trip.owner or not str(trip.owner).strip():
         raise HTTPException(status_code=400, detail="Transporter/Driver name is required.")
-    
+
     trip_price = float(trip.total_driver_amount or trip.price_per_kg or 0.0)
     if trip_price <= 0:
         raise HTTPException(status_code=400, detail="Total desired vehicle load fare (₹) must be greater than zero.")
@@ -1027,7 +1027,7 @@ def update_trip_status(
     trip_id: int,
     status: str,
     background_tasks: BackgroundTasks,
-    lang: Optional[str] = "hi",
+    lang: str | None = "hi",
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -1191,9 +1191,9 @@ def upload_delivery_proof(
 def driver_complete_trip(
     trip_id: int,
     background_tasks: BackgroundTasks,
-    delivery_proof_image_url: Optional[str] = None,
-    delivery_proof_image: Optional[UploadFile] = File(None),
-    lang: Optional[str] = "hi",
+    delivery_proof_image_url: str | None = None,
+    delivery_proof_image: UploadFile | None = File(None),
+    lang: str | None = "hi",
     db: Session = Depends(get_db)
 ):
     """
@@ -1350,7 +1350,6 @@ def confirm_trip_completion(
     trip.status = "completed"
     trip.is_live = False
 
-    route_str = f"{trip.from_loc} → {trip.to_loc}"
     # Mark all connected passenger requests completed
     requests_to_complete = get_trip_requests(trip, db, ["accepted", "in_transit", "pending_passenger_confirmation"])
     for req in requests_to_complete:
@@ -1464,8 +1463,7 @@ def end_empty_trip(
 # =========================================================
 
 import time
-import math
-import heapq
+
 
 class KDNode2D:
     def __init__(self, point_dict: dict, axis: int = 0, left=None, right=None):
@@ -1475,7 +1473,7 @@ class KDNode2D:
         self.right = right
 
 
-def build_kdtree_2d(points: list[dict], depth: int = 0) -> Optional[KDNode2D]:
+def build_kdtree_2d(points: list[dict], depth: int = 0) -> KDNode2D | None:
     """
     Constructs a 2D Spatial KD-Tree over GPS coordinate tuples (lat, lng) in O(N log N) time.
     """
@@ -1493,7 +1491,7 @@ def build_kdtree_2d(points: list[dict], depth: int = 0) -> Optional[KDNode2D]:
     )
 
 
-def kdtree_query_corridor_candidates(root: Optional[KDNode2D], corridor_points: list[tuple[float, float]], threshold_km: float = 1.0) -> list[dict]:
+def kdtree_query_corridor_candidates(root: KDNode2D | None, corridor_points: list[tuple[float, float]], threshold_km: float = 1.0) -> list[dict]:
     """
     Fast O(log N) spatial corridor query using the 2D KD-Tree to filter candidate stops within threshold_km.
     """
@@ -1703,7 +1701,7 @@ def get_trip_state(
 )
 def start_trip_inspection(
     trip_id: int,
-    payload: Optional[schemas.TripInspectionStartRequest] = None,
+    payload: schemas.TripInspectionStartRequest | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -1743,7 +1741,7 @@ def start_trip_inspection(
 )
 def complete_trip_inspection(
     trip_id: int,
-    payload: Optional[schemas.TripInspectionCompleteRequest] = None,
+    payload: schemas.TripInspectionCompleteRequest | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -1814,7 +1812,7 @@ def complete_trip_inspection(
 )
 def reach_goods_area(
     trip_id: int,
-    payload: Optional[schemas.TripGoodsAreaReachRequest] = None,
+    payload: schemas.TripGoodsAreaReachRequest | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -1848,7 +1846,7 @@ def reach_goods_area(
 )
 def confirm_goods_area_reached(
     trip_id: int,
-    payload: Optional[schemas.TripGoodsAreaConfirmRequest] = None,
+    payload: schemas.TripGoodsAreaConfirmRequest | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -1882,7 +1880,7 @@ def confirm_goods_area_reached(
 )
 def start_return_trip(
     trip_id: int,
-    payload: Optional[schemas.TripReturnStartRequest] = None,
+    payload: schemas.TripReturnStartRequest | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):

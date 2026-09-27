@@ -1,18 +1,11 @@
 from fastapi import Depends, HTTPException, status
-from sqlalchemy.orm import Session
 
-from database import get_db
-from models import User
 from auth.security import (
-    SECRET_KEY,
-    ALGORITHM,
-    oauth2_scheme,
-    oauth2_scheme_optional,
     get_current_user,
     get_optional_current_user,
-    resolve_user_from_token
 )
 
+__all__ = ["require_roles", "get_current_user", "get_optional_current_user"]
 
 # --------------------------------------------------
 # AUTHORIZATION
@@ -35,4 +28,3 @@ def require_roles(*required_roles):
         return current_user
 
     return role_checker
-

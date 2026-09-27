@@ -4,7 +4,6 @@ import {
   Routes,
   Route,
   Link,
-  NavLink,
   useNavigate,
   useLocation
 } from 'react-router-dom';
@@ -24,11 +23,9 @@ import {
   Volume2,
   VolumeX,
   Send,
-  HelpCircle,
   MapPin,
   Truck,
   IndianRupee,
-  ShieldCheck,
   Compass
 } from 'lucide-react';
 

@@ -12,8 +12,6 @@ Enforces strict lifecycle invariants:
 7. Prevention of duplicate actions.
 """
 
-from datetime import datetime
-from typing import Tuple, Optional
 
 
 class InspectionState:
@@ -35,7 +33,7 @@ class GoodsAreaState:
 # Inspection Validation
 # ---------------------------------------------------------------------------
 
-def can_start_inspection(trip) -> Tuple[bool, Optional[str]]:
+def can_start_inspection(trip) -> tuple[bool, str | None]:
     """
     Inspection can ONLY start after the trip has been started by the driver.
     Inspection must NOT start automatically and cannot exceed distance-based capacity.
@@ -70,7 +68,7 @@ def can_start_inspection(trip) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def can_complete_inspection(trip) -> Tuple[bool, Optional[str]]:
+def can_complete_inspection(trip) -> tuple[bool, str | None]:
     """
     Inspection can only be completed if the trip has started and an active session is in progress.
     """
@@ -108,40 +106,40 @@ def can_complete_inspection(trip) -> Tuple[bool, Optional[str]]:
 # Goods Area & Return Trip Validation
 # ---------------------------------------------------------------------------
 
-def can_reach_goods_area(trip) -> Tuple[bool, Optional[str]]:
+def can_reach_goods_area(trip) -> tuple[bool, str | None]:
     """
     Vehicle reaches Goods Area only after it has started and is travelling.
     """
     current_status = getattr(trip, "goods_area_status", GoodsAreaState.NOT_STARTED) or GoodsAreaState.NOT_STARTED
-    
+
     if current_status in [GoodsAreaState.REACHED, GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED, GoodsAreaState.RETURN_STARTED]:
         return False, "Vehicle has already reached the Goods Area."
-    
+
     trip_status = getattr(trip, "status", "scheduled")
     if trip_status not in ["in_transit", "moving", "started"]:
         # If the trip status is scheduled, it hasn't begun travelling
         return False, "Vehicle must be in-transit before reaching the Goods Area."
-    
+
     return True, None
 
 
-def can_confirm_goods_area(trip) -> Tuple[bool, Optional[str]]:
+def can_confirm_goods_area(trip) -> tuple[bool, str | None]:
     """
     Goods Area confirmation must occur only AFTER the vehicle has reached the Goods Area.
     Cannot be confirmed more than once (prevents duplicates).
     """
     current_status = getattr(trip, "goods_area_status", GoodsAreaState.NOT_STARTED) or GoodsAreaState.NOT_STARTED
-    
+
     if current_status in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED, GoodsAreaState.RETURN_STARTED]:
         return False, "Goods Area arrival has already been confirmed. Duplicate confirmations are rejected."
-    
+
     if current_status != GoodsAreaState.REACHED:
         return False, "Cannot confirm Goods Area arrival before the vehicle actually arrives at the Goods Area."
-    
+
     return True, None
 
 
-def can_start_return_trip(trip, outbound_trip=None) -> Tuple[bool, Optional[str]]:
+def can_start_return_trip(trip, outbound_trip=None) -> tuple[bool, str | None]:
     """
     Return trip can start ONLY after the specific vehicle has actually reached
     the Goods Area AND had its arrival confirmed.
@@ -150,7 +148,7 @@ def can_start_return_trip(trip, outbound_trip=None) -> Tuple[bool, Optional[str]
     if bool(getattr(trip, "is_return_leg", False)) and outbound_trip:
         outbound_ga_status = getattr(outbound_trip, "goods_area_status", GoodsAreaState.NOT_STARTED) or GoodsAreaState.NOT_STARTED
         outbound_status = getattr(outbound_trip, "status", None)
-        
+
         # Outbound is reached & confirmed if goods_area_status is confirmed/enabled OR outbound trip status is completed/pending_passenger_confirmation
         is_ga_confirmed = (
             outbound_ga_status in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED, GoodsAreaState.RETURN_STARTED] or
@@ -158,7 +156,7 @@ def can_start_return_trip(trip, outbound_trip=None) -> Tuple[bool, Optional[str]
         )
         if not is_ga_confirmed:
             return False, f"Return trip is locked. Outbound journey ({outbound_trip.from_loc} → {outbound_trip.to_loc}) must reach the Goods Area and be confirmed before the return run can start."
-        
+
         # Check if this return leg itself has already started
         if getattr(trip, "status", None) in ["in_transit", "completed"]:
             return False, "Return trip has already been started."
@@ -168,10 +166,10 @@ def can_start_return_trip(trip, outbound_trip=None) -> Tuple[bool, Optional[str]
     current_status = getattr(trip, "goods_area_status", GoodsAreaState.NOT_STARTED) or GoodsAreaState.NOT_STARTED
     if current_status == GoodsAreaState.RETURN_STARTED:
         return False, "Return trip has already been started for this vehicle. Duplicate start requests are prohibited."
-    
+
     if current_status not in [GoodsAreaState.CONFIRMED, GoodsAreaState.RETURN_ENABLED] and getattr(trip, "status", None) != "completed":
         return False, "Return trip is locked. You must first reach the Goods Area and mark arrival as confirmed before starting the return journey."
-    
+
     return True, None
 
 

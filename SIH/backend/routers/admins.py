@@ -2,10 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 import models
-
-from database import get_db
 from auth.dependencies import require_roles
-
+from database import get_db
 
 router = APIRouter(
     prefix="/api/admin",

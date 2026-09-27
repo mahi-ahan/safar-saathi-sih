@@ -7,3 +7,36 @@ search-path = [
 extraPaths = [
     ".",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [
+    ".git",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "migrations.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (F401 dead imports, F841 unused variables)
+    "I",   # isort
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501", # line too long
+    "E402", # module level import not at top of file
+    "E741", # ambiguous variable name
+    "E711", # comparison to None in SQLAlchemy queries (== None vs is None)
+    "E712", # comparison to True/False in SQLAlchemy queries (== True vs is True)
+    "UP042", # StrEnum vs (str, Enum)
+    "F811", # redefinition of unused name in schemas (kept for backwards compatibility)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"models.py" = ["F401"]

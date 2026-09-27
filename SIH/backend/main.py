@@ -1,27 +1,18 @@
-from fastapi import FastAPI, Request, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 import os
 
-from typing import Optional
-from database import get_db, engine
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+
 import models
+from auth.dependencies import get_optional_current_user
+from database import engine, get_db
 from models import User
-from auth.dependencies import get_current_user, get_optional_current_user
 
 # Routers
-from routers import auth
-from routers import trips
-from routers import requests
-from routers import users
-from routers import drivers
-from routers import admins
-from routers import pricing
-from routers import notifications
-from routers import logistics
-
+from routers import admins, auth, drivers, logistics, notifications, pricing, requests, trips, users
 
 # =========================================================
 # DATABASE TABLE CREATION & AUTOMATIC MIGRATION
@@ -168,9 +159,22 @@ templates = Jinja2Templates(
 # CORS
 # =========================================================
 
+raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+custom_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+default_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+allowed_origins = list(dict.fromkeys(default_origins + custom_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -331,7 +335,7 @@ def home():
 # =========================================================
 
 @app.get("/auth/status")
-def get_auth_status(current_user: Optional[User] = Depends(get_optional_current_user), db: Session = Depends(get_db)):
+def get_auth_status(current_user: User | None = Depends(get_optional_current_user), db: Session = Depends(get_db)):
     """
     Returns the authenticated user's profile status including driver
     verification documents (Aadhaar & Driving License).
@@ -354,7 +358,7 @@ def get_auth_status(current_user: Optional[User] = Depends(get_optional_current_
         }
 
     profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-    
+
     is_complete = False
     user_type = None
     full_name = None
@@ -363,7 +367,7 @@ def get_auth_status(current_user: Optional[User] = Depends(get_optional_current_
     aadhaar_doc = None
     license_doc = None
     is_verified = False
-    
+
     if profile:
         phone_number = profile.phone_number
         user_type = profile.user_type
@@ -376,16 +380,16 @@ def get_auth_status(current_user: Optional[User] = Depends(get_optional_current_
             is_complete = bool(profile.phone_number and profile.aadhaar_doc and profile.license_doc)
         else:
             is_complete = bool(profile.phone_number and profile.user_type)
-    
+
     # Fallback if profile not saved yet
     if not full_name:
         full_name = current_user.username
-    
+
     # Build document URLs
     BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
     aadhaar_doc_url = f"{BASE_URL}/uploads/{aadhaar_doc}" if aadhaar_doc else None
     license_doc_url = f"{BASE_URL}/uploads/{license_doc}" if license_doc else None
-    
+
     return {
         "authenticated": True,
         "email": current_user.email,

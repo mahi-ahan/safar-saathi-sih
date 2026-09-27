@@ -1,27 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
-from sqlalchemy.orm import Session
-from typing import List, Optional
 import os
-import uuid
 import shutil
-import math
+import uuid
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
 import models
 import schemas
-from database import get_db
-from auth.dependencies import require_roles, get_current_user, get_optional_current_user
-from services.dispatcher import dispatch_automated_alert, resolve_user_contact_and_lang
 import services.messages as msgs
+from auth.dependencies import get_optional_current_user, require_roles
+from database import get_db
 from routers.trips import (
-    recalculate_trip_cost_shares,
-    get_trip_requests,
     calculate_haversine_km,
-    check_and_finalize_trip_completion,
-    is_passenger_on_route,
-    is_direction_aligned,
-    is_pickup_before_drop,
     calculate_route_aware_price,
-    get_trip_route_patterns
+    check_and_finalize_trip_completion,
+    get_trip_requests,
+    get_trip_route_patterns,
+    is_direction_aligned,
+    recalculate_trip_cost_shares,
 )
+from services.dispatcher import dispatch_automated_alert, resolve_user_contact_and_lang
 
 router = APIRouter(
     prefix="/api/requests",
@@ -82,7 +80,7 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
     trip payload metadata, and verified image proof links.
     """
     weight = req.goods_weight_kg if req.goods_weight_kg is not None else (req.kg or 0)
-    
+
     # Locate linked trip
     trip = None
     if req.trip_id:
@@ -95,13 +93,13 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
                 break
 
     trip_default_dist = trip.distance_km if (trip and trip.distance_km and trip.distance_km > 0) else 150.0
-    
+
     exact_dist = calculate_haversine_km(req.pickup_lat or 0.0, req.pickup_lng or 0.0, req.delivery_lat or 0.0, req.delivery_lng or 0.0)
     if exact_dist > 0:
         dist = exact_dist
     else:
         dist = float(req.distance_km if (req.distance_km and req.distance_km > 0) else trip_default_dist)
-        
+
     req.distance_km = dist
     req.kg_km = round(float(weight) * float(dist), 2)
 
@@ -121,7 +119,7 @@ def serialize_request_with_cost(req: models.RequestModel, db: Session) -> schema
     else:
         share = round(share + ice_surcharge, 2)
         req.per_person_share = share
-            
+
     share_pct = round((req.kg_km / total_kg_km) * 100.0, 1) if (total_kg_km and total_kg_km > 0) else 0.0
 
     farmer_phone = None
@@ -287,7 +285,7 @@ def create_request(
     req: schemas.RequestCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: Optional[models.User] = Depends(get_optional_current_user)
+    current_user: models.User | None = Depends(get_optional_current_user)
 ):
     # STAGE 1: MANDATORY CARGO PROOF VALIDATION
     if not req.pickup_cargo_image_url or not str(req.pickup_cargo_image_url).strip():
@@ -297,12 +295,12 @@ def create_request(
         )
 
     weight = req.goods_weight_kg if req.goods_weight_kg is not None else req.kg
-    
+
     # 1. Locate linked trip specifically by trip_id or active owner route
     trip = None
     if req.trip_id:
         trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first()
-    
+
     if not trip and req.owner and req.route:
         all_trips = db.query(models.TripModel).filter(
             models.TripModel.owner == req.owner,
@@ -564,16 +562,16 @@ def create_request_with_proof(
     owner: str = Form(...),
     farmer_name: str = Form("Shipper"),
     kg: int = Form(0),
-    goods_weight_kg: Optional[int] = Form(None),
+    goods_weight_kg: int | None = Form(None),
     distance_km: float = Form(150.0),
-    pickup_place: Optional[str] = Form(None),
-    delivery_date: Optional[str] = Form(None),
+    pickup_place: str | None = Form(None),
+    delivery_date: str | None = Form(None),
     pickup_lat: float = Form(0.0),
     pickup_lng: float = Form(0.0),
     delivery_lat: float = Form(0.0),
     delivery_lng: float = Form(0.0),
     cargo_image: UploadFile = File(...),
-    lang: Optional[str] = Form("hi"),
+    lang: str | None = Form("hi"),
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -581,7 +579,7 @@ def create_request_with_proof(
     Direct multipart endpoint: accepts cargo image file upload + booking form fields in a single atomic transaction.
     """
     image_url = save_uploaded_image(cargo_image, subfolder="cargo")
-    
+
     req_data = schemas.RequestCreate(
         id=id,
         route=route,
@@ -615,7 +613,7 @@ def create_request_with_proof(
 )
 def get_my_requests(
     db: Session = Depends(get_db),
-    current_user: Optional[models.User] = Depends(get_optional_current_user)
+    current_user: models.User | None = Depends(get_optional_current_user)
 ):
     if not current_user:
         requests = db.query(models.RequestModel).order_by(models.RequestModel.id.desc()).all()
@@ -645,13 +643,13 @@ def get_my_requests(
 )
 def get_incoming_requests(
     db: Session = Depends(get_db),
-    current_user: Optional[models.User] = Depends(get_optional_current_user)
+    current_user: models.User | None = Depends(get_optional_current_user)
 ):
     """
     Returns requests sent to the current driver's published
     trips with real-time calculated cost shares.
     """
-    from models import UserProfile, TripModel
+    from models import TripModel, UserProfile
 
     if not current_user:
         requests = db.query(models.RequestModel).order_by(models.RequestModel.id.desc()).all()
@@ -814,11 +812,11 @@ def get_all_requests(
 def update_request_status(
     request_id: str,
     background_tasks: BackgroundTasks,
-    status: Optional[str] = None,
-    reason: Optional[str] = None,
-    status_update: Optional[schemas.RequestStatusUpdate] = None,
-    payload: Optional[dict] = None,
-    lang: Optional[str] = "hi",
+    status: str | None = None,
+    reason: str | None = None,
+    status_update: schemas.RequestStatusUpdate | None = None,
+    payload: dict | None = None,
+    lang: str | None = "hi",
     db: Session = Depends(get_db),
     current_user=Depends(
         require_roles("driver", "admin", "user")
@@ -972,10 +970,10 @@ def update_request_status(
 def confirm_request_completion(
     request_id: str,
     background_tasks: BackgroundTasks,
-    payload: Optional[dict] = None,
-    rating: Optional[int] = None,
-    feedback: Optional[str] = None,
-    lang: Optional[str] = "hi",
+    payload: dict | None = None,
+    rating: int | None = None,
+    feedback: str | None = None,
+    lang: str | None = "hi",
     db: Session = Depends(get_db),
     current_user=Depends(
         require_roles("user", "driver", "admin")
@@ -1095,9 +1093,9 @@ def upload_request_delivery_proof(
 def deliver_individual_request_proof(
     request_id: str,
     background_tasks: BackgroundTasks,
-    delivery_proof_image_url: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    lang: Optional[str] = "hi",
+    delivery_proof_image_url: str | None = Form(None),
+    file: UploadFile | None = File(None),
+    lang: str | None = "hi",
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("user", "driver", "admin"))
 ):
@@ -1207,7 +1205,7 @@ def driver_cancel_request(
     request_id: str,
     background_tasks: BackgroundTasks,
     reason: str | None = "The driver has cancelled this ride.",
-    lang: Optional[str] = "hi",
+    lang: str | None = "hi",
     db: Session = Depends(get_db),
     current_user=Depends(
         require_roles("driver", "admin")

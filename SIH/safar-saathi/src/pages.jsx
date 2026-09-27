@@ -1,33 +1,25 @@
 import { API_BASE } from './apiConfig';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google'
 import {
-  Camera,
   CheckCircle2,
   Upload,
   MapPin,
   Truck,
   Users,
-  IndianRupee,
-  MessageSquare,
   Route,
   Package,
   Search,
   X,
   Send,
   ShieldCheck,
-  ArrowLeft,
-  Info,
-  Volume2,
-  VolumeX,
   Play,
   Share2,
   Lock
 } from 'lucide-react'
 
 import { useLang, VEHICLE_CAPACITY_SPECS, getVehicleCapacitySpec } from './lib'
-import { TTSButton, speakText, stopSpeech } from './tts'
-import { AuthModal, AUTH_ROLE_TEXTS, GOOGLE_CLIENT_ID } from './AuthModal'
+import { TTSButton, stopSpeech } from './tts'
+import { AuthModal } from './AuthModal'
 export { LoginPage } from './LoginPage'
 
 import {
@@ -38,28 +30,22 @@ import {
   inputCls,
   Reveal,
   useToast,
-  checkSize,
   LocationAutocomplete,
   geocodeIndianLocation,
-  isPointAlongRoute,
   haversineDistance,
   calculateHighwayTortuosityKm,
   isPassengerOnRoute,
   isDirectionAligned,
   isPickupBeforeDropAlongRoute,
-  getOptimizedMultiStopTrip,
-  calculateRouteAwarePrice,
-  calculateStrictFare,
   getOsrmDistanceKm,
   AiPriceGuardrail,
   PtlUserPricingCard,
   ComponentErrorBoundary,
-  distanceToSegmentKm,
   getCorridorMatchDetails
 } from './ui'
 
 import Maps from './maps'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 /* =========================================================
    HOME
@@ -341,17 +327,6 @@ const PERISHABLE_COOLING_TYPES = [
   'Dry-Ice & Gel Packs (Sub-Zero Cold Chain)',
   'Refrigerated Chiller (0°C to 4°C)',
   'Ventilated Ambient (Fresh Produce)'
-];
-
-const GOODS_CATEGORIES = [
-  'Agricultural Produce / Grains',
-  'Fruits & Vegetables',
-  'Dairy & Perishables',
-  'Pharmaceuticals & Medical',
-  'Textiles & Garments',
-  'Hardware & Construction',
-  'Electronics & Hardware',
-  'General Merchandise'
 ];
 
 export function FindVehicles() {
@@ -684,19 +659,6 @@ export function FindVehicles() {
 
 
 
-  const fly = id => {
-    const trip = trips.find(x => x.id === id)
-
-    if (!trip) return
-
-    setSelectedTripId(id)
-
-    notify(
-      `📍 Pickup: ${trip.pickup}`
-    )
-  }
-
-
   const openRequest = trip => {
     const nextOpen = requestOpen === trip.id ? null : trip.id;
     setRequestOpen(nextOpen);
@@ -813,11 +775,6 @@ export function FindVehicles() {
       return;
     }
 
-    // High-Precision Route Corridor Validation
-    const tripStart = { lat: trip.pickup_lat || trip.lat || 0, lng: trip.pickup_lng || trip.lng || 0 };
-    const tripDest = { lat: trip.dest_lat || trip.destLat || 0, lng: trip.dest_lng || trip.destLng || 0 };
-    const driverRoute = [tripStart, tripDest].filter(c => c.lat !== 0 || c.lng !== 0);
-
     // Calculate travel distance between user pickup and delivery locations instantly (0ms)
     let estimatedDist = trip.distance_km || 150;
     if (pickupCoords && deliveryCoords) {
@@ -869,7 +826,7 @@ export function FindVehicles() {
           cargo_type: r.commodity_name || (trip.cargo_category === 'Dedicated / Isolated Cargo' ? `${trip.dedicated_sub_category}` : 'General Goods'),
           ice_handling_required: Boolean(r.ice_handling_required),
           ice_surcharge: (trip.cargo_category !== 'Perishable Goods' && Boolean(r.ice_handling_required)) ? 75 : 0,
-          current_temp_c: Boolean(r.ice_handling_required) ? 3.8 : null,
+          current_temp_c: r.ice_handling_required ? 3.8 : null,
           loading_status: 'pending',
           ice_boxes_count: 0
         })
@@ -1214,11 +1171,6 @@ export function FindVehicles() {
                   const free = trip.available_space_kg !== undefined
                     ? trip.available_space_kg
                     : Math.max(0, trip.totalKg - (trip.total_booked_kg || 0));
-                  const usedPct = trip.space_used_percentage !== undefined
-                    ? trip.space_used_percentage
-                    : (trip.pct || 0);
-                  const bookedKg = trip.total_booked_kg || 0;
-
                   const r = requests[trip.id] || {};
                   // Only treat ACTIVE non-cancelled requests as blocking in Explore
                   const myReq = myRequests.find(
@@ -1782,22 +1734,6 @@ export function FindVehicles() {
                               const maxDetourVal = Math.max(pMatch?.detourKm || 0, dMatch?.detourKm || 0);
 
                               const weightNum = Number(r.weight || 0);
-                              const tripCap = trip.totalKg || 1000;
-                              const tripTotalFare = trip.total_driver_amount || (trip.pricePerKg * tripCap) || 3000;
-                              const baseRatePerKg = trip.pricePerKg || (tripTotalFare / tripCap) || 12;
-
-                              // Upfront Maximum Estimated Solo Fare (Worst-case ceiling before pooling discount)
-                              const maxSoloFare = weightNum > 0
-                                ? Math.max(50, Math.round(((weightNum / tripCap) * tripTotalFare) + 20))
-                                : Math.round(baseRatePerKg * 10 + 20);
-
-                              // Segment distance and dynamic fare once pickup/delivery coordinates are chosen
-                              const hasCoords = hasPickup && hasDelivery;
-                              const segDist = hasCoords
-                                ? Math.max(5, calculateHighwayTortuosityKm(haversineDistance(r.pickupCoords.lat, r.pickupCoords.lng, r.deliveryCoords.lat, r.deliveryCoords.lng)))
-                                : 0;
-
-                              const estimatedFare = hasCoords ? calculateRouteAwarePrice(segDist, { ...trip, weight: weightNum }, 20) : null;
 
                               return (
                                 <div className="space-y-2.5">
@@ -1845,7 +1781,7 @@ export function FindVehicles() {
                                         isIceRequested={Boolean(r.ice_handling_required)}
                                         isTripPerishable={trip.cargo_category === 'Perishable Goods' || Boolean(trip.has_perishables)}
                                         activeLang={typeof localStorage !== 'undefined' ? localStorage.getItem('ss_lang') || 'en' : 'en'}
-                                        onPriceCalculated={(calculatedPrice, isShared, breakdown) => {
+                                        onPriceCalculated={(_calculatedPrice, _isShared, _breakdown) => {
                                           // Callback hook for calculated price
                                         }}
                                       />
@@ -3155,9 +3091,6 @@ export function OfferTrip() {
 
   const [published, setPublished] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
-  const [arrived, setArrived] = useState(false)
-  const [deliveryPhoto, setDeliveryPhoto] = useState(null)
-  const [done, setDone] = useState(false)
   const [incomingRequests, setIncomingRequests] = useState([])
   const [myTrips, setMyTrips] = useState([])
   const [activeLiveTripId, setActiveLiveTripId] = useState(null)
@@ -4258,7 +4191,7 @@ export function OfferTrip() {
                 const allPartnersDelivered = activePartners.length > 0 && undeliveredPartners.length === 0;
 
                 const isCompleted = trip.status === 'completed' || (activePartners.length > 0 && activePartners.every(p => p.status === 'completed'));
-                const isPendingConfirmation = !isCompleted && (trip.status === 'pending_passenger_confirmation' || ((trip.status === 'in_transit' || trip.is_live) && activePartners.length > 0 && undeliveredPartners.length === 0));
+                const isPendingConfirmation = !isCompleted && (trip.status === 'pending_passenger_confirmation' || ((trip.status === 'in_transit' || trip.is_live) && allPartnersDelivered));
                 const isCancelled = trip.status === 'cancelled' || trip.status === 'cancelled_by_driver';
                 const isTripLive = !isCompleted && !isPendingConfirmation && !isCancelled && Boolean(trip.is_live || trip.status === 'in_transit' || activeLiveTripId === trip.id);
                 const hasLinkedReturnTrip = trip.is_return_leg ||
@@ -4516,7 +4449,6 @@ export function OfferTrip() {
                               const isPartnerPendingConf = p.status === 'pending_passenger_confirmation';
                               const isPartnerCompleted = p.status === 'completed';
                               const isUnloadVerified = (p.loading_status === 'unloaded') || (incReq?.loading_status === 'unloaded') || p.is_unload_verified;
-                              const canDeliver = isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status) && isUnloadVerified;
                               const isWaitingUnload = isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status) && !isUnloadVerified;
                               const isAcceptedWaitingStart = !isTripLive && ['accepted', 'in_transit', 'pending'].includes(p.status);
 

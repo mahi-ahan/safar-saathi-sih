@@ -1,19 +1,19 @@
-import os
 import json
+import logging
+import os
 import re
 import time
-import logging
 from datetime import datetime
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 import models
 import schemas
 from database import get_db
 
-from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger("pricing_engine")
@@ -35,9 +35,9 @@ class GeminiKeyPool:
     smart rotation, and automatic cooldown restoration.
     """
     def __init__(self):
-        self._keys: List[str] = []
+        self._keys: list[str] = []
         self._current_idx: int = 0
-        self._key_cooldowns: Dict[str, float] = {}  # key -> timestamp when cooldown expires
+        self._key_cooldowns: dict[str, float] = {}  # key -> timestamp when cooldown expires
         self._refresh_keys()
 
     def _refresh_keys(self):
@@ -47,7 +47,7 @@ class GeminiKeyPool:
         except Exception:
             pass
 
-        found_keys: List[str] = []
+        found_keys: list[str] = []
         # Dynamic pattern matching: GEMINI_API_KEY, GEMINI_API_KEY_1, GEMINI_API_KEY_2, GOOGLE_API_KEY, etc.
         for k, v in os.environ.items():
             if not v or not v.strip():
@@ -55,11 +55,11 @@ class GeminiKeyPool:
             cleaned = v.strip().strip('"\'')
             if "your_" in cleaned.lower() or "placeholder" in cleaned.lower():
                 continue
-            
+
             k_upper = k.upper()
             if (
-                k_upper.startswith("GEMINI_API_KEY") 
-                or k_upper.startswith("GOOGLE_API_KEY") 
+                k_upper.startswith("GEMINI_API_KEY")
+                or k_upper.startswith("GOOGLE_API_KEY")
                 or k_upper == "VITE_GEMINI_API_KEY"
                 or k_upper.startswith("GEMINI_KEY")
             ):
@@ -71,7 +71,7 @@ class GeminiKeyPool:
 
         self._keys = found_keys
 
-    def get_all_keys(self) -> List[str]:
+    def get_all_keys(self) -> list[str]:
         self._refresh_keys()
         return list(self._keys)
 
@@ -80,14 +80,14 @@ class GeminiKeyPool:
         masked = f"...{key[-6:]}" if len(key) > 6 else key
         logger.warning(f"Gemini API key ({masked}) rate-limited (429/quota). Cooldown: {cooldown_seconds}s.")
 
-    def get_candidate_keys(self) -> List[str]:
+    def get_candidate_keys(self) -> list[str]:
         self._refresh_keys()
         if not self._keys:
             return []
-        
+
         now = time.time()
-        available: List[str] = []
-        cooling: List[str] = []
+        available: list[str] = []
+        cooling: list[str] = []
         n = len(self._keys)
 
         # Round-robin order starting from _current_idx
@@ -118,11 +118,11 @@ def sanitize_json_response(raw_text: str) -> dict:
     clean = re.sub(r"^```(?:json)?\s*", "", clean, flags=re.MULTILINE)
     clean = re.sub(r"\s*```$", "", clean, flags=re.MULTILINE)
     clean = clean.strip()
-    
+
     match = re.search(r"\{.*\}", clean, re.DOTALL)
     if match:
         clean = match.group(0)
-        
+
     return json.loads(clean)
 
 
@@ -156,7 +156,7 @@ STATE_DIESEL_PRICES = {
 }
 
 
-def get_state_diesel_rate(location: str = "") -> Tuple[float, str]:
+def get_state_diesel_rate(location: str = "") -> tuple[float, str]:
     loc_lower = (location or "").lower()
     for state, rate in STATE_DIESEL_PRICES.items():
         if state in loc_lower:
@@ -192,7 +192,7 @@ def calculate_standardized_breakdown(
     destination: str,
     distance_km: float,
     vehicle_model: str,
-    goods_weight_kg: Optional[float] = None
+    goods_weight_kg: float | None = None
 ) -> dict:
     """
     Computes rigorous, zero-randomness Indian road logistics economics:
@@ -205,13 +205,13 @@ def calculate_standardized_breakdown(
     """
     spec = schemas.get_vehicle_spec(vehicle_model)
     dist = max(1.0, float(distance_km or 10.0))
-    
+
     # 1. Base + Per-KM
     base_price = spec["base_price"]
     per_km_rate = spec["per_km_rate"]
     raw_distance_fare = dist * per_km_rate
     subtotal = base_price + raw_distance_fare
-    
+
     # 2. Highway Deadhead Multiplier
     if dist > 300.0:
         multiplier = 1.35
@@ -291,7 +291,7 @@ def calculate_standardized_breakdown(
 def calculate_algorithmic_fallback(
     distance_km: float,
     vehicle_model: str,
-    goods_weight_kg: Optional[float] = None,
+    goods_weight_kg: float | None = None,
     origin: str = ""
 ) -> dict:
     return calculate_standardized_breakdown(
@@ -303,7 +303,7 @@ def calculate_algorithmic_fallback(
     )
 
 
-def execute_gemini_with_rotation(prompt: str, validator_fn, temperature: float = 0.2) -> Tuple[dict, str]:
+def execute_gemini_with_rotation(prompt: str, validator_fn, temperature: float = 0.2) -> tuple[dict, str]:
     """
     Executes a Gemini prompt using verified Gemini 3.5 Flash models with key pool rotation.
     """
@@ -351,7 +351,7 @@ def execute_gemini_with_rotation(prompt: str, validator_fn, temperature: float =
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {"temperature": temperature}
                     }
-                    
+
                     res = requests.post(url, json=payload, timeout=10)
                     if res.status_code == 429 or "RESOURCE_EXHAUSTED" in res.text:
                         gemini_key_pool.mark_rate_limited(api_key, 90.0)
@@ -392,7 +392,7 @@ def call_gemini_pricing_officer(
     destination: str,
     distance_km: float,
     vehicle_model: str,
-    goods_weight_kg: Optional[float] = None
+    goods_weight_kg: float | None = None
 ) -> dict:
     """
     Primary Engine: Uses standardized mathematical logistics calculation,
@@ -405,11 +405,11 @@ def call_gemini_pricing_officer(
         vehicle_model=vehicle_model,
         goods_weight_kg=goods_weight_kg
     )
-    
+
     spec = schemas.get_vehicle_spec(vehicle_model)
     dist = max(1.0, float(distance_km or 10.0))
     bd = std["breakdown"]
-    
+
     prompt = f"""You are an expert Indian logistics, transport, and freight pricing officer for Safar Saathi (a smart rural & intercity cargo sharing platform in India).
 Review and synthesize this calibrated logistics valuation for a transport trip in India.
 
@@ -515,7 +515,7 @@ def calculate_fare(
             vehicle_model=vehicle_clean,
             goods_weight_kg=weight
         )
-        
+
         fair_min = float(ai_data.get("fairMinPrice", 0.0))
         fair_max = float(ai_data.get("fairMaxPrice", 0.0))
         recommended = float(ai_data.get("recommendedPrice", (fair_min + fair_max) / 2))
@@ -584,7 +584,7 @@ def calculate_fare(
                 scale_ratio = (dist / cached_record.distance_km) if cached_record.distance_km > 0 else 1.0
                 fair_min = round(cached_record.fair_min_price * scale_ratio)
                 fair_max = round(cached_record.fair_max_price * scale_ratio)
-                recommended = round(((fair_min + fair_max) / 2))
+                recommended = round((fair_min + fair_max) / 2)
 
                 result = {
                     "fairMinPrice": float(fair_min),
@@ -710,7 +710,7 @@ def call_gemini_ptl_distribution(
     sharers_summary = [
         f"- SENDER (Current User): Route '{req.user_pickup_loc}' to '{req.user_delivery_loc}' | Sub-route Distance: {user_dist} km | Weight: {user_wt} kg | Workload: {user_workload} kg·km"
     ]
-    
+
     total_workload = user_workload
     for idx, s in enumerate(req.other_sharers, 1):
         s_dist = max(1.0, float(s.segment_distance_km or 10.0))

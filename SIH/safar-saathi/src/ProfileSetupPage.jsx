@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-import { ShieldCheck, Truck, Package, Phone, CheckCircle, ArrowRight, UserCheck, AlertCircle, Lock } from 'lucide-react';
+import { ShieldCheck, Truck, Package, CheckCircle, ArrowRight, AlertCircle } from 'lucide-react';
 import { GOOGLE_CLIENT_ID } from './AuthModal';
-
-const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE } from './apiConfig';
 
 export default function ProfileSetupPage() {
   const navigate = useNavigate();
@@ -34,7 +33,6 @@ export default function ProfileSetupPage() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loadingInitial, setLoadingInitial] = useState(true);
 
   useEffect(() => {
     const initialRole = resolveIntent();
@@ -46,7 +44,6 @@ export default function ProfileSetupPage() {
 
       if (!token) {
         setIsLoggedIn(false);
-        setLoadingInitial(false);
         return;
       }
 
@@ -70,8 +67,6 @@ export default function ProfileSetupPage() {
         }
       } catch (err) {
         console.error("Failed to load status in ProfileSetupPage", err);
-      } finally {
-        setLoadingInitial(false);
       }
     };
 

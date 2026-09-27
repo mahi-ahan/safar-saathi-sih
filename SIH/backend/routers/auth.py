@@ -1,21 +1,24 @@
-import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from sqlalchemy.orm import Session
-import models
 import os
+import secrets
 import shutil
+import uuid
+
 from dotenv import load_dotenv
-import schemas
-from database import get_db
-from google.oauth2 import id_token
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
 from jose import jwt as jose_jwt
+from sqlalchemy.orm import Session
+
+import models
+import schemas
 from auth.security import (
+    create_access_token,
+    get_current_user,  # Ensure this is imported for dependency injection
     hash_password,
     verify_password,
-    create_access_token,
-    get_current_user  # Ensure this is imported for dependency injection
 )
+from database import get_db
 
 # 1. Initialize the router FIRST before assigning routes to it
 router = APIRouter(
@@ -47,14 +50,14 @@ def get_auth_status(
     Returns full logged-in user profile, role, verification status, and document URLs.
     """
     profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-    
+
     user_type = profile.user_type if profile else ("driver" if current_user.role == models.UserRole.DRIVER else "sender")
     full_name = profile.full_name if (profile and profile.full_name) else current_user.username
     phone_number = profile.phone_number if profile else None
     gender = profile.gender if profile else "Other"
     aadhaar_doc = profile.aadhaar_doc if profile else None
     license_doc = profile.license_doc if profile else None
-    
+
     # Check verification status
     if profile and profile.is_verified:
         is_verified = True
@@ -178,24 +181,24 @@ def google_login(payload: dict, db: Session = Depends(get_db)):
 
     # Check if user already exists in database by email
     user = db.query(models.User).filter(models.User.email == email).first()
-    
+
     is_complete = False
     user_type = None
     full_name = None
     aadhaar_doc = None
     license_doc = None
-    
+
     intent = (payload.get("intent") or "").lower().strip()
 
     if not user:
         # Generate a unique username to prevent UNIQUE constraint failures
         base_username = name.replace(" ", "").lower()
         unique_username = f"{base_username}_{uuid.uuid4().hex[:6]}"
-        
+
         user = models.User(
             username=unique_username,
             email=email,
-            password="OAUTH_GOOGLE_USER",
+            password=f"oauth2_google_{secrets.token_hex(24)}",
             role=models.UserRole.USER
         )
         db.add(user)
@@ -256,11 +259,11 @@ def google_login(payload: dict, db: Session = Depends(get_db)):
                 )
 
     access_token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
-    
+
     # Build document URLs if documents exist
     aadhaar_url = f"{BASE_URL}/uploads/{aadhaar_doc}" if aadhaar_doc else None
     license_url = f"{BASE_URL}/uploads/{license_doc}" if license_doc else None
-    
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -276,36 +279,36 @@ def google_login(payload: dict, db: Session = Depends(get_db)):
 
 @router.post("/complete-profile")
 def complete_user_profile(
-    profile_data: schemas.ProfileCreateSchema, 
-    current_user: models.User = Depends(get_current_user), 
+    profile_data: schemas.ProfileCreateSchema,
+    current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Saves user profile details (phone number, user type, full_name, gender,
-    and verification documents) when they fill out the intermediate 
+    and verification documents) when they fill out the intermediate
     profile-making page.
     """
     profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-    
+
     if not profile:
         profile = models.UserProfile(user_id=current_user.id)
         db.add(profile)
-        
+
     profile.phone_number = profile_data.phone_number
-    profile.user_type = profile_data.user_type 
+    profile.user_type = profile_data.user_type
     profile.full_name = profile_data.full_name or current_user.username
     profile.gender = profile_data.gender or "Other"
-    
+
     # Store verification document filenames
     if profile_data.aadhaar_doc:
         profile.aadhaar_doc = profile_data.aadhaar_doc
     if profile_data.license_doc:
         profile.license_doc = profile_data.license_doc
-    
+
     # Mark as verified if driver has both documents uploaded
     if profile.user_type == 'driver' and profile.aadhaar_doc and profile.license_doc:
         profile.is_verified = True
-        
+
     # Sync updated phone number across driver's trips in database
     if profile.phone_number:
         db.query(models.TripModel).filter(
@@ -316,15 +319,15 @@ def complete_user_profile(
 
     db.commit()
     db.refresh(profile)
-    
+
     aadhaar_url = f"{BASE_URL}/uploads/{profile.aadhaar_doc}" if profile.aadhaar_doc else None
     license_url = f"{BASE_URL}/uploads/{profile.license_doc}" if profile.license_doc else None
 
     # Generate fresh access token for completed session
     access_token = create_access_token(data={"sub": str(current_user.id), "role": current_user.role.value})
-    
+
     return {
-        "message": "Profile completed successfully", 
+        "message": "Profile completed successfully",
         "is_profile_complete": True,
         "access_token": access_token,
         "token_type": "bearer",
@@ -357,6 +360,10 @@ def upload_verification_document(
         raise HTTPException(status_code=400, detail="doc_type must be 'aadhaar' or 'license'")
 
     ext = os.path.splitext(file.filename)[1].lower()
+    allowed_exts = {".jpg", ".jpeg", ".png", ".pdf", ".webp"}
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail="Allowed document formats: JPG, JPEG, PNG, PDF, WEBP.")
+
     filename = f"{current_user.id}_{doc_type}_{uuid.uuid4().hex[:8]}{ext}"
     target_path = os.path.join(UPLOAD_DIR, filename)
 
@@ -409,11 +416,11 @@ def update_user_profile(
     Partially/Fully updates user profile details from the dashboards.
     """
     profile = db.query(models.UserProfile).filter(models.UserProfile.user_id == current_user.id).first()
-    
+
     if not profile:
         profile = models.UserProfile(user_id=current_user.id)
         db.add(profile)
-        
+
     if profile_data.full_name is not None:
         profile.full_name = profile_data.full_name
     if profile_data.phone_number is not None:
@@ -424,7 +431,7 @@ def update_user_profile(
         profile.aadhaar_doc = profile_data.aadhaar_doc
     if profile_data.license_doc is not None:
         profile.license_doc = profile_data.license_doc
-        
+
     # Mark as verified if driver has both documents uploaded
     if profile.user_type == 'driver' and profile.aadhaar_doc and profile.license_doc:
         profile.is_verified = True
@@ -432,7 +439,7 @@ def update_user_profile(
         # If it was driver but some doc was removed, we might adjust verification
         if profile.user_type == 'driver' and (not profile.aadhaar_doc or not profile.license_doc):
             profile.is_verified = False
-            
+
     # Sync updated phone number across driver's trips in database
     if profile.phone_number:
         db.query(models.TripModel).filter(
@@ -443,10 +450,10 @@ def update_user_profile(
 
     db.commit()
     db.refresh(profile)
-    
+
     aadhaar_url = f"{BASE_URL}/uploads/{profile.aadhaar_doc}" if profile.aadhaar_doc else None
     license_url = f"{BASE_URL}/uploads/{profile.license_doc}" if profile.license_doc else None
-    
+
     return {
         "message": "Profile updated successfully",
         "is_profile_complete": True,

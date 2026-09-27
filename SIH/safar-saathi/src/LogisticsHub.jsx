@@ -10,20 +10,12 @@ import {
   Thermometer,
   ClipboardCheck,
   RefreshCw,
-  Camera,
   Upload,
   UserCheck,
-  Clock,
-  ArrowRight,
-  ExternalLink,
-  ChevronRight,
-  Filter,
   Search,
-  Check,
   X,
   Phone,
   Layers,
-  FileText,
   Lock,
   Key,
   Crosshair,
@@ -36,7 +28,6 @@ import {
   User,
   AtSign
 } from 'lucide-react';
-import { useLang } from './lib';
 import { TTSButton } from './tts';
 import { LocationAutocomplete, geocodeIndianLocation } from './ui';
 import Maps from './maps';
@@ -104,8 +95,6 @@ export function isOfficerAuthorizedForTarget(officerStation, targetLocation, che
 }
 
 export default function LogisticsHub() {
-  const { lang, t } = useLang();
-
   // Officer Profile State
   const [officer, setOfficer] = useState(() => {
     try {
@@ -278,13 +267,6 @@ export default function LogisticsHub() {
     setNotificationBanner({ msg, type });
     setTimeout(() => setNotificationBanner(null), 4000);
   };
-
-  // Station transfer is permanently disabled per business rules (Single Location Policy)
-  const handleSwitchStation = () => {
-    showBanner("🔒 Station switching disabled. Each officer account is strictly bound to its assigned posting jurisdiction. Please log in with the account designated for that station.", "error");
-  };
-
-
 
   // Fetch Unified Trips, Shipments, Corridors & Metrics Dynamically
   // Filtered strictly to officer's assigned station when authenticated!

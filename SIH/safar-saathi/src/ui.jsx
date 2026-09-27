@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { X } from 'lucide-react'
 import L from 'leaflet'
@@ -479,10 +479,7 @@ export async function getOptimizedMultiStopTrip(waypoints = [], roundtrip = fals
   const dest = validCoords[validCoords.length - 1];
   const intermediate = validCoords.slice(1, -1);
 
-  // 1. KD-Tree 2D Spatial Partitioning
-  const kdtree = new KDTree2D(intermediate);
-
-  // 2. A* Goal-Directed Heuristic Ordering: f(n) = g(n) + h(n)
+  // A* Goal-Directed Heuristic Ordering: f(n) = g(n) + h(n)
   intermediate.sort((a, b) => {
     const projA = getRouteProjectionT(a, [origin, dest]);
     const projB = getRouteProjectionT(b, [origin, dest]);
@@ -615,7 +612,6 @@ export function calculateRouteAwarePrice(passengerDistKm, tripOrWeight, serviceF
   // If trip object is passed
   if (tripOrWeight && typeof tripOrWeight === 'object') {
     const trip = tripOrWeight;
-    const tripCap = trip.totalKg || trip.total_kg || 1000;
     const weight = Number(trip.weight || 0);
     const baseRate = Number(trip.total_driver_amount || trip.totalDriverAmount) || PRICING_CONFIG.DEFAULT_BASE_RATE;
     

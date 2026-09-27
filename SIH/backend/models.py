@@ -1,6 +1,7 @@
 # models.py
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String
+
 from database import Base  # <--- MAKE SURE THIS LINE IS AT THE TOP
-from sqlalchemy import Boolean, Column, Float, Integer, String, ForeignKey
 
 
 class TripModel(Base):
@@ -176,9 +177,11 @@ class PtlCostDistributionCache(Base):
 
 from enum import Enum
 
-from sqlalchemy import Column, Integer, String, Enum as SQLEnum, ForeignKey
-from database import Base
+from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import relationship
+
+from database import Base
 
 
 class UserRole(str, Enum):

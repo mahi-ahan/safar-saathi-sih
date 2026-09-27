@@ -1,17 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
-import { useLang, LANGS } from './lib';
+import { useLang } from './lib';
 
 // Global voice cache & async voice initialization
 let cachedVoices = [];
-let voicesLoaded = false;
 
 export function loadVoices() {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
   const voices = window.speechSynthesis.getVoices() || [];
   if (voices.length > 0) {
     cachedVoices = voices;
-    voicesLoaded = true;
   }
   return cachedVoices;
 }

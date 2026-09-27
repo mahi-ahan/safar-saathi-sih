@@ -1,7 +1,7 @@
-from typing import Optional
-from pydantic import BaseModel, Field, EmailStr
-from models import UserRole
 
+from pydantic import BaseModel, EmailStr, Field
+
+from models import UserRole
 
 # ==================================================
 # AUTHENTICATION SCHEMAS
@@ -45,19 +45,19 @@ class UserResponse(BaseModel):
 class ProfileCreateSchema(BaseModel):
     phone_number: str
     user_type: str = "sender"
-    full_name: Optional[str] = None
-    gender: Optional[str] = "Other"
-    aadhaar_doc: Optional[str] = None
-    license_doc: Optional[str] = None
+    full_name: str | None = None
+    gender: str | None = "Other"
+    aadhaar_doc: str | None = None
+    license_doc: str | None = None
 
 
 class ProfileUpdateSchema(BaseModel):
-    phone_number: Optional[str] = None
-    user_type: Optional[str] = None
-    full_name: Optional[str] = None
-    gender: Optional[str] = None
-    aadhaar_doc: Optional[str] = None
-    license_doc: Optional[str] = None
+    phone_number: str | None = None
+    user_type: str | None = None
+    full_name: str | None = None
+    gender: str | None = None
+    aadhaar_doc: str | None = None
+    license_doc: str | None = None
 
 
 
@@ -124,18 +124,18 @@ def get_vehicle_spec(vehicle_str: str) -> dict:
     if not vehicle_str:
         return VEHICLE_SPECS["Mini-Truck"]
     v = vehicle_str.lower().strip()
-    
+
     # Exact category match
     for k, spec in VEHICLE_SPECS.items():
         if k.lower() == v:
             return spec
-            
+
     # Alias / substring match
     for k, spec in VEHICLE_SPECS.items():
         for alias in spec["aliases"]:
             if alias in v:
                 return spec
-                
+
     return VEHICLE_SPECS["Mini-Truck"]
 
 def get_vehicle_capacity_limits(vehicle_str: str) -> dict:
@@ -152,131 +152,131 @@ def get_vehicle_capacity_limits(vehicle_str: str) -> dict:
 
 
 class TripCreate(BaseModel):
-    state: Optional[str] = ""
-    from_loc: Optional[str] = ""
-    to_loc: Optional[str] = ""
-    date: Optional[str] = ""
-    vehicle: Optional[str] = "Mini Truck"
-    owner: Optional[str] = ""
-    verified: Optional[bool] = True
-    pct: Optional[int] = 0
-    total_kg: Optional[int] = 1000
-    price_per_kg: Optional[float] = 0.0
-    total_driver_amount: Optional[float] = 0.0
-    distance_km: Optional[float] = 150.0
-    pickup: Optional[str] = ""
-    lat: Optional[float] = 0.0
-    lng: Optional[float] = 0.0
-    dest_lat: Optional[float] = 0.0
-    dest_lng: Optional[float] = 0.0
-    pickup_lat: Optional[float] = 0.0
-    pickup_lng: Optional[float] = 0.0
-    status: Optional[str] = "scheduled"
-    is_live: Optional[bool] = False
-    speed: Optional[float] = 0.0
-    pickup_cargo_image_url: Optional[str] = None
-    delivery_proof_image_url: Optional[str] = None
-    lang: Optional[str] = "hi"
-    return_trip_id: Optional[int] = None
-    is_return_leg: Optional[bool] = False
-    return_discount_pct: Optional[int] = 0
-    has_perishables: Optional[bool] = False
-    ice_handling_supported: Optional[bool] = False
-    current_checkpoint: Optional[str] = None
-    checkpoint_count: Optional[int] = 0
-    cargo_category: Optional[str] = "Independent / General Cargo"
-    dedicated_sub_category: Optional[str] = None
-    is_dedicated: Optional[bool] = False
-    seal_number: Optional[str] = None
-    seal_status: Optional[str] = None
-    last_weigh_in_kg: Optional[float] = None
-    weight_compliant: Optional[bool] = None
-    cooling_type: Optional[str] = None
-    target_temp_c: Optional[float] = None
+    state: str | None = ""
+    from_loc: str | None = ""
+    to_loc: str | None = ""
+    date: str | None = ""
+    vehicle: str | None = "Mini Truck"
+    owner: str | None = ""
+    verified: bool | None = True
+    pct: int | None = 0
+    total_kg: int | None = 1000
+    price_per_kg: float | None = 0.0
+    total_driver_amount: float | None = 0.0
+    distance_km: float | None = 150.0
+    pickup: str | None = ""
+    lat: float | None = 0.0
+    lng: float | None = 0.0
+    dest_lat: float | None = 0.0
+    dest_lng: float | None = 0.0
+    pickup_lat: float | None = 0.0
+    pickup_lng: float | None = 0.0
+    status: str | None = "scheduled"
+    is_live: bool | None = False
+    speed: float | None = 0.0
+    pickup_cargo_image_url: str | None = None
+    delivery_proof_image_url: str | None = None
+    lang: str | None = "hi"
+    return_trip_id: int | None = None
+    is_return_leg: bool | None = False
+    return_discount_pct: int | None = 0
+    has_perishables: bool | None = False
+    ice_handling_supported: bool | None = False
+    current_checkpoint: str | None = None
+    checkpoint_count: int | None = 0
+    cargo_category: str | None = "Independent / General Cargo"
+    dedicated_sub_category: str | None = None
+    is_dedicated: bool | None = False
+    seal_number: str | None = None
+    seal_status: str | None = None
+    last_weigh_in_kg: float | None = None
+    weight_compliant: bool | None = None
+    cooling_type: str | None = None
+    target_temp_c: float | None = None
 
 
 class TripResponse(TripCreate):
     id: int
-    total_booked_kg: Optional[float] = 0.0
-    available_space_kg: Optional[float] = 0.0
-    space_used_percentage: Optional[float] = 0.0
-    total_kg_km: Optional[float] = 0.0
-    passenger_count: Optional[int] = 0
-    slots_total: Optional[int] = 5
-    slots_filled: Optional[int] = 0
-    partners: Optional[list[dict]] = []
-    pickup_cargo_image_url: Optional[str] = None
-    delivery_proof_image_url: Optional[str] = None
-    driver_phone: Optional[str] = None
-    is_booking_open: Optional[bool] = True
-    booking_lock_reason: Optional[str] = None
-    outbound_trip_status: Optional[str] = None
-    can_start_trip: Optional[bool] = True
-    start_lock_reason: Optional[str] = None
-    is_load_verified: Optional[bool] = True
-    unverified_cargo_count: Optional[int] = 0
-    has_return_leg: Optional[bool] = False
-    has_perishables: Optional[bool] = False
-    ice_handling_supported: Optional[bool] = False
-    current_checkpoint: Optional[str] = None
-    checkpoint_count: Optional[int] = 0
-    cargo_category: Optional[str] = "Independent / General Cargo"
-    dedicated_sub_category: Optional[str] = None
-    is_dedicated: Optional[bool] = False
-    seal_number: Optional[str] = None
-    seal_status: Optional[str] = None
-    last_weigh_in_kg: Optional[float] = None
-    weight_compliant: Optional[bool] = None
-    cooling_type: Optional[str] = None
-    target_temp_c: Optional[float] = None
+    total_booked_kg: float | None = 0.0
+    available_space_kg: float | None = 0.0
+    space_used_percentage: float | None = 0.0
+    total_kg_km: float | None = 0.0
+    passenger_count: int | None = 0
+    slots_total: int | None = 5
+    slots_filled: int | None = 0
+    partners: list[dict] | None = []
+    pickup_cargo_image_url: str | None = None
+    delivery_proof_image_url: str | None = None
+    driver_phone: str | None = None
+    is_booking_open: bool | None = True
+    booking_lock_reason: str | None = None
+    outbound_trip_status: str | None = None
+    can_start_trip: bool | None = True
+    start_lock_reason: str | None = None
+    is_load_verified: bool | None = True
+    unverified_cargo_count: int | None = 0
+    has_return_leg: bool | None = False
+    has_perishables: bool | None = False
+    ice_handling_supported: bool | None = False
+    current_checkpoint: str | None = None
+    checkpoint_count: int | None = 0
+    cargo_category: str | None = "Independent / General Cargo"
+    dedicated_sub_category: str | None = None
+    is_dedicated: bool | None = False
+    seal_number: str | None = None
+    seal_status: str | None = None
+    last_weigh_in_kg: float | None = None
+    weight_compliant: bool | None = None
+    cooling_type: str | None = None
+    target_temp_c: float | None = None
     # State Machine lifecycle fields
-    inspection_status: Optional[str] = "not_started"
-    inspection_completed: Optional[bool] = False
-    max_inspections: Optional[int] = 1
-    inspections_remaining: Optional[int] = 0
-    next_inspection_point: Optional[str] = None
-    next_inspection_lat: Optional[float] = None
-    next_inspection_lng: Optional[float] = None
-    is_unload_allowed: Optional[bool] = False
-    unload_lock_reason: Optional[str] = None
-    designated_checkpoints: Optional[list[dict]] = []
-    checkpoints: Optional[list[dict]] = []
-    goods_area_status: Optional[str] = "not_started"
-    goods_area_reached_at: Optional[str] = None
-    goods_area_confirmed_at: Optional[str] = None
-    return_started_at: Optional[str] = None
+    inspection_status: str | None = "not_started"
+    inspection_completed: bool | None = False
+    max_inspections: int | None = 1
+    inspections_remaining: int | None = 0
+    next_inspection_point: str | None = None
+    next_inspection_lat: float | None = None
+    next_inspection_lng: float | None = None
+    is_unload_allowed: bool | None = False
+    unload_lock_reason: str | None = None
+    designated_checkpoints: list[dict] | None = []
+    checkpoints: list[dict] | None = []
+    goods_area_status: str | None = "not_started"
+    goods_area_reached_at: str | None = None
+    goods_area_confirmed_at: str | None = None
+    return_started_at: str | None = None
 
     class Config:
         from_attributes = True
 
 
 class TripInspectionStartRequest(BaseModel):
-    officer_name: Optional[str] = None
-    station_name: Optional[str] = None
+    officer_name: str | None = None
+    station_name: str | None = None
 
 
 class TripInspectionCompleteRequest(BaseModel):
-    officer_name: Optional[str] = "Officer"
-    seal_number: Optional[str] = None
-    seal_status: Optional[str] = "verified_intact"
-    measured_weight_kg: Optional[float] = None
-    cargo_condition: Optional[str] = "Good"
-    notes: Optional[str] = "Inspection confirmed and stamped."
+    officer_name: str | None = "Officer"
+    seal_number: str | None = None
+    seal_status: str | None = "verified_intact"
+    measured_weight_kg: float | None = None
+    cargo_condition: str | None = "Good"
+    notes: str | None = "Inspection confirmed and stamped."
 
 
 class TripGoodsAreaReachRequest(BaseModel):
-    lat: Optional[float] = None
-    lng: Optional[float] = None
-    notes: Optional[str] = None
+    lat: float | None = None
+    lng: float | None = None
+    notes: str | None = None
 
 
 class TripGoodsAreaConfirmRequest(BaseModel):
-    confirmed_by: Optional[str] = "Driver"
-    notes: Optional[str] = None
+    confirmed_by: str | None = "Driver"
+    notes: str | None = None
 
 
 class TripReturnStartRequest(BaseModel):
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class TripStateMachineResponse(BaseModel):
@@ -291,23 +291,23 @@ class TripStateMachineResponse(BaseModel):
     goods_area_confirmed: bool
     return_trip_enabled: bool
     return_trip_started: bool
-    goods_area_reached_at: Optional[str] = None
-    goods_area_confirmed_at: Optional[str] = None
-    return_started_at: Optional[str] = None
-    distance_km: Optional[float] = None
-    max_inspections: Optional[int] = 1
-    checkpoint_count: Optional[int] = 0
-    inspections_remaining: Optional[int] = 0
-    message: Optional[str] = None
+    goods_area_reached_at: str | None = None
+    goods_area_confirmed_at: str | None = None
+    return_started_at: str | None = None
+    distance_km: float | None = None
+    max_inspections: int | None = 1
+    checkpoint_count: int | None = 0
+    inspections_remaining: int | None = 0
+    message: str | None = None
 
 
 
 class TripLocationUpdate(BaseModel):
     lat: float
     lng: float
-    speed: Optional[float] = 0.0
-    status: Optional[str] = "in_transit"
-    is_live: Optional[bool] = True
+    speed: float | None = 0.0
+    status: str | None = "in_transit"
+    is_live: bool | None = True
 
 
 
@@ -317,97 +317,97 @@ class TripLocationUpdate(BaseModel):
 
 class RequestCreate(BaseModel):
     id: str
-    trip_id: Optional[int] = None
-    trip_date: Optional[str] = None
-    route: Optional[str] = ""
-    vehicle: Optional[str] = ""
-    owner: Optional[str] = ""
-    farmer_name: Optional[str] = ""
-    farmer_phone: Optional[str] = None
-    kg: Optional[int] = 0
-    goods_weight_kg: Optional[int] = None
-    distance_km: Optional[float] = 150.0
-    pickup_place: Optional[str] = None
-    delivery_date: Optional[str] = None
-    pickup_lat: Optional[float] = 0.0
-    pickup_lng: Optional[float] = 0.0
-    delivery_lat: Optional[float] = 0.0
-    delivery_lng: Optional[float] = 0.0
-    pickup_cargo_image_url: Optional[str] = None
-    delivery_proof_image_url: Optional[str] = None
-    lang: Optional[str] = "hi"
-    is_perishable: Optional[bool] = False
-    cargo_type: Optional[str] = "General"
-    ice_handling_required: Optional[bool] = False
-    current_temp_c: Optional[float] = None
-    loading_status: Optional[str] = "pending"
-    loaded_at: Optional[str] = None
-    loaded_by: Optional[str] = None
-    unloaded_at: Optional[str] = None
-    unloaded_by: Optional[str] = None
-    ice_boxes_count: Optional[int] = 0
-    ice_added: Optional[bool] = False
-    ice_added_stage: Optional[str] = None
-    ice_added_at: Optional[str] = None
-    ice_unavailable_at_pickup: Optional[bool] = False
-    cargo_category: Optional[str] = "Independent / General Cargo"
-    dedicated_sub_category: Optional[str] = None
-    is_dedicated: Optional[bool] = False
-    commodity: Optional[str] = None
-    seal_number: Optional[str] = None
-    seal_status: Optional[str] = None
-    verified_weight_kg: Optional[float] = None
-    weight_compliant: Optional[bool] = None
-    cooling_type: Optional[str] = None
-    target_temp_c: Optional[float] = None
-    ice_surcharge: Optional[float] = 0.0
+    trip_id: int | None = None
+    trip_date: str | None = None
+    route: str | None = ""
+    vehicle: str | None = ""
+    owner: str | None = ""
+    farmer_name: str | None = ""
+    farmer_phone: str | None = None
+    kg: int | None = 0
+    goods_weight_kg: int | None = None
+    distance_km: float | None = 150.0
+    pickup_place: str | None = None
+    delivery_date: str | None = None
+    pickup_lat: float | None = 0.0
+    pickup_lng: float | None = 0.0
+    delivery_lat: float | None = 0.0
+    delivery_lng: float | None = 0.0
+    pickup_cargo_image_url: str | None = None
+    delivery_proof_image_url: str | None = None
+    lang: str | None = "hi"
+    is_perishable: bool | None = False
+    cargo_type: str | None = "General"
+    ice_handling_required: bool | None = False
+    current_temp_c: float | None = None
+    loading_status: str | None = "pending"
+    loaded_at: str | None = None
+    loaded_by: str | None = None
+    unloaded_at: str | None = None
+    unloaded_by: str | None = None
+    ice_boxes_count: int | None = 0
+    ice_added: bool | None = False
+    ice_added_stage: str | None = None
+    ice_added_at: str | None = None
+    ice_unavailable_at_pickup: bool | None = False
+    cargo_category: str | None = "Independent / General Cargo"
+    dedicated_sub_category: str | None = None
+    is_dedicated: bool | None = False
+    commodity: str | None = None
+    seal_number: str | None = None
+    seal_status: str | None = None
+    verified_weight_kg: float | None = None
+    weight_compliant: bool | None = None
+    cooling_type: str | None = None
+    target_temp_c: float | None = None
+    ice_surcharge: float | None = 0.0
 
 
 class RequestResponse(RequestCreate):
-    status: Optional[str] = "pending"
-    goods_weight_kg: Optional[int] = None
-    distance_km: Optional[float] = 150.0
-    kg_km: Optional[float] = 0.0
-    total_trip_kg_km: Optional[float] = 0.0
-    share_pct: Optional[float] = 0.0
-    per_person_share: Optional[float] = 0.0
-    total_driver_amount: Optional[float] = 0.0
-    total_payload_kg: Optional[float] = 0.0
-    pickup_date: Optional[str] = None
-    pickup_time: Optional[str] = None
-    pickup_place: Optional[str] = None
-    delivery_date: Optional[str] = None
-    pickup_lat: Optional[float] = 0.0
-    pickup_lng: Optional[float] = 0.0
-    delivery_lat: Optional[float] = 0.0
-    delivery_lng: Optional[float] = 0.0
-    pickup_cargo_image_url: Optional[str] = None
-    delivery_proof_image_url: Optional[str] = None
-    farmer_phone: Optional[str] = None
-    driver_phone: Optional[str] = None
-    reason: Optional[str] = None
-    rating: Optional[int] = None
-    feedback: Optional[str] = None
-    is_perishable: Optional[bool] = False
-    cargo_type: Optional[str] = "General"
-    ice_handling_required: Optional[bool] = False
-    ice_surcharge: Optional[float] = 0.0
-    current_temp_c: Optional[float] = None
-    loading_status: Optional[str] = "pending"
-    loaded_at: Optional[str] = None
-    loaded_by: Optional[str] = None
-    unloaded_at: Optional[str] = None
-    unloaded_by: Optional[str] = None
-    ice_boxes_count: Optional[int] = 0
-    ice_added: Optional[bool] = False
-    ice_added_stage: Optional[str] = None
-    ice_added_at: Optional[str] = None
-    ice_unavailable_at_pickup: Optional[bool] = False
-    current_checkpoint: Optional[str] = None
-    checkpoint_count: Optional[int] = 0
-    max_inspections: Optional[int] = 1
-    inspections_remaining: Optional[int] = 0
-    checkpoints: Optional[list[dict]] = []
+    status: str | None = "pending"
+    goods_weight_kg: int | None = None
+    distance_km: float | None = 150.0
+    kg_km: float | None = 0.0
+    total_trip_kg_km: float | None = 0.0
+    share_pct: float | None = 0.0
+    per_person_share: float | None = 0.0
+    total_driver_amount: float | None = 0.0
+    total_payload_kg: float | None = 0.0
+    pickup_date: str | None = None
+    pickup_time: str | None = None
+    pickup_place: str | None = None
+    delivery_date: str | None = None
+    pickup_lat: float | None = 0.0
+    pickup_lng: float | None = 0.0
+    delivery_lat: float | None = 0.0
+    delivery_lng: float | None = 0.0
+    pickup_cargo_image_url: str | None = None
+    delivery_proof_image_url: str | None = None
+    farmer_phone: str | None = None
+    driver_phone: str | None = None
+    reason: str | None = None
+    rating: int | None = None
+    feedback: str | None = None
+    is_perishable: bool | None = False
+    cargo_type: str | None = "General"
+    ice_handling_required: bool | None = False
+    ice_surcharge: float | None = 0.0
+    current_temp_c: float | None = None
+    loading_status: str | None = "pending"
+    loaded_at: str | None = None
+    loaded_by: str | None = None
+    unloaded_at: str | None = None
+    unloaded_by: str | None = None
+    ice_boxes_count: int | None = 0
+    ice_added: bool | None = False
+    ice_added_stage: str | None = None
+    ice_added_at: str | None = None
+    ice_unavailable_at_pickup: bool | None = False
+    current_checkpoint: str | None = None
+    checkpoint_count: int | None = 0
+    max_inspections: int | None = 1
+    inspections_remaining: int | None = 0
+    checkpoints: list[dict] | None = []
 
     class Config:
         from_attributes = True
@@ -415,8 +415,8 @@ class RequestResponse(RequestCreate):
 
 
 class ConfirmCompletionRequest(BaseModel):
-    rating: Optional[int] = 5
-    feedback: Optional[str] = None
+    rating: int | None = 5
+    feedback: str | None = None
 
 
 
@@ -433,28 +433,28 @@ class GoogleAuthSchema(BaseModel):
 class ProfileCreateSchema(BaseModel):
     phone_number: str = Field(min_length=10, max_length=15)
     user_type: str = Field(..., description="e.g., sender or driver")
-    full_name: Optional[str] = None
-    gender: Optional[str] = None
-    aadhaar_doc: Optional[str] = None
-    license_doc: Optional[str] = None
+    full_name: str | None = None
+    gender: str | None = None
+    aadhaar_doc: str | None = None
+    license_doc: str | None = None
 
 
 class ProfileUpdateSchema(BaseModel):
-    full_name: Optional[str] = None
-    phone_number: Optional[str] = None
-    gender: Optional[str] = None
-    aadhaar_doc: Optional[str] = None
-    license_doc: Optional[str] = None
+    full_name: str | None = None
+    phone_number: str | None = None
+    gender: str | None = None
+    aadhaar_doc: str | None = None
+    license_doc: str | None = None
 
 
 class UserProfileResponse(BaseModel):
     id: int
-    phone_number: Optional[str] = None
-    user_type: Optional[str] = None
-    full_name: Optional[str] = None
-    gender: Optional[str] = None
-    aadhaar_doc: Optional[str] = None
-    license_doc: Optional[str] = None
+    phone_number: str | None = None
+    user_type: str | None = None
+    full_name: str | None = None
+    gender: str | None = None
+    aadhaar_doc: str | None = None
+    license_doc: str | None = None
     is_verified: bool = False
     is_profile_complete: bool = False
 
@@ -470,9 +470,9 @@ class CalculateFareRequest(BaseModel):
     origin: str
     destination: str
     distance_km: float
-    vehicle_model: Optional[str] = "Mini Truck"
-    goods_weight_kg: Optional[float] = None
-    custom_price: Optional[float] = None
+    vehicle_model: str | None = "Mini Truck"
+    goods_weight_kg: float | None = None
+    custom_price: float | None = None
 
 
 class CalculateFareResponse(BaseModel):
@@ -482,7 +482,7 @@ class CalculateFareResponse(BaseModel):
     source: str
     breakdown: dict
     isExorbitant: bool = False
-    warningMessage: Optional[str] = None
+    warningMessage: str | None = None
 
 
 # ==================================================
@@ -490,26 +490,26 @@ class CalculateFareResponse(BaseModel):
 # ==================================================
 
 class PtlSharerInfo(BaseModel):
-    id: Optional[str] = None
-    farmer_name: Optional[str] = "Co-sharing Partner"
-    pickup_loc: Optional[str] = ""
-    delivery_loc: Optional[str] = ""
+    id: str | None = None
+    farmer_name: str | None = "Co-sharing Partner"
+    pickup_loc: str | None = ""
+    delivery_loc: str | None = ""
     segment_distance_km: float = 150.0
     goods_weight_kg: float = 100.0
 
 
 class CalculatePtlFareRequest(BaseModel):
-    trip_id: Optional[int] = None
+    trip_id: int | None = None
     total_driver_amount: float
-    total_vehicle_capacity_kg: Optional[float] = 1000.0
-    driver_full_distance_km: Optional[float] = 150.0
+    total_vehicle_capacity_kg: float | None = 1000.0
+    driver_full_distance_km: float | None = 150.0
     user_pickup_loc: str
     user_delivery_loc: str
     user_segment_distance_km: float
     user_weight_kg: float
-    other_sharers: Optional[list[PtlSharerInfo]] = []
-    is_ice_requested: Optional[bool] = False
-    trip_cargo_category: Optional[str] = None
+    other_sharers: list[PtlSharerInfo] | None = []
+    is_ice_requested: bool | None = False
+    trip_cargo_category: str | None = None
 
 
 class CalculatePtlFareResponse(BaseModel):
@@ -521,13 +521,13 @@ class CalculatePtlFareResponse(BaseModel):
     source: str
     breakdown: dict
     voice_announcement_text: dict
-    warning: Optional[str] = None
+    warning: str | None = None
 
 
 class RequestStatusUpdate(BaseModel):
-    status: Optional[str] = None
-    reason: Optional[str] = None
-    lang: Optional[str] = "hi"
+    status: str | None = None
+    reason: str | None = None
+    lang: str | None = "hi"
 
 
 # ==================================================
@@ -535,22 +535,22 @@ class RequestStatusUpdate(BaseModel):
 # ==================================================
 
 class WaypointStopSchema(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     name: str
     lat: float
     lng: float
     type: str = "pickup"  # "origin", "pickup", "delivery", "destination"
     weight_kg: float = 0.0
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
 
 
 class OptimizeRouteRequest(BaseModel):
-    trip_id: Optional[int] = None
-    vehicle_capacity_kg: Optional[float] = 1000.0
+    trip_id: int | None = None
+    vehicle_capacity_kg: float | None = 1000.0
     origin: WaypointStopSchema
     destination: WaypointStopSchema
     intermediate_stops: list[WaypointStopSchema] = []
-    max_detour_km: Optional[float] = 1.0
+    max_detour_km: float | None = 1.0
 
 
 class MstEdgeSchema(BaseModel):
@@ -561,13 +561,13 @@ class MstEdgeSchema(BaseModel):
 
 class OrderedStopSchema(BaseModel):
     sequence: int
-    id: Optional[str] = None
+    id: str | None = None
     name: str
     lat: float
     lng: float
     type: str
     weight_kg: float
-    booking_id: Optional[str] = None
+    booking_id: str | None = None
     distance_from_prev_km: float = 0.0
     duration_from_prev_mins: float = 0.0
     cumulative_payload_kg: float = 0.0
@@ -585,7 +585,7 @@ class OptimizeRouteResponse(BaseModel):
     mst_edges: list[MstEdgeSchema] = []
     max_payload_kg: float
     is_valid_route: bool
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 # ==================================================
@@ -598,107 +598,107 @@ class LogisticsRegisterRequest(BaseModel):
     phone_number: str
     password: str
     station: str
-    station_lat: Optional[float] = None
-    station_lng: Optional[float] = None
-    id_proof_doc: Optional[str] = None
+    station_lat: float | None = None
+    station_lng: float | None = None
+    id_proof_doc: str | None = None
 
 
 class LogisticsLoginCredentialsRequest(BaseModel):
-    username_or_phone: Optional[str] = None
-    phone_number: Optional[str] = None
-    username: Optional[str] = None
+    username_or_phone: str | None = None
+    phone_number: str | None = None
+    username: str | None = None
     password: str
 
 
 class LogisticsLoginRequest(BaseModel):
-    username: Optional[str] = None
-    name: Optional[str] = None
+    username: str | None = None
+    name: str | None = None
     phone_number: str
-    password: Optional[str] = None
-    station: Optional[str] = "Nashik Agri-Corridor Hub"
-    station_lat: Optional[float] = None
-    station_lng: Optional[float] = None
-    id_proof_doc: Optional[str] = None
+    password: str | None = None
+    station: str | None = "Nashik Agri-Corridor Hub"
+    station_lat: float | None = None
+    station_lng: float | None = None
+    id_proof_doc: str | None = None
 
 
 class LogisticsProfileResponse(BaseModel):
     id: int
-    username: Optional[str] = None
+    username: str | None = None
     name: str
     phone_number: str
     user_type: str = "logistics"
     station: str
-    station_lat: Optional[float] = None
-    station_lng: Optional[float] = None
-    id_proof_doc: Optional[str] = None
-    id_proof_doc_url: Optional[str] = None
+    station_lat: float | None = None
+    station_lng: float | None = None
+    id_proof_doc: str | None = None
+    id_proof_doc_url: str | None = None
     is_verified: bool = True
-    token: Optional[str] = None
+    token: str | None = None
 
 
 class LogisticsCheckpointCreate(BaseModel):
     trip_id: int
     checkpoint_name: str
     officer_name: str
-    officer_phone: Optional[str] = None
-    officer_station: Optional[str] = None
-    officer_station_lat: Optional[float] = None
-    officer_station_lng: Optional[float] = None
+    officer_phone: str | None = None
+    officer_station: str | None = None
+    officer_station_lat: float | None = None
+    officer_station_lng: float | None = None
     cargo_seal_intact: bool = True
-    seal_number: Optional[str] = None
-    seal_status: Optional[str] = "Verified & Intact"
-    measured_weight_kg: Optional[float] = None
-    declared_weight_kg: Optional[float] = None
-    weight_discrepancy_kg: Optional[float] = None
-    weight_compliant: Optional[bool] = None
-    safety_parameters_status: Optional[str] = "Compliant"
-    cooling_status: Optional[str] = None
-    checkpoint_type: Optional[str] = "Highway Toll Plaza"
+    seal_number: str | None = None
+    seal_status: str | None = "Verified & Intact"
+    measured_weight_kg: float | None = None
+    declared_weight_kg: float | None = None
+    weight_discrepancy_kg: float | None = None
+    weight_compliant: bool | None = None
+    safety_parameters_status: str | None = "Compliant"
+    cooling_status: str | None = None
+    checkpoint_type: str | None = "Highway Toll Plaza"
     cargo_condition: str = "Good"
     ice_status: str = "Adequate"
-    temp_celsius: Optional[float] = None
-    notes: Optional[str] = None
-    proof_image_url: Optional[str] = None
-    action_taken: Optional[str] = None
+    temp_celsius: float | None = None
+    notes: str | None = None
+    proof_image_url: str | None = None
+    action_taken: str | None = None
 
 
 class LoadingEventRequest(BaseModel):
     request_id: str
     officer_name: str
     loading_type: str = "pickup"  # "pickup" (loading) or "drop" (unloading)
-    officer_phone: Optional[str] = None
-    officer_station: Optional[str] = None
-    officer_station_lat: Optional[float] = None
-    officer_station_lng: Optional[float] = None
-    verified_weight_kg: Optional[float] = None
-    seal_number: Optional[str] = None
-    seal_status: Optional[str] = "Sealed & Intact"
-    ice_boxes_added: Optional[int] = 0
-    ice_unavailable_at_pickup: Optional[bool] = False
-    temp_celsius: Optional[float] = None
-    notes: Optional[str] = None
-    delivery_proof_image_url: Optional[str] = None  # Photo proof captured at final unload
+    officer_phone: str | None = None
+    officer_station: str | None = None
+    officer_station_lat: float | None = None
+    officer_station_lng: float | None = None
+    verified_weight_kg: float | None = None
+    seal_number: str | None = None
+    seal_status: str | None = "Sealed & Intact"
+    ice_boxes_added: int | None = 0
+    ice_unavailable_at_pickup: bool | None = False
+    temp_celsius: float | None = None
+    notes: str | None = None
+    delivery_proof_image_url: str | None = None  # Photo proof captured at final unload
 
 
 class IceHandlingRequest(BaseModel):
-    request_id: Optional[str] = None
-    trip_id: Optional[int] = None
+    request_id: str | None = None
+    trip_id: int | None = None
     officer_name: str
-    officer_phone: Optional[str] = None
-    officer_station: Optional[str] = None
+    officer_phone: str | None = None
+    officer_station: str | None = None
     ice_kg_added: float = 5.0
     ice_type: str = "Crushed Ice"  # "Crushed Ice", "Gel Packs", "Dry Ice"
-    temp_before: Optional[float] = None
-    temp_after: Optional[float] = None
-    notes: Optional[str] = None
-    stage: Optional[str] = None  # "pickup", "checkpoint"
-    checkpoint_name: Optional[str] = None
+    temp_before: float | None = None
+    temp_after: float | None = None
+    notes: str | None = None
+    stage: str | None = None  # "pickup", "checkpoint"
+    checkpoint_name: str | None = None
 
 
 class StationSwitchRequest(BaseModel):
-    officer_name: Optional[str] = None
-    officer_phone: Optional[str] = None
+    officer_name: str | None = None
+    officer_phone: str | None = None
     new_station: str
-    station_lat: Optional[float] = None
-    station_lng: Optional[float] = None
+    station_lat: float | None = None
+    station_lng: float | None = None
 

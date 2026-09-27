@@ -1,7 +1,7 @@
-import os
-import requests
 import logging
-from typing import Optional
+import os
+
+import requests
 
 logger = logging.getLogger("dispatcher")
 
@@ -21,8 +21,8 @@ def clean_phone_number(phone: str) -> str:
 
 def resolve_user_contact_and_lang(
     db,
-    user_id: Optional[int] = None,
-    username_or_name: Optional[str] = None,
+    user_id: int | None = None,
+    username_or_name: str | None = None,
     default_lang: str = "hi"
 ) -> tuple[str, str]:
     """
@@ -151,7 +151,7 @@ def send_automated_fast2sms(phone: str, message: str) -> bool:
         return False
 
 
-def dispatch_automated_alert(phone: str, message: str, fallback_sms: Optional[str] = None, media_path: Optional[str] = None):
+def dispatch_automated_alert(phone: str, message: str, fallback_sms: str | None = None, media_path: str | None = None):
     """
     Unified background dispatcher:
     Attempts Fast2SMS or logs notification.
@@ -160,7 +160,7 @@ def dispatch_automated_alert(phone: str, message: str, fallback_sms: Optional[st
         return
 
     logger.info(f"[Dispatcher] Dispatching automated notification to {phone} (media: {media_path})...")
-    
+
     # 1. Fast2SMS
     sms_text = fallback_sms or message[:160]
     if send_automated_fast2sms(phone, sms_text):

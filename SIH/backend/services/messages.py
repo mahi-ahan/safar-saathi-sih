@@ -6,7 +6,6 @@ Urdu (ur), Telugu (te), Tamil (ta), Kannada (kn), Malayalam (ml),
 Odia (or), Punjabi (pa), Gujarati (gu).
 """
 
-from typing import Optional
 
 SUPPORTED_LANGUAGES = {
     "hi": "Hindi",
@@ -24,7 +23,7 @@ SUPPORTED_LANGUAGES = {
     "gu": "Gujarati"
 }
 
-def normalize_lang(lang: Optional[str]) -> str:
+def normalize_lang(lang: str | None) -> str:
     if not lang:
         return "hi"
     clean = str(lang).strip().lower()
@@ -42,7 +41,7 @@ def normalize_lang(lang: Optional[str]) -> str:
 def msg_trip_published(driver_name: str, from_loc: str, to_loc: str, date: str, vehicle: str, total_kg: int, price: float, pickup: str, lang: str = "hi") -> str:
     l = normalize_lang(lang)
     p_loc = str(pickup).strip() if (pickup and str(pickup).strip()) else "Driver route / Designated hub"
-    
+
     if l == "en":
         return (
             f"🌾 *Safar-Saathi: Trip Successfully Published*\n\n"
@@ -220,7 +219,7 @@ def msg_trip_published(driver_name: str, from_loc: str, to_loc: str, date: str, 
 def msg_booking_created_driver(driver_name: str, shipper_name: str, shipper_phone: str, weight: int, vehicle: str, route: str, pickup: str, fare: float, is_shared: bool = False, sharers_count: int = 1, lang: str = "hi") -> str:
     l = normalize_lang(lang)
     p_loc = str(pickup).strip() if (pickup and str(pickup).strip()) else "Designated Hub"
-    
+
     if l == "en":
         fare_text = f"💰 *Shared Fare for this Shipper:* ₹{fare:,.0f} (👥 Active Co-Shippers: {sharers_count})" if (is_shared and sharers_count > 1) else f"💰 *Trip Total Load Fare:* ₹{fare:,.0f} (Solo Shipper)"
         return (
@@ -372,7 +371,7 @@ def msg_booking_created_driver(driver_name: str, shipper_name: str, shipper_phon
 def msg_booking_created_shipper(shipper_name: str, driver_name: str, driver_phone: str, weight: int, vehicle: str, route: str, pickup: str, fare: float, is_shared: bool = False, sharers_count: int = 1, savings: float = 0.0, lang: str = "hi") -> str:
     l = normalize_lang(lang)
     p_loc = str(pickup).strip() if (pickup and str(pickup).strip()) else "Designated Hub"
-    
+
     if l == "en":
         if is_shared and sharers_count > 1:
             fare_section = (
@@ -1509,7 +1508,7 @@ def msg_cancelled_by_shipper_driver(driver_name: str, shipper_name: str, weight:
 # =========================================================================
 # 28. CHECKPOINT INSPECTION PASSED (To Shipper & Driver)
 # =========================================================================
-def msg_checkpoint_verified(user_name: str, checkpoint_name: str, officer_name: str, condition: str, temp_c: Optional[float] = None, lang: str = "hi") -> str:
+def msg_checkpoint_verified(user_name: str, checkpoint_name: str, officer_name: str, condition: str, temp_c: float | None = None, lang: str = "hi") -> str:
     l = normalize_lang(lang)
     temp_str = f" | ❄️ Temp: {temp_c}°C" if temp_c is not None else ""
     if l == "en":

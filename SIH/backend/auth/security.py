@@ -1,24 +1,20 @@
 import os
 import re
+import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
+from jose import jwt
 from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
-from google.oauth2 import id_token as google_id_token
-from google.auth.transport import requests as google_requests
 
 import models
+from config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY
 from database import get_db
-from config import (
-    SECRET_KEY,
-    ALGORITHM,
-    ACCESS_TOKEN_EXPIRE_MINUTES
-)
 
 GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
 
@@ -27,7 +23,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
-def validate_password_strength(password: str) -> Optional[str]:
+def validate_password_strength(password: str) -> str | None:
     """
     Validates password strength according to security standards:
     - Minimum 8 characters
@@ -58,7 +54,7 @@ def validate_password_strength(password: str) -> Optional[str]:
     return None
 
 
-def validate_username_format(username: str) -> Optional[str]:
+def validate_username_format(username: str) -> str | None:
     """
     Validates username format:
     - 3 to 30 characters
@@ -99,7 +95,7 @@ def create_access_token(data: dict) -> str:
     to_encode = data.copy()
 
     expire = (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         + timedelta(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
         )
@@ -116,7 +112,7 @@ def create_access_token(data: dict) -> str:
     )
 
 
-def resolve_user_from_token(token: Optional[str], db: Session) -> Optional[models.User]:
+def resolve_user_from_token(token: str | None, db: Session) -> models.User | None:
     """
     Safely resolves a User from either:
     1. A Safar-Saathi local JWT access token (HMAC-SHA256).
@@ -163,15 +159,15 @@ def resolve_user_from_token(token: Optional[str], db: Session) -> Optional[model
                 user = models.User(
                     username=unique_username,
                     email=email,
-                    password="OAUTH_GOOGLE_USER",
+                    password=f"oauth2_google_{secrets.token_hex(24)}",
                     role=models.UserRole.USER
                 )
                 db.add(user)
                 db.commit()
                 db.refresh(user)
             return user
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Google token verification error: {e}")
 
     return None
 
@@ -188,7 +184,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 
 def get_optional_current_user(
-    token: Optional[str] = Depends(oauth2_scheme_optional),
+    token: str | None = Depends(oauth2_scheme_optional),
     db: Session = Depends(get_db)
-) -> Optional[models.User]:
+) -> models.User | None:
     return resolve_user_from_token(token, db)

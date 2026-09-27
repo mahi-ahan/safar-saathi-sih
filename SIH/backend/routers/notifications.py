@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
-from typing import Optional
 import urllib.parse
 from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 import models
 from database import get_db
 
@@ -19,18 +20,18 @@ class DispatchMessageRequest(BaseModel):
     recipient_name: str = "Farmer"
     phone_number: str = "9876543210"
     trip_route: str = "Nashik → Pune"
-    vehicle_number: Optional[str] = "MH-15-AB-1234"
-    vehicle_model: Optional[str] = "Mini-Truck (Tata Ace)"
+    vehicle_number: str | None = "MH-15-AB-1234"
+    vehicle_model: str | None = "Mini-Truck (Tata Ace)"
     driver_name: str = "Ramesh Patil"
     driver_phone: str = "9876543210"
-    goods_weight_kg: Optional[float] = 400.0
-    pickup_time: Optional[str] = "07:00 AM"
-    pickup_place: Optional[str] = "Sinnar Mandi Toll Plaza"
-    fare_amount: Optional[float] = 1200.0
-    otp: Optional[str] = "5492"
-    tracking_url: Optional[str] = None
-    delivery_proof_url: Optional[str] = None
-    lang: Optional[str] = "hi"             # 'hi' | 'mr' | 'en'
+    goods_weight_kg: float | None = 400.0
+    pickup_time: str | None = "07:00 AM"
+    pickup_place: str | None = "Sinnar Mandi Toll Plaza"
+    fare_amount: float | None = 1200.0
+    otp: str | None = "5492"
+    tracking_url: str | None = None
+    delivery_proof_url: str | None = None
+    lang: str | None = "hi"             # 'hi' | 'mr' | 'en'
 
 
 def build_localized_messages(req: DispatchMessageRequest) -> dict:
@@ -190,7 +191,7 @@ def generate_dispatch_message(payload: DispatchMessageRequest):
 @router.get("/request/{request_id}")
 def get_request_dispatch_alert(
     request_id: str,
-    event_type: Optional[str] = None,
+    event_type: str | None = None,
     db: Session = Depends(get_db)
 ):
     """

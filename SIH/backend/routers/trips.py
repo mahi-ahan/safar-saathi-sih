@@ -588,16 +588,24 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
                 start_lock_reason = lock_reason
 
     # 3. Load verification rule:
-    # A scheduled trip with accepted/assigned cargo cannot start until all cargo is verified & loaded by logistics at pickup!
+    # A trip MUST have at least one accepted cargo shipment to start, AND all accepted cargo must be verified by logistics!
     active_cargo = get_trip_requests(trip, db, ["accepted", "assigned"])
     unverified_cargo = [r for r in active_cargo if getattr(r, "loading_status", "pending") != "loaded"]
-    is_load_verified = len(active_cargo) == 0 or len(unverified_cargo) == 0
-    unverified_cargo_count = len(unverified_cargo)
-
-    if trip.status in ["scheduled", "pending"] and not is_load_verified:
-        can_start_trip = False
-        if not start_lock_reason:
-            start_lock_reason = f"Load verification pending: {unverified_cargo_count} assigned cargo shipment(s) must be verified, weighed, and sealed by the ground logistics officer at pickup before departure."
+    
+    if len(active_cargo) == 0:
+        is_load_verified = False
+        unverified_cargo_count = 0
+        if trip.status in ["scheduled", "pending"]:
+            can_start_trip = False
+            if not start_lock_reason:
+                start_lock_reason = "No cargo bookings accepted yet. A trip requires at least one accepted booking before starting to prevent empty transit and invalid inspections."
+    else:
+        is_load_verified = len(unverified_cargo) == 0
+        unverified_cargo_count = len(unverified_cargo)
+        if trip.status in ["scheduled", "pending"] and not is_load_verified:
+            can_start_trip = False
+            if not start_lock_reason:
+                start_lock_reason = f"Load verification pending: {unverified_cargo_count} assigned cargo shipment(s) must be verified, weighed, and sealed by the ground logistics officer at pickup before departure."
 
     cps = (
         db.query(models.LogisticsCheckpointModel)
@@ -979,6 +987,11 @@ def update_trip_location(
     # LOAD VERIFICATION ENFORCEMENT:
     if (loc_data.is_live or loc_data.status == "in_transit") and trip.status in ["scheduled", "pending"]:
         trip_requests = get_trip_requests(trip, db, ["accepted", "assigned"])
+        if len(trip_requests) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot start trip without accepted cargo bookings. A trip requires at least one accepted and verified shipment before departure."
+            )
         unverified_loads = [r for r in trip_requests if getattr(r, "loading_status", "pending") != "loaded"]
         if unverified_loads:
             raise HTTPException(
@@ -1042,9 +1055,14 @@ def update_trip_status(
             )
 
     # LOAD VERIFICATION ENFORCEMENT:
-    # Driver CANNOT start trip until all accepted/assigned cargo loads have been verified and sealed by logistics team!
+    # Driver CANNOT start trip until at least one cargo load is accepted and all cargo loads are verified by logistics!
     if status == "in_transit" and trip.status in ["scheduled", "pending"]:
         trip_requests = get_trip_requests(trip, db, ["accepted", "assigned"])
+        if len(trip_requests) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot start trip without accepted cargo bookings. A trip requires at least one accepted and verified shipment before departure."
+            )
         unverified_loads = [r for r in trip_requests if getattr(r, "loading_status", "pending") != "loaded"]
         if unverified_loads:
             raise HTTPException(
@@ -1219,7 +1237,7 @@ def driver_complete_trip(
             detail=f"Cannot complete delivery. {len(unverified_unloads)} cargo shipment(s) are pending drop unloading verification by the ground logistics team in Tab 2. All cargo must be supervised, unsealed, and verified unloaded before completing delivery."
         )
 
-    # STAGE 2: MANDATORY DELIVERY PROOF VALIDATION
+    # STAGE 2: DELIVERY PROOF RESOLUTION (PROVIDED BY LOGISTICS AT UNLOAD)
     final_proof_url = None
 
     if delivery_proof_image is not None and delivery_proof_image.filename:
@@ -1227,11 +1245,12 @@ def driver_complete_trip(
     elif delivery_proof_image_url and str(delivery_proof_image_url).strip():
         final_proof_url = str(delivery_proof_image_url).strip()
 
-    if len(active_requests_check) > 0 and not final_proof_url:
-        raise HTTPException(
-            status_code=400,
-            detail="Mandatory Delivery Proof Required: Transporter must upload a verified cargo delivery proof photo (JPEG, PNG, WEBP) to complete the ride."
-        )
+    # Automatically inherit unload proof captured by ground logistics officer if not passed explicitly
+    if not final_proof_url:
+        for r in active_requests_check:
+            if getattr(r, "delivery_proof_image_url", None):
+                final_proof_url = r.delivery_proof_image_url
+                break
 
     try:
         trip.is_live = False
@@ -1695,6 +1714,13 @@ def start_trip_inspection(
     trip = db.query(models.TripModel).filter(models.TripModel.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+    active_requests = get_trip_requests(trip, db, ["accepted", "in_transit", "assigned", "pending_passenger_confirmation"])
+    if len(active_requests) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot perform inspection: No cargo shipments are present on this trip. Vehicle is empty."
+        )
 
     can_start, reason = trip_state_machine.can_start_inspection(trip)
     if not can_start:

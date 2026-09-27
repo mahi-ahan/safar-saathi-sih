@@ -3161,8 +3161,6 @@ export function OfferTrip() {
   const [incomingRequests, setIncomingRequests] = useState([])
   const [myTrips, setMyTrips] = useState([])
   const [activeLiveTripId, setActiveLiveTripId] = useState(null)
-  const [proofModal, setProofModal] = useState({ isOpen: false, tripId: null, proofUrl: null, uploading: false })
-  const [deliverModal, setDeliverModal] = useState({ isOpen: false, req: null, proofUrl: null, uploading: false })
   const [itineraryModal, setItineraryModal] = useState({ isOpen: false, trip: null, result: null, loading: false })
   const [driverMapModal, setDriverMapModal] = useState({ isOpen: false, trip: null })
   const liveIntervalRef = useRef(null)
@@ -3302,6 +3300,13 @@ export function OfferTrip() {
   };
 
   const startLiveTrip = async (trip) => {
+    // ENFORCE AT LEAST ONE ACCEPTED CARGO REQUEST: Cannot start empty trip
+    const activeCargoCount = (trip.partners ? trip.partners.filter(p => ['accepted', 'assigned', 'in_transit'].includes(p.status)).length : 0);
+    if (activeCargoCount === 0) {
+      notify("⚠ Cannot start trip: No cargo bookings accepted yet. A trip requires at least one accepted booking before starting.");
+      return;
+    }
+
     // ENFORCE LOAD VERIFICATION CHECK: Cannot start until logistics verifies cargo at pickup
     if (trip.can_start_trip === false || trip.is_load_verified === false || (trip.unverified_cargo_count && trip.unverified_cargo_count > 0)) {
       notify(`⚠ ${trip.start_lock_reason || "Cannot start trip. Cargo load must be verified, weighed, and sealed by the ground logistics officer before departure."}`);
@@ -3415,7 +3420,7 @@ export function OfferTrip() {
     );
   };
 
-  const driverCompleteTrip = (tripId) => {
+  const driverCompleteTrip = async (tripId) => {
     const trip = myTrips.find(t => t.id === tripId);
     if (trip && trip.partners) {
       const pendingUnloads = trip.partners.filter(p => {
@@ -3428,74 +3433,15 @@ export function OfferTrip() {
         return;
       }
     }
+    if (!window.confirm("Are you sure you want to complete this trip?")) return;
+
     isLiveActiveRef.current = false;
     if (liveIntervalRef.current) {
       clearInterval(liveIntervalRef.current);
       liveIntervalRef.current = null;
     }
     setActiveLiveTripId(null);
-    setProofModal({
-      isOpen: true,
-      tripId: tripId,
-      proofUrl: null,
-      uploading: false
-    });
-  };
 
-  const handleUploadDeliveryProof = async (file) => {
-    if (!file) return;
-    const token = localStorage.getItem("access_token");
-    const formData = new FormData();
-    formData.append("file", file);
-    setProofModal(prev => ({ ...prev, uploading: true }));
-    try {
-      notify("Uploading delivery proof photo...");
-      const uploadHeaders = {};
-      if (token && token !== "null" && token !== "undefined") {
-        uploadHeaders["Authorization"] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/trips/upload-delivery-proof`, {
-        method: "POST",
-        headers: uploadHeaders,
-        body: formData
-      });
-      const data = await res.json();
-      if (res.ok && data.delivery_proof_image_url) {
-        setProofModal(prev => ({ ...prev, proofUrl: data.delivery_proof_image_url, uploading: false }));
-        notify("✔ Delivery proof photo verified!");
-      } else {
-        setProofModal(prev => ({ ...prev, uploading: false }));
-        notify(data.detail || "Failed to upload delivery proof.");
-      }
-    } catch (err) {
-      setProofModal(prev => ({ ...prev, uploading: false }));
-      notify("Could not connect to backend to upload proof.");
-    }
-  };
-
-  const confirmCompleteWithProof = async () => {
-    if (!proofModal.proofUrl) {
-      notify("⚠ Mandatory: Please upload a delivery proof photo before completing this trip.");
-      return;
-    }
-    const currentTrip = myTrips.find(t => t.id === proofModal.tripId);
-    if (currentTrip && currentTrip.partners) {
-      const activeUnverified = currentTrip.partners.filter(p => {
-        const inc = incomingRequests.find(r => r.id === p.id);
-        const lStatus = p.loading_status || inc?.loading_status || 'pending';
-        return ['accepted', 'in_transit', 'pending'].includes(p.status) && lStatus !== 'unloaded';
-      });
-      if (activeUnverified.length > 0) {
-        notify(`⚠ Cannot complete delivery: ${activeUnverified.length} cargo shipment(s) are awaiting unload verification by the ground logistics team.`);
-        return;
-      }
-    }
-    isLiveActiveRef.current = false;
-    if (liveIntervalRef.current) {
-      clearInterval(liveIntervalRef.current);
-      liveIntervalRef.current = null;
-    }
-    setActiveLiveTripId(null);
     const token = localStorage.getItem("access_token");
     const headers = {};
     if (token && token !== "null" && token !== "undefined") {
@@ -3503,95 +3449,13 @@ export function OfferTrip() {
     }
     try {
       const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
-      const res = await fetch(`${API_BASE}/api/trips/${proofModal.tripId}/complete?delivery_proof_image_url=${encodeURIComponent(proofModal.proofUrl)}&lang=${encodeURIComponent(activeLang)}`, {
+      const res = await fetch(`${API_BASE}/api/trips/${tripId}/complete?lang=${encodeURIComponent(activeLang)}`, {
         method: "PUT",
         headers
       });
       if (res.ok) {
-        setMyTrips(prev => prev.map(t => t.id === proofModal.tripId ? { ...t, status: 'pending_passenger_confirmation', is_live: false } : t));
-        notify("✔ Delivery proof verified! Proof alerts dispatched to all shippers.");
-        setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false });
-        
-        fetchMyTrips();
-        const reqRes = await fetch(`${API_BASE}/api/requests/incoming`, {
-          headers
-        });
-        const reqData = await reqRes.json().catch(() => []);
-        if (reqRes.ok && Array.isArray(reqData)) {
-          setIncomingRequests(reqData);
-        }
-      } else {
-        const data = await res.json().catch(() => ({}));
-        notify(data.detail || "⚠ Failed to initiate trip completion.");
-      }
-    } catch (err) {
-      console.error("Failed to complete trip", err);
-      notify("Could not connect to backend.");
-    }
-  };
-
-  const handleUploadIndividualDeliveryProof = async (file) => {
-    if (!file) return;
-    const token = localStorage.getItem("access_token");
-    const formData = new FormData();
-    formData.append("file", file);
-    setDeliverModal(prev => ({ ...prev, uploading: true }));
-    try {
-      notify("Uploading cargo drop-off proof photo...");
-      const uploadHeaders = {};
-      if (token && token !== "null" && token !== "undefined") {
-        uploadHeaders["Authorization"] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/requests/upload-delivery-proof`, {
-        method: "POST",
-        headers: uploadHeaders,
-        body: formData
-      });
-      const data = await res.json();
-      if (res.ok && data.delivery_proof_image_url) {
-        setDeliverModal(prev => ({ ...prev, proofUrl: data.delivery_proof_image_url, uploading: false }));
-        notify("✔ Cargo drop-off proof photo verified!");
-      } else {
-        setDeliverModal(prev => ({ ...prev, uploading: false }));
-        notify(data.detail || "Failed to upload delivery proof.");
-      }
-    } catch (err) {
-      setDeliverModal(prev => ({ ...prev, uploading: false }));
-      notify("Could not connect to backend to upload proof.");
-    }
-  };
-
-  const confirmDeliverIndividualCargo = async () => {
-    if (!deliverModal.req || !deliverModal.proofUrl) {
-      notify("⚠ Mandatory: Please upload a delivery proof photo before completing drop-off.");
-      return;
-    }
-    const incReq = incomingRequests.find(r => r.id === deliverModal.req.id);
-    const lStatus = deliverModal.req.loading_status || incReq?.loading_status || 'pending';
-    if (lStatus !== 'unloaded') {
-      notify("⚠ Cannot complete delivery: Cargo unload has not been verified yet! The logistics team must supervise and verify cargo unloading in the Logistics Portal before delivery can be completed.");
-      return;
-    }
-    const token = localStorage.getItem("access_token");
-    const headers = {};
-    if (token && token !== "null" && token !== "undefined") {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-    try {
-      const activeLang = typeof localStorage !== 'undefined' ? localStorage.getItem("ss_lang") || lang || "hi" : lang || "hi";
-      const formData = new FormData();
-      formData.append("delivery_proof_image_url", deliverModal.proofUrl);
-      formData.append("lang", activeLang);
-
-      const res = await fetch(`${API_BASE}/api/requests/${deliverModal.req.id}/deliver-proof`, {
-        method: "POST",
-        headers,
-        body: formData
-      });
-      if (res.ok) {
-        notify(`✔ Delivery proof submitted for ${deliverModal.req.farmer_name || 'Shipper'}! Waiting for passenger confirmation.`);
-        setDeliverModal({ isOpen: false, req: null, proofUrl: null, uploading: false });
-        
+        setMyTrips(prev => prev.map(t => t.id === tripId ? { ...t, status: 'pending_passenger_confirmation', is_live: false } : t));
+        notify("✔ Trip completed! Passenger confirmations requested.");
         fetchMyTrips();
         const reqRes = await fetch(`${API_BASE}/api/requests/incoming`, { headers });
         const reqData = await reqRes.json().catch(() => []);
@@ -3600,10 +3464,10 @@ export function OfferTrip() {
         }
       } else {
         const data = await res.json().catch(() => ({}));
-        notify(data.detail || "⚠ Failed to submit individual drop-off proof.");
+        notify(data.detail || "⚠ Failed to complete trip.");
       }
     } catch (err) {
-      console.error("Failed to deliver individual cargo", err);
+      console.error("Failed to complete trip", err);
       notify("Could not connect to backend.");
     }
   };
@@ -4685,36 +4549,17 @@ export function OfferTrip() {
                                     )}
 
                                     {isWaitingUnload && (
-                                      <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs" title="Logistics Ground Desk must supervise and verify cargo unloading in Logistics Portal before drop-off">
+                                      <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs" title="Logistics Ground Desk will supervise and verify cargo unloading in Logistics Portal at destination">
                                         <span>⏳</span>
-                                        <span>Unload Verification Pending</span>
+                                        <span>Awaiting Logistics Unload</span>
                                       </span>
                                     )}
 
-                                    {canDeliver && (
-                                      <button
-                                        onClick={() => {
-                                          const fullReq = incomingRequests.find(r => r.id === p.id) || {
-                                            id: p.id,
-                                            farmer_name: p.farmer_name,
-                                            goods_weight_kg: p.goods_weight_kg,
-                                            loading_status: p.loading_status || incReq?.loading_status,
-                                            route: p.route || `${trip.from_loc || trip.from} → ${trip.to_loc || trip.to}`,
-                                            pickup_place: p.pickup_place
-                                          };
-                                          setDeliverModal({
-                                            isOpen: true,
-                                            req: fullReq,
-                                            proofUrl: null,
-                                            uploading: false
-                                          });
-                                        }}
-                                        className="px-2.5 py-1 bg-green-deep hover:bg-green text-cream font-bold text-[10.5px] rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer animate-pulse"
-                                        title={`Deliver ${p.farmer_name}'s cargo with drop-off proof photo`}
-                                      >
-                                        <span>📸</span>
-                                        <span>Deliver Cargo</span>
-                                      </button>
+                                    {isUnloadVerified && (
+                                      <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                                        <span>✔</span>
+                                        <span>Unloaded by Logistics</span>
+                                      </span>
                                     )}
 
                                     {p.delivery_proof_image_url && (
@@ -4723,7 +4568,7 @@ export function OfferTrip() {
                                         target="_blank"
                                         rel="noreferrer"
                                         className="w-7 h-7 rounded-lg overflow-hidden border border-emerald-400 shrink-0 block hover:opacity-80 shadow-2xs"
-                                        title="View Drop-off Photo Proof for this shipper"
+                                        title="View Drop-off Photo Proof recorded by logistics"
                                       >
                                         <img src={`${API_BASE}${p.delivery_proof_image_url}`} alt="Proof" className="w-full h-full object-cover" />
                                       </a>
@@ -4842,14 +4687,20 @@ export function OfferTrip() {
                                 )}
                               </div>
                             </div>
-                          ) : (trip.can_start_trip === false || trip.is_load_verified === false || (trip.unverified_cargo_count && trip.unverified_cargo_count > 0)) ? (
+                          ) : (trip.can_start_trip === false || trip.is_load_verified === false || (trip.unverified_cargo_count && trip.unverified_cargo_count > 0) || !(trip.partners && trip.partners.some(p => ['accepted', 'assigned', 'in_transit'].includes(p.status)))) ? (
                             <div className="space-y-2">
                               <div className="rounded-xl bg-amber-50 border border-amber-300 p-2.5 text-xs text-amber-900 flex items-start gap-2">
                                 <span className="text-base shrink-0">🔒</span>
                                 <div>
-                                  <p className="font-bold text-amber-950 text-xs">Trip Start Locked · Load Verification Pending</p>
+                                  <p className="font-bold text-amber-950 text-xs">
+                                    {!(trip.partners && trip.partners.some(p => ['accepted', 'assigned', 'in_transit'].includes(p.status)))
+                                      ? "Trip Start Locked · Awaiting Cargo Bookings"
+                                      : "Trip Start Locked · Load Verification Pending"}
+                                  </p>
                                   <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                                    {trip.start_lock_reason || "Assigned cargo must be verified, weighed, and sealed by the ground logistics officer at pickup before departure."}
+                                    {trip.start_lock_reason || (!(trip.partners && trip.partners.some(p => ['accepted', 'assigned', 'in_transit'].includes(p.status)))
+                                      ? "No cargo bookings accepted yet. A trip requires at least one accepted booking before starting to prevent empty transit and invalid inspections."
+                                      : "Assigned cargo must be verified, weighed, and sealed by the ground logistics officer at pickup before departure.")}
                                   </p>
                                 </div>
                               </div>
@@ -4857,10 +4708,14 @@ export function OfferTrip() {
                                 <button
                                   disabled
                                   className="flex-1 min-w-[140px] py-2.5 bg-amber-50 text-amber-800 font-semibold text-xs rounded-xl border border-amber-300 flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-90 shadow-2xs"
-                                  title={trip.start_lock_reason || "Cargo load must be verified in logistics portal before departure"}
+                                  title={trip.start_lock_reason || "Cargo bookings and verification required before departure"}
                                 >
                                   <Lock size={15} className="text-amber-600" />
-                                  <span>Load Verification Pending</span>
+                                  <span>
+                                    {!(trip.partners && trip.partners.some(p => ['accepted', 'assigned', 'in_transit'].includes(p.status)))
+                                      ? "Awaiting Cargo Bookings"
+                                      : "Load Verification Pending"}
+                                  </span>
                                 </button>
                                 {(trip.status === 'scheduled' || trip.status === 'pending' || !trip.status) && (
                                   <button
@@ -4976,7 +4831,7 @@ export function OfferTrip() {
                                 </div>
                               )}
                               <p className="text-[11px] text-green-soft text-center italic">
-                                Deliver each cargo at its respective drop-off hub above using the "📸 Deliver Cargo" button once unloaded.
+                                Cargo unloading & final drop-off verification is managed by ground logistics at the destination hub.
                               </p>
                             </div>
                           ) : activePartners.length > 0 ? (
@@ -5314,20 +5169,10 @@ export function OfferTrip() {
                         <div className="space-y-2">
                           {isLinkedTripLive ? (
                             <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <button
-                                onClick={() => {
-                                  setDeliverModal({
-                                    isOpen: true,
-                                    req: req,
-                                    proofUrl: null,
-                                    uploading: false
-                                  });
-                                }}
-                                className="flex-1 py-2.5 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
-                              >
-                                <span>📸</span>
-                                <span>Deliver Cargo & Upload Drop-off Proof</span>
-                              </button>
+                              <div className="flex-1 py-2 px-3 bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs rounded-xl flex items-center gap-2">
+                                <span>🚚</span>
+                                <span className="font-semibold">In-Transit • Destination unload & proof verified by logistics team</span>
+                              </div>
                               <button
                                 onClick={async () => {
                                   if (!window.confirm(`Are you sure you want to cancel the accepted ride for ${req.farmer_name}?`)) return;
@@ -6421,239 +6266,7 @@ export function OfferTrip() {
         </div>
       )}
 
-      {/* INDIVIDUAL SHIPPER CARGO DROP-OFF PROOF MODAL (STAGE 2) */}
-      {deliverModal.isOpen && deliverModal.req && (
-        <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-[fadeIn_.2s_ease]">
-          <div className="bg-white rounded-3xl border border-gold/40 shadow-2xl max-w-md w-full p-6 animate-[scaleIn_.25s_ease] max-h-[90vh] overflow-y-auto">
-            <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center mb-3 text-3xl shadow-inner">
-                📦
-              </div>
-              <h3 className="font-display font-bold text-2xl text-green-deep">
-                Deliver Shipper Cargo
-              </h3>
-              <p className="text-xs text-green-soft mt-1 leading-relaxed">
-                Upload a verified delivery proof photo specifically for <strong>{deliverModal.req.farmer_name}</strong> at their drop-off location.
-              </p>
-            </div>
 
-            {/* SHIPPER CARGO DETAILS CARD */}
-            <div className="mt-4 rounded-2xl bg-cream/70 border border-gold/30 p-3.5 space-y-1.5 text-xs">
-              <div className="flex justify-between items-center">
-                <span className="text-green-soft font-medium">👤 Shipper / Farmer:</span>
-                <span className="font-bold text-green-deep">{deliverModal.req.farmer_name}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-green-soft font-medium">⚖ Cargo Weight:</span>
-                <span className="font-bold text-green-deep">{deliverModal.req.goods_weight_kg || deliverModal.req.kg} kg</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-green-soft font-medium">🛣 Route:</span>
-                <span className="font-bold text-green-deep truncate max-w-[200px]">{deliverModal.req.route || 'Cargo Route'}</span>
-              </div>
-              {deliverModal.req.pickup_place && (
-                <div className="flex justify-between items-start pt-1 border-t border-gold/15">
-                  <span className="text-green-soft shrink-0">📍 Pickup / Drop-off:</span>
-                  <span className="font-medium text-green-deep text-right truncate max-w-[200px]">{deliverModal.req.pickup_place}</span>
-                </div>
-              )}
-            </div>
-
-            {/* UPLOAD DROPZONE */}
-            <div className="mt-4 space-y-3">
-              <label className="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-emerald-400/70 hover:border-green-deep rounded-2xl bg-emerald-50/40 hover:bg-emerald-50 cursor-pointer transition text-center">
-                <Upload size={24} className="text-emerald-600" />
-                <span className="text-xs font-bold text-green-deep">
-                  {deliverModal.proofUrl ? "✔ Change Drop-off Photo" : "Take or Choose Drop-off Photo (Mandatory)"}
-                </span>
-                <span className="text-[11px] text-green-soft">Take a photo of the delivered goods at drop-off</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => handleUploadIndividualDeliveryProof(e.target.files?.[0])}
-                />
-              </label>
-
-              {deliverModal.proofUrl && (
-                <div className="rounded-2xl border-2 border-emerald-500 overflow-hidden bg-black/5 p-2">
-                  <img
-                    src={`${API_BASE}${deliverModal.proofUrl}`}
-                    alt="Drop-off Proof Preview"
-                    className="w-full h-44 object-cover rounded-xl"
-                  />
-                  <p className="text-[11px] font-bold text-emerald-800 text-center mt-1.5 flex items-center justify-center gap-1">
-                    <span>✔</span>
-                    <span>Drop-off Photo Attached & Ready to Send to {deliverModal.req.farmer_name}</span>
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* ACTION BUTTONS */}
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setDeliverModal({ isOpen: false, req: null, proofUrl: null, uploading: false })}
-                className="flex-1 py-3 px-4 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold text-xs transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!deliverModal.proofUrl || deliverModal.uploading}
-                onClick={confirmDeliverIndividualCargo}
-                className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                  deliverModal.proofUrl && !deliverModal.uploading
-                    ? 'bg-green-deep hover:bg-green text-cream'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                <span>🚀</span>
-                <span>{deliverModal.uploading ? 'Uploading...' : 'Confirm & Notify Shipper'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MANDATORY DELIVERY PROOF PHOTO MODAL (STAGE 2) */}
-      {proofModal.isOpen && (
-        <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-[fadeIn_.2s_ease]">
-          <div className="bg-white rounded-3xl border border-gold/40 shadow-2xl max-w-md w-full p-6 animate-[scaleIn_.25s_ease]">
-            <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-700 mx-auto flex items-center justify-center mb-3 text-3xl shadow-inner">
-                📸
-              </div>
-              <h3 className="font-display font-bold text-2xl text-green-deep">
-                Upload Delivery Proof
-              </h3>
-              <p className="text-xs text-green-soft mt-1 leading-relaxed">
-                Stage 2 Verification: Transporters can upload individual drop-off photos for each recipient, or a photo below to finalize the ride.
-              </p>
-            </div>
-
-            {/* CARGO SHIPPERS ON THIS TRIP LIST */}
-            {(() => {
-              const activeTrip = myTrips.find(t => t.id === proofModal.tripId);
-              if (!activeTrip || !activeTrip.partners || activeTrip.partners.length === 0) return null;
-
-              return (
-                <div className="mt-4 text-left rounded-2xl bg-emerald-50/70 border border-emerald-300 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                      <span>📦</span>
-                      <span>Individual Cargo Drop-offs ({activeTrip.partners.length})</span>
-                    </span>
-                    <span className="text-[10px] text-emerald-700 font-semibold font-mono">Individual Verification</span>
-                  </div>
-                  <p className="text-[11px] text-emerald-800">
-                    Upload an individual photo for each recipient upon their respective drop-off:
-                  </p>
-                  <div className="space-y-1.5 mt-1 max-h-40 overflow-y-auto pr-1">
-                    {activeTrip.partners.map(p => {
-                      const isDelivered = p.status === 'pending_passenger_confirmation' || p.status === 'completed';
-                      return (
-                        <div key={p.id} className="bg-white/90 p-2 rounded-xl border border-emerald-200 flex items-center justify-between text-xs gap-2">
-                          <div className="min-w-0">
-                            <p className="font-bold text-emerald-950 truncate">👤 {p.farmer_name}</p>
-                            <p className="text-[10.5px] text-emerald-700">{p.goods_weight_kg} kg · {p.pickup_place || 'Drop-off'}</p>
-                          </div>
-                          {isDelivered ? (
-                            <span className="text-[10.5px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 shrink-0 flex items-center gap-1">
-                              <span>✔</span>
-                              <span>Photo Sent</span>
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const fullReq = incomingRequests.find(r => r.id === p.id) || {
-                                  id: p.id,
-                                  farmer_name: p.farmer_name,
-                                  goods_weight_kg: p.goods_weight_kg,
-                                  route: p.route || `${activeTrip.from_loc || activeTrip.from} → ${activeTrip.to_loc || activeTrip.to}`,
-                                  pickup_place: p.pickup_place
-                                };
-                                setProofModal(prev => ({ ...prev, isOpen: false }));
-                                setDeliverModal({
-                                  isOpen: true,
-                                  req: fullReq,
-                                  proofUrl: null,
-                                  uploading: false
-                                });
-                              }}
-                              className="px-2.5 py-1 bg-green-deep hover:bg-green text-cream font-bold text-[10.5px] rounded-lg shadow-2xs transition shrink-0 flex items-center gap-1 cursor-pointer"
-                            >
-                              <span>📸</span>
-                              <span>Send Drop-off Photo</span>
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* UPLOAD DROPZONE */}
-            <div className="mt-4 space-y-3">
-              <label className="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-gold/50 hover:border-green-deep rounded-2xl bg-cream/30 hover:bg-gold/5 cursor-pointer transition text-center">
-                <Upload size={24} className="text-gold" />
-                <span className="text-xs font-bold text-green-deep">
-                  {proofModal.proofUrl ? "✔ Change Delivery Photo" : "Take or Choose Delivery Photo (Mandatory)"}
-                </span>
-                <span className="text-[11px] text-green-soft">Supports JPG, PNG, WEBP from Camera or Gallery</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => handleUploadDeliveryProof(e.target.files?.[0])}
-                />
-              </label>
-
-              {proofModal.proofUrl && (
-                <div className="rounded-2xl border-2 border-emerald-500 overflow-hidden bg-black/5 p-2">
-                  <img
-                    src={`${API_BASE}${proofModal.proofUrl}`}
-                    alt="Delivery Proof Preview"
-                    className="w-full h-44 object-cover rounded-xl"
-                  />
-                  <p className="text-[11px] font-bold text-emerald-800 text-center mt-1.5 flex items-center justify-center gap-1">
-                    <span>✔</span>
-                    <span>Delivery Proof Photo Attached & Verified</span>
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* ACTION BUTTONS */}
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setProofModal({ isOpen: false, tripId: null, proofUrl: null, uploading: false })}
-                className="flex-1 py-3 px-4 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold text-xs transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!proofModal.proofUrl || proofModal.uploading}
-                onClick={confirmCompleteWithProof}
-                className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                  proofModal.proofUrl && !proofModal.uploading
-                    ? 'bg-green-deep hover:bg-green text-cream'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                <span>🏁</span>
-                <span>{proofModal.uploading ? 'Uploading...' : 'Confirm & Complete'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MULTI-STOP OPTIMAL ITINERARY MODAL */}
       {itineraryModal.isOpen && (

@@ -1377,7 +1377,8 @@ def get_logistics_trips_and_shipments(
 
         active_cargo = [r for r in trip_reqs if r["status"] not in ["cancelled", "rejected", "cancelled_by_driver"]]
         unverified_cargo = [r for r in active_cargo if r.get("loading_status", "pending") != "loaded"]
-        is_load_verified = len(active_cargo) == 0 or len(unverified_cargo) == 0
+        has_cargo = len(active_cargo) > 0
+        is_load_verified = has_cargo and len(unverified_cargo) == 0
         unverified_cargo_count = len(unverified_cargo)
         verified_cargo_count = len([r for r in active_cargo if r.get("loading_status") == "loaded"])
 

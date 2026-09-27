@@ -416,68 +416,49 @@ function Maps({
 
 
   /* =====================================================
-     FIND VEHICLE MODE
+     ROUTE & CORRIDOR MAP MODE (FIND VEHICLE, OFFER TRIP, LOGISTICS)
   ===================================================== */
 
-  useEffect(() => {
+  const isRouteMode = ['findVehicle', 'driver', 'offerTrip', 'logistics', 'route'].includes(mode);
 
-    if (mode !== 'findVehicle') return
+  useEffect(() => {
+    if (!isRouteMode) return;
 
     const map = L.map(mapRef.current, {
       zoomControl: false
-    }).setView(
-      [20.5937, 78.9629],
-      5
-    )
+    }).setView([20.5937, 78.9629], 5);
 
-    leafletMapRef.current = map
-
+    leafletMapRef.current = map;
 
     L.tileLayer(
       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      {
-        attribution:
-          '&copy; OpenStreetMap contributors'
-      }
-    ).addTo(map)
+      { attribution: '&copy; OpenStreetMap contributors' }
+    ).addTo(map);
 
-
-    L.control.zoom({
-      position: 'bottomright'
-    }).addTo(map)
-
-    setLoading(false)
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    setLoading(false);
 
     return () => {
       if (leafletMapRef.current) {
-        leafletMapRef.current.remove()
-        leafletMapRef.current = null
+        leafletMapRef.current.remove();
+        leafletMapRef.current = null;
       }
-    }
-
-  }, [mode])
+    };
+  }, [mode, isRouteMode]);
 
 
   /* =====================================================
-     UPDATE FIND VEHICLE INDEPENDENT MARKERS
+     UPDATE ROUTE INDEPENDENT MARKERS (ALL ROUTE MODES)
   ===================================================== */
 
   useEffect(() => {
-
-    if (
-      mode !== 'findVehicle' ||
-      !leafletMapRef.current
-    ) {
-      return
-    }
-
-    const map = leafletMapRef.current
+    if (!isRouteMode || !leafletMapRef.current) return;
+    const map = leafletMapRef.current;
 
     Object.values(markersRef.current).forEach(marker => {
-      map.removeLayer(marker)
-    })
-
-    markersRef.current = {}
+      map.removeLayer(marker);
+    });
+    markersRef.current = {};
 
     trips.forEach(trip => {
       if (
@@ -488,7 +469,7 @@ function Maps({
         trip.status === 'cancelled' ||
         trip.status === 'completed'
       ) {
-        return
+        return;
       }
 
       const isLive = trip.status === 'in_transit' || trip.is_live;
@@ -513,7 +494,7 @@ function Maps({
             <br/>
             <span style="font-size:12px;color:#166534;font-weight:600;">Status: ${(trip.status || 'scheduled').toUpperCase()}</span>
             ${trip.has_perishables ? `<br/><span style="font-size:11px;color:#0284c7;font-weight:bold;background:#f0f9ff;padding:2px 6px;border-radius:6px;border:1px solid #bae6fd;display:inline-block;margin-top:4px;">❄️ Cold-Chain Perishables</span>` : ''}
-            ${trip.current_checkpoint ? `<br/><span style="font-size:11px;color:#92400e;font-weight:bold;display:inline-block;margin-top:2px;">🛑 Checkpoint: ${trip.current_checkpoint}</span>` : ''}
+            ${trip.next_inspection_point ? `<br/><span style="font-size:11px;color:#c2410c;font-weight:bold;display:inline-block;margin-top:2px;">🛑 Next Checkpoint: ${trip.next_inspection_point}</span>` : ''}
           </div>
         `);
 
@@ -541,7 +522,7 @@ function Maps({
           .bindPopup(`
             <div style="min-width:200px;font-family:Arial,sans-serif;padding:4px;">
               <div style="background:#f59e0b;color:white;font-weight:bold;padding:3px 8px;border-radius:12px;display:inline-block;font-size:11px;margin-bottom:6px;">📦 PICKUP LOCATION</div><br/>
-              <b style="font-size:13px;color:#1F3D2B;">${trip.pickup || trip.from || 'Pickup Point'}</b><br/>
+              <b style="font-size:13px;color:#1F3D2B;">${trip.pickup || trip.from || trip.from_loc || 'Pickup Point'}</b><br/>
               <span style="font-size:12px;color:#4b5563;">🚛 Vehicle: ${trip.vehicle} (${trip.owner})</span><br/>
               <span style="font-size:12px;color:#166534;font-weight:600;">Available: ${trip.available_space_kg ?? (trip.total_kg || 1000)} kg</span>
             </div>
@@ -554,7 +535,7 @@ function Maps({
       }
     });
 
-  }, [trips, mode, onTripSelect])
+  }, [trips, mode, isRouteMode, onTripSelect])
 
 
   /* =====================================================
@@ -562,7 +543,7 @@ function Maps({
   ===================================================== */
 
   useEffect(() => {
-    if (mode !== 'findVehicle' || !leafletMapRef.current || !focusMode) return;
+    if (!isRouteMode || !leafletMapRef.current || !focusMode) return;
     const map = leafletMapRef.current;
     const { type, lat, lng, tripId } = focusMode;
     if (!lat || !lng) return;
@@ -581,16 +562,18 @@ function Maps({
         } catch (e) {}
       }, 500);
     }
-  }, [focusMode, mode]);
+  }, [focusMode, isRouteMode]);
 
 
 
   /* =====================================================
      GOOGLE MAPS STYLE ROUTE RENDERER FOR SELECTED VEHICLE
+     Renders: Origin, Destination, Completed Checkpoints (🛡️),
+     Next Inspection Point (🛑), and Individual Cargo Pickup Docks (📦 / 🧊)
   ===================================================== */
 
   useEffect(() => {
-    if (mode !== 'findVehicle' || !leafletMapRef.current) return;
+    if (!isRouteMode || !leafletMapRef.current) return;
     const map = leafletMapRef.current;
 
     // Clean up previous route layers & markers
@@ -599,12 +582,7 @@ function Maps({
     activeRouteMarkersRef.current.forEach(marker => map.removeLayer(marker));
     activeRouteMarkersRef.current = [];
 
-    if (!selectedTripId) {
-      setRouteInfo(null);
-      return;
-    }
-
-    const trip = trips.find(item => item.id === selectedTripId);
+    const trip = (selectedTripId ? trips.find(item => item.id === selectedTripId) : null) || (trips.length === 1 ? trips[0] : null);
     if (!trip || trip.status === 'cancelled_by_driver' || trip.status === 'cancelled') {
       setRouteInfo(null);
       return;
@@ -614,13 +592,12 @@ function Maps({
 
     async function drawTripRoute() {
       try {
-        const startLat = trip.lat;
-        const startLng = trip.lng;
+        const startLat = trip.pickup_lat || trip.lat;
+        const startLng = trip.pickup_lng || trip.lng;
         if (!startLat || !startLng) return;
 
-        let destLat = trip.destLat;
-        let destLng = trip.destLng;
-
+        let destLat = trip.dest_lat || trip.destLat;
+        let destLng = trip.dest_lng || trip.destLng;
 
         if (!destLat || !destLng) {
           const destResolved = await geocodeIndianLocation(trip.to || trip.to_loc);
@@ -670,31 +647,173 @@ function Maps({
 
         activeRouteLayersRef.current = [corridorBuffer, casingPolyline, corePolyline];
 
+        const newMarkers = [];
+
         // 3. Start Marker (🟢 Driver Origin)
         const startIcon = L.divIcon({
           className: 'route-start-icon',
-          html: `<div style="background:#16a34a;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;">🟢</div>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15]
+          html: `<div style="background:#16a34a;color:white;width:32px;height:32px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;">🟢</div>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
         });
         const startMarker = L.marker(startCoords, { icon: startIcon })
           .addTo(map)
-          .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🟢 Origin:<br/><span style="font-weight:normal;color:#4b5563;">${trip.from || trip.from_loc}</span></div>`);
+          .bindPopup(`
+            <div style="font-family:Arial,sans-serif;font-size:12px;min-width:180px;padding:3px;">
+              <div style="background:#16a34a;color:white;font-weight:bold;padding:2px 8px;border-radius:10px;display:inline-block;font-size:10px;margin-bottom:4px;">🟢 ORIGIN TERMINAL</div>
+              <p style="font-weight:bold;color:#1F3D2B;margin:0 0 4px 0;">${trip.from || trip.from_loc}</p>
+              <span style="font-size:11px;color:#4b5563;">Transporter: <strong>${trip.owner}</strong> (${trip.vehicle})</span>
+            </div>
+          `);
+        newMarkers.push(startMarker);
 
         // 4. Destination Marker (🏁 Driver Destination)
         const destIcon = L.divIcon({
           className: 'route-dest-icon',
-          html: `<div style="background:#dc2626;color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;">🏁</div>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15]
+          html: `<div style="background:#dc2626;color:white;width:32px;height:32px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;">🏁</div>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
         });
         const destMarker = L.marker(destCoords, { icon: destIcon })
           .addTo(map)
-          .bindPopup(`<div style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1F3D2B;">🏁 Destination:<br/><span style="font-weight:normal;color:#4b5563;">${trip.to || trip.to_loc}</span></div>`);
+          .bindPopup(`
+            <div style="font-family:Arial,sans-serif;font-size:12px;min-width:180px;padding:3px;">
+              <div style="background:#dc2626;color:white;font-weight:bold;padding:2px 8px;border-radius:10px;display:inline-block;font-size:10px;margin-bottom:4px;">🏁 DESTINATION TERMINAL</div>
+              <p style="font-weight:bold;color:#1F3D2B;margin:0 0 4px 0;">${trip.to || trip.to_loc}</p>
+              <span style="font-size:11px;color:#4b5563;">Total Cargo Load: <strong>${trip.total_booked_kg || 0} / ${trip.total_kg || 1000} kg</strong></span>
+            </div>
+          `);
+        newMarkers.push(destMarker);
 
-        const newMarkers = [startMarker, destMarker];
+        // 5. Completed Highway Checkpoints (🛡️ Green Shield Marker with verified telemetry)
+        if (trip.checkpoints && trip.checkpoints.length > 0) {
+          trip.checkpoints.forEach((cp, idx) => {
+            let cpLat = cp.lat;
+            let cpLng = cp.lng;
+            if (!cpLat || !cpLng) {
+              const desMatch = (trip.designated_checkpoints || []).find(d =>
+                (d.checkpoint_name || '').toLowerCase() === (cp.checkpoint_name || '').toLowerCase()
+              );
+              if (desMatch && desMatch.lat) {
+                cpLat = desMatch.lat;
+                cpLng = desMatch.lng;
+              } else if (points.length > 2) {
+                const fraction = (idx + 1) / ((trip.max_inspections || 2) + 1);
+                const ptIdx = Math.min(points.length - 2, Math.max(1, Math.floor(points.length * fraction)));
+                cpLat = points[ptIdx][0];
+                cpLng = points[ptIdx][1];
+              }
+            }
+            if (cpLat && cpLng) {
+              const cpIcon = L.divIcon({
+                className: 'checkpoint-verified-icon',
+                html: `<div style="background:#059669;color:white;width:32px;height:32px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:14px;" title="${cp.checkpoint_name}">🛡️</div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+              });
+              const cpMarker = L.marker([cpLat, cpLng], { icon: cpIcon })
+                .addTo(map)
+                .bindPopup(`
+                  <div style="font-family:Arial,sans-serif;font-size:12px;min-width:210px;padding:3px;">
+                    <div style="background:#059669;color:white;font-weight:bold;padding:2px 8px;border-radius:10px;display:inline-block;font-size:10px;margin-bottom:4px;">✔ CHECKPOINT INSPECTED</div>
+                    <p style="font-weight:bold;color:#064e3b;margin:0 0 4px 0;">🛡️ Halt #${idx + 1}: ${cp.checkpoint_name}</p>
+                    <span style="font-size:11px;color:#374151;">Officer: <strong>${cp.officer_name || 'Field Officer'}</strong> (${cp.timestamp})</span><br/>
+                    <span style="font-size:11px;color:#374151;">Seal: <strong>#${cp.seal_number || 'N/A'}</strong> (${cp.cargo_seal_intact ? '✔ Intact' : 'Tampered'})</span><br/>
+                    <span style="font-size:11px;color:#374151;">Weight: <strong>${cp.measured_weight_kg ? cp.measured_weight_kg + ' kg' : 'N/A'}</strong> (${cp.weight_compliant !== false ? 'Compliant' : 'Flagged'})</span>
+                  </div>
+                `);
+              newMarkers.push(cpMarker);
+            }
+          });
+        }
 
-        // 5. Sender Custom Pickup Pin (📦 Pickup)
+        // 6. Next Inspection Point (🛑 Amber Pulsing Halt Badge)
+        const isFullyInspected = trip.inspection_completed || ((trip.inspections_remaining || 0) === 0);
+        if (trip.next_inspection_point && !isFullyInspected) {
+          let nextLat = trip.next_inspection_lat;
+          let nextLng = trip.next_inspection_lng;
+          if (!nextLat || !nextLng) {
+            const desMatch = (trip.designated_checkpoints || []).find(d =>
+              (d.checkpoint_name || '').toLowerCase() === (trip.next_inspection_point || '').toLowerCase()
+            );
+            if (desMatch && desMatch.lat) {
+              nextLat = desMatch.lat;
+              nextLng = desMatch.lng;
+            } else if (points.length > 2) {
+              const countDone = (trip.checkpoints ? trip.checkpoints.length : (trip.checkpoint_count || 0));
+              const fraction = (countDone + 1) / ((trip.max_inspections || 2) + 1);
+              const ptIdx = Math.min(points.length - 2, Math.max(1, Math.floor(points.length * fraction)));
+              nextLat = points[ptIdx][0];
+              nextLng = points[ptIdx][1];
+            }
+          }
+          if (nextLat && nextLng) {
+            const nextCpIcon = L.divIcon({
+              className: 'next-checkpoint-icon',
+              html: `<div style="background:#ea580c;color:white;width:34px;height:34px;border-radius:50%;border:3px solid #ffedd5;box-shadow:0 0 14px rgba(234,88,12,0.85);display:flex;align-items:center;justify-content:center;font-size:15px;" title="Next Inspection Point">🛑</div>`,
+              iconSize: [34, 34],
+              iconAnchor: [17, 17]
+            });
+            const nextMarker = L.marker([nextLat, nextLng], { icon: nextCpIcon })
+              .addTo(map)
+              .bindPopup(`
+                <div style="font-family:Arial,sans-serif;font-size:12px;min-width:220px;padding:3px;">
+                  <div style="background:#ea580c;color:white;font-weight:bold;padding:2px 8px;border-radius:10px;display:inline-block;font-size:10px;margin-bottom:4px;">🛑 NEXT INSPECTION POINT</div>
+                  <p style="font-weight:bold;color:#9a3412;margin:0 0 4px 0;">${trip.next_inspection_point}</p>
+                  <span style="font-size:11px;color:#4b5563;">Corridor Halt <strong>${(trip.checkpoint_count || (trip.checkpoints ? trip.checkpoints.length : 0)) + 1} of ${trip.max_inspections || 2}</strong></span><br/>
+                  <span style="font-size:10.5px;color:#c2410c;font-weight:bold;">🔒 Destination Unloading locked until inspected here</span>
+                </div>
+              `);
+            newMarkers.push(nextMarker);
+          }
+        }
+
+        // 7. Individual Cargo Pickup Points (📦 / 🧊 per booked request)
+        const cargoItems = trip.partners || trip.bookings || [];
+        cargoItems.forEach((b, bIdx) => {
+          let bLat = b.pickup_lat || (b.pickupCoords && b.pickupCoords.lat);
+          let bLng = b.pickup_lng || (b.pickupCoords && b.pickupCoords.lng);
+          if (!bLat || !bLng) {
+            if (b.pickup_place && points.length > 2) {
+              const frac = (bIdx + 1) / (cargoItems.length + 2);
+              const ptIdx = Math.min(points.length - 2, Math.max(1, Math.floor(points.length * frac)));
+              bLat = points[ptIdx][0];
+              bLng = points[ptIdx][1];
+            }
+          }
+          if (bLat && bLng) {
+            const isPerish = Boolean(b.is_perishable || b.ice_handling_required);
+            const hasIce = Boolean(b.ice_added) || (Number(b.ice_boxes_count) > 0 && !b.ice_unavailable_at_pickup);
+            const cargoIcon = L.divIcon({
+              className: isPerish ? 'cargo-perishable-pickup-icon' : 'cargo-pickup-icon',
+              html: `<div style="background:${isPerish ? '#0284c7' : '#d97706'};color:white;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:13px;" title="${b.pickup_place || 'Pickup'}">${isPerish ? '🧊' : '📦'}</div>`,
+              iconSize: [30, 30],
+              iconAnchor: [15, 15]
+            });
+            const cargoMarker = L.marker([bLat, bLng], { icon: cargoIcon })
+              .addTo(map)
+              .bindPopup(`
+                <div style="font-family:Arial,sans-serif;font-size:12px;min-width:215px;padding:3px;">
+                  <div style="background:${isPerish ? '#0284c7' : '#d97706'};color:white;font-weight:bold;padding:2px 8px;border-radius:10px;display:inline-block;font-size:10px;margin-bottom:4px;">
+                    ${isPerish ? '🧊 COLD-CHAIN CARGO PICKUP DOCK' : '📦 INDIVIDUAL CARGO PICKUP DOCK'}
+                  </div>
+                  <p style="font-weight:bold;color:#1e293b;margin:0 0 4px 0;">${b.cargo_type || 'Cargo'} (${b.goods_weight_kg || b.kg || 0} kg)</p>
+                  <span style="font-size:11px;color:#475569;">Shipper: <strong>${b.farmer_name || 'Shipper'}</strong></span><br/>
+                  <span style="font-size:11px;color:#475569;">📍 Pickup: <strong>${b.pickup_place || 'Dock Point'}</strong></span><br/>
+                  ${isPerish ? `
+                    <div style="margin-top:4px;padding:3px 6px;border-radius:6px;background:${hasIce ? '#f0fdf4' : '#fffbeb'};border:1px solid ${hasIce ? '#bbf7d0' : '#fde68a'};">
+                      <span style="font-size:10.5px;color:${hasIce ? '#15803d' : '#b45309'};font-weight:bold;">
+                        ${hasIce ? `✔ ${b.ice_boxes_count || 2} Ice Box(es) Supplied (${b.ice_added_stage || 'pickup'})` : '⏳ Awaiting starting point ice addition'}
+                      </span>
+                    </div>
+                  ` : ''}
+                </div>
+              `);
+            newMarkers.push(cargoMarker);
+          }
+        });
+
+        // 8. Sender Custom Active Request Pickup Pin (📦 Pickup)
         if (activeRequest?.pickupCoords?.lat && activeRequest?.pickupCoords?.lng) {
           const pickupIcon = L.divIcon({
             className: 'sender-pickup-icon',
@@ -708,7 +827,7 @@ function Maps({
           newMarkers.push(pickupMarker);
         }
 
-        // 6. Sender Custom Delivery Pin (🎯 Delivery)
+        // 9. Sender Custom Active Request Delivery Pin (🎯 Delivery)
         if (activeRequest?.deliveryCoords?.lat && activeRequest?.deliveryCoords?.lng) {
           const deliveryIcon = L.divIcon({
             className: 'sender-delivery-icon',
@@ -724,7 +843,7 @@ function Maps({
 
         activeRouteMarkersRef.current = newMarkers;
 
-        // 7. Google Maps style Bounds Fitting
+        // 10. Bounds Fitting
         const bounds = L.latLngBounds(points);
         if (activeRequest?.pickupCoords?.lat) bounds.extend([activeRequest.pickupCoords.lat, activeRequest.pickupCoords.lng]);
         if (activeRequest?.deliveryCoords?.lat) bounds.extend([activeRequest.deliveryCoords.lat, activeRequest.deliveryCoords.lng]);
@@ -734,7 +853,13 @@ function Maps({
           from: trip.from || trip.from_loc,
           to: trip.to || trip.to_loc,
           distanceKm: (bestRoute.distance / 1000).toFixed(1),
-          durationText: formatDuration(Math.round(bestRoute.duration / 60))
+          durationText: formatDuration(Math.round(bestRoute.duration / 60)),
+          nextInspectionPoint: trip.next_inspection_point,
+          checkpointCount: trip.checkpoint_count || (trip.checkpoints ? trip.checkpoints.length : 0),
+          maxInspections: trip.max_inspections || 2,
+          isUnloadAllowed: trip.is_unload_allowed,
+          hasPerishables: trip.has_perishables || (trip.partners && trip.partners.some(p => p.is_perishable)),
+          cargoCount: cargoItems.length
         });
 
       } catch (err) {
@@ -747,7 +872,7 @@ function Maps({
     return () => {
       isMounted = false;
     };
-  }, [selectedTripId, activeRequest, mode, trips])
+  }, [selectedTripId, activeRequest, mode, trips, isRouteMode]);
 
 
   /* =====================================================

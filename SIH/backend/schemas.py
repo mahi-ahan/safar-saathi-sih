@@ -234,6 +234,12 @@ class TripResponse(TripCreate):
     inspection_completed: Optional[bool] = False
     max_inspections: Optional[int] = 1
     inspections_remaining: Optional[int] = 0
+    next_inspection_point: Optional[str] = None
+    next_inspection_lat: Optional[float] = None
+    next_inspection_lng: Optional[float] = None
+    is_unload_allowed: Optional[bool] = False
+    unload_lock_reason: Optional[str] = None
+    designated_checkpoints: Optional[list[dict]] = []
     checkpoints: Optional[list[dict]] = []
     goods_area_status: Optional[str] = "not_started"
     goods_area_reached_at: Optional[str] = None
@@ -587,6 +593,7 @@ class OptimizeRouteResponse(BaseModel):
 # ==================================================
 
 class LogisticsRegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=30)
     name: str
     phone_number: str
     password: str
@@ -597,11 +604,14 @@ class LogisticsRegisterRequest(BaseModel):
 
 
 class LogisticsLoginCredentialsRequest(BaseModel):
-    phone_number: str
+    username_or_phone: Optional[str] = None
+    phone_number: Optional[str] = None
+    username: Optional[str] = None
     password: str
 
 
 class LogisticsLoginRequest(BaseModel):
+    username: Optional[str] = None
     name: Optional[str] = None
     phone_number: str
     password: Optional[str] = None
@@ -613,6 +623,7 @@ class LogisticsLoginRequest(BaseModel):
 
 class LogisticsProfileResponse(BaseModel):
     id: int
+    username: Optional[str] = None
     name: str
     phone_number: str
     user_type: str = "logistics"
@@ -630,6 +641,9 @@ class LogisticsCheckpointCreate(BaseModel):
     checkpoint_name: str
     officer_name: str
     officer_phone: Optional[str] = None
+    officer_station: Optional[str] = None
+    officer_station_lat: Optional[float] = None
+    officer_station_lng: Optional[float] = None
     cargo_seal_intact: bool = True
     seal_number: Optional[str] = None
     seal_status: Optional[str] = "Verified & Intact"
@@ -652,6 +666,10 @@ class LoadingEventRequest(BaseModel):
     request_id: str
     officer_name: str
     loading_type: str = "pickup"  # "pickup" (loading) or "drop" (unloading)
+    officer_phone: Optional[str] = None
+    officer_station: Optional[str] = None
+    officer_station_lat: Optional[float] = None
+    officer_station_lng: Optional[float] = None
     verified_weight_kg: Optional[float] = None
     seal_number: Optional[str] = None
     seal_status: Optional[str] = "Sealed & Intact"
@@ -665,10 +683,21 @@ class IceHandlingRequest(BaseModel):
     request_id: Optional[str] = None
     trip_id: Optional[int] = None
     officer_name: str
+    officer_phone: Optional[str] = None
+    officer_station: Optional[str] = None
     ice_kg_added: float = 5.0
     ice_type: str = "Crushed Ice"  # "Crushed Ice", "Gel Packs", "Dry Ice"
     temp_before: Optional[float] = None
     temp_after: Optional[float] = None
     notes: Optional[str] = None
     stage: Optional[str] = None  # "pickup", "checkpoint"
-    checkpoint_name: Optional[str] = None
+    checkpoint_name: Optional[str] = None
+
+
+class StationSwitchRequest(BaseModel):
+    officer_name: Optional[str] = None
+    officer_phone: Optional[str] = None
+    new_station: str
+    station_lat: Optional[float] = None
+    station_lng: Optional[float] = None
+

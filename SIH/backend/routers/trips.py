@@ -632,11 +632,10 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         }
         for cp in cps
     ]
-    from routers.logistics import calculate_trip_distance_km, get_max_inspections_for_distance
+    from routers.logistics import calculate_trip_distance_km, get_trip_inspection_progression
     trip_dist = calculate_trip_distance_km(trip)
-    max_insp = get_max_inspections_for_distance(trip_dist)
-    curr_cp_count = max(getattr(trip, "checkpoint_count", 0) or 0, len(checkpoints_list))
-    remaining_insp = max(0, max_insp - curr_cp_count)
+    prog = get_trip_inspection_progression(trip, checkpoints_list, trip_dist)
+    curr_cp_count = prog["count_done"]
 
     return schemas.TripResponse(
         id=trip.id,
@@ -695,13 +694,19 @@ def serialize_trip_with_meta(trip: models.TripModel, db: Session) -> schemas.Tri
         target_temp_c=getattr(trip, "target_temp_c", None),
         current_checkpoint=getattr(trip, "current_checkpoint", None) or (checkpoints_list[-1]["checkpoint_name"] if checkpoints_list else None),
         checkpoint_count=curr_cp_count,
-        max_inspections=max_insp,
-        inspections_remaining=remaining_insp,
+        max_inspections=prog["max_inspections"],
+        inspections_remaining=prog["inspections_remaining"],
+        next_inspection_point=prog["next_inspection_point"],
+        next_inspection_lat=prog.get("next_inspection_lat"),
+        next_inspection_lng=prog.get("next_inspection_lng"),
+        is_unload_allowed=prog["is_unload_allowed"],
+        unload_lock_reason=prog.get("unload_lock_reason"),
+        designated_checkpoints=prog["designated_checkpoints"],
         checkpoints=checkpoints_list,
         has_perishables=bool(trip.cargo_category == "Perishable Goods" or getattr(trip, "has_perishables", False)),
         ice_handling_supported=bool((trip.cargo_category == "Perishable Goods") and getattr(trip, "ice_handling_supported", False)),
-        inspection_status=getattr(trip, "inspection_status", "not_started") or "not_started",
-        inspection_completed=bool(getattr(trip, "inspection_completed", False)),
+        inspection_status=prog["inspection_status"],
+        inspection_completed=prog["inspection_completed"],
         goods_area_status=getattr(trip, "goods_area_status", "not_started") or "not_started",
         goods_area_reached_at=getattr(trip, "goods_area_reached_at", None),
         goods_area_confirmed_at=getattr(trip, "goods_area_confirmed_at", None),

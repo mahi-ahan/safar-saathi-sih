@@ -5,11 +5,18 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 import models
 import schemas
 from database import get_db
-from auth.security import create_access_token, hash_password, verify_password
+from auth.security import (
+    create_access_token,
+    hash_password,
+    verify_password,
+    validate_password_strength,
+    validate_username_format
+)
 from auth.dependencies import get_optional_current_user
 from routers.trips import calculate_haversine_km, distance_to_segment_km
 from services.dispatcher import dispatch_automated_alert, resolve_user_contact_and_lang
@@ -69,26 +76,46 @@ INDIAN_CITIES_COORDS = {
     'meerut': (28.9845, 77.7064),
     'jhansi': (25.4484, 78.5685),
     'mathura': (27.4924, 77.6737),
+    # Odisha
     'bhubaneswar': (20.2961, 85.8245),
     'cuttack': (20.4625, 85.8828),
     'puri': (19.8135, 85.8312),
+    'konark': (19.9074, 86.1420),
     'pipili': (20.1165, 85.8312),
     'khordha': (20.1812, 85.6179),
+    'trisulia': (20.4285, 85.8456),
+    'madhupatna': (20.4485, 85.8920),
+    'rasulgarh': (20.3015, 85.8562),
+    'jajpur': (20.8492, 86.3364),
     'berhampur': (19.3149, 84.7941),
     'rourkela': (22.2604, 84.8536),
     'sambalpur': (21.4669, 83.9812),
     'balasore': (21.4934, 86.9135),
     'bhadrak': (21.0544, 86.4954),
+    # Bihar
     'patna': (25.5941, 85.1376),
+    'barauni': (25.4740, 85.9750),
+    'begusarai': (25.4182, 86.1272),
+    'mokama': (25.3958, 85.9221),
     'gaya': (24.7914, 85.0002),
     'bhagalpur': (25.2425, 86.9842),
     'muzaffarpur': (26.1209, 85.3647),
+    # Maharashtra
     'mumbai': (19.0760, 72.8777),
     'pune': (18.5204, 73.8567),
+    'vashi': (19.0771, 72.9986),
+    'kamshet': (18.7562, 73.5591),
+    'lonavala': (18.7557, 73.4091),
+    'thane': (19.2183, 72.9781),
     'nagpur': (21.1458, 79.0882),
     'nashik': (19.9975, 73.7898),
+    # Jharkhand
+    'jamshedpur': (22.8046, 86.2029),
+    'ranchi': (23.3441, 85.3096),
+    # West Bengal
     'kolkata': (22.5726, 88.3639),
     'howrah': (22.5958, 88.2636),
+    # Other Metros & Major Logistics Nodes
     'bengaluru': (12.9716, 77.5946),
     'bangalore': (12.9716, 77.5946),
     'hyderabad': (17.3850, 78.4867),
@@ -108,10 +135,62 @@ INDIAN_CITIES_COORDS = {
     'indore': (22.7196, 75.8577),
     'gwalior': (26.2183, 78.1828),
     'raipur': (21.2514, 81.6296),
-    'ranchi': (23.3441, 85.3096),
     'dehradun': (30.3165, 78.0322),
     'haridwar': (29.9457, 78.1642)
 }
+
+CITY_TO_STATE = {
+    'patna': 'bihar', 'barauni': 'bihar', 'begusarai': 'bihar', 'gaya': 'bihar',
+    'bhagalpur': 'bihar', 'muzaffarpur': 'bihar', 'mokama': 'bihar',
+    'bhubaneswar': 'odisha', 'cuttack': 'odisha', 'puri': 'odisha', 'pipili': 'odisha',
+    'khordha': 'odisha', 'berhampur': 'odisha', 'rourkela': 'odisha', 'sambalpur': 'odisha',
+    'balasore': 'odisha', 'bhadrak': 'odisha', 'konark': 'odisha', 'jajpur': 'odisha',
+    'trisulia': 'odisha', 'madhupatna': 'odisha', 'rasulgarh': 'odisha',
+    'pune': 'maharashtra', 'mumbai': 'maharashtra', 'nagpur': 'maharashtra', 'nashik': 'maharashtra',
+    'vashi': 'maharashtra', 'kamshet': 'maharashtra', 'lonavala': 'maharashtra', 'thane': 'maharashtra',
+    'delhi': 'delhi', 'noida': 'uttar pradesh', 'ghaziabad': 'uttar pradesh',
+    'lucknow': 'uttar pradesh', 'kanpur': 'uttar pradesh', 'agra': 'uttar pradesh', 'varanasi': 'uttar pradesh',
+    'jamshedpur': 'jharkhand', 'ranchi': 'jharkhand',
+    'kolkata': 'west bengal', 'howrah': 'west bengal',
+    'bengaluru': 'karnataka', 'bangalore': 'karnataka',
+    'hyderabad': 'telangana',
+    'chennai': 'tamil nadu',
+    'ahmedabad': 'gujarat', 'surat': 'gujarat',
+    'jaipur': 'rajasthan', 'jodhpur': 'rajasthan',
+    'chandigarh': 'chandigarh', 'ludhiana': 'punjab', 'amritsar': 'punjab'
+}
+
+CANONICAL_INDIAN_STATES = {
+    'andhra pradesh': 'andhra pradesh', 'arunachal pradesh': 'arunachal pradesh',
+    'assam': 'assam', 'bihar': 'bihar', 'chhattisgarh': 'chhattisgarh',
+    'goa': 'goa', 'gujarat': 'gujarat', 'haryana': 'haryana',
+    'himachal pradesh': 'himachal pradesh', 'jharkhand': 'jharkhand',
+    'karnataka': 'karnataka', 'kerala': 'kerala', 'madhya pradesh': 'madhya pradesh',
+    'maharashtra': 'maharashtra', 'manipur': 'manipur', 'meghalaya': 'meghalaya',
+    'mizoram': 'mizoram', 'nagaland': 'nagaland', 'odisha': 'odisha', 'orissa': 'odisha',
+    'punjab': 'punjab', 'rajasthan': 'rajasthan', 'sikkim': 'sikkim',
+    'tamil nadu': 'tamil nadu', 'telangana': 'telangana', 'tripura': 'tripura',
+    'uttar pradesh': 'uttar pradesh', 'uttarakhand': 'uttarakhand', 'west bengal': 'west bengal',
+    'delhi': 'delhi', 'chandigarh': 'chandigarh', 'puducherry': 'puducherry',
+    'jammu': 'jammu and kashmir', 'kashmir': 'jammu and kashmir', 'ladakh': 'ladakh'
+}
+
+
+def extract_state_from_location(text: Optional[str]) -> Optional[str]:
+    """
+    Extracts canonical state from location string or city tokens.
+    """
+    if not text:
+        return None
+    lower = text.lower()
+    for st_key in sorted(CANONICAL_INDIAN_STATES.keys(), key=len, reverse=True):
+        if re.search(rf'\b{re.escape(st_key)}\b', lower):
+            return CANONICAL_INDIAN_STATES[st_key]
+    tokens = extract_city_tokens(text)
+    for tok in tokens:
+        if tok in CITY_TO_STATE:
+            return CITY_TO_STATE[tok]
+    return None
 
 
 def extract_city_tokens(raw_text: str) -> set[str]:
@@ -131,18 +210,40 @@ def extract_city_tokens(raw_text: str) -> set[str]:
 
 def resolve_coords(text: str, lat: Optional[float] = None, lng: Optional[float] = None) -> Optional[tuple[float, float]]:
     """
-    Resolves (lat, lng) using explicit coordinates if valid, or falls back to known Indian city locations.
+    Resolves (lat, lng).
+    Prioritizes known city coordinates from declared text so browser GPS / device coordinates
+    do not misplace trips in other states or distant cities.
     """
-    if lat is not None and lng is not None and (lat != 0.0 or lng != 0.0):
-        return (float(lat), float(lng))
     tokens = extract_city_tokens(text)
     for tok in tokens:
         if tok in INDIAN_CITIES_COORDS:
             return INDIAN_CITIES_COORDS[tok]
+    if lat is not None and lng is not None and (lat != 0.0 or lng != 0.0):
+        return (float(lat), float(lng))
     return None
 
 
+def extract_delivery_destination(route: Optional[str], trip_to_loc: Optional[str] = None) -> str:
+    """
+    Extracts explicit destination city / terminal from request route (e.g. 'Howrah → Bhubaneswar')
+    or linked trip's to_loc.
+    """
+    if route:
+        if "→" in route:
+            parts = route.split("→")
+            if len(parts) >= 2 and parts[1].strip():
+                return parts[1].strip()
+        if "->" in route:
+            parts = route.split("->")
+            if len(parts) >= 2 and parts[1].strip():
+                return parts[1].strip()
+    if trip_to_loc and str(trip_to_loc).strip():
+        return str(trip_to_loc).strip()
+    return route or "Destination Delivery Terminal"
+
+
 def calculate_trip_distance_km(trip) -> float:
+
     """
     Computes precise route distance in km for a trip using its geocoded pickup & dest coordinates,
     falling back to known city locations or the trip.distance_km field.
@@ -165,39 +266,278 @@ def calculate_trip_distance_km(trip) -> float:
 
 def get_max_inspections_for_distance(distance_km: float) -> int:
     """
-    Determines maximum inspection checkpoints allowed along a trip corridor:
-    - distance <= 100 km: 1 inspection ("for 100km or less 1 is enough")
-    - 100 km < distance <= 300 km: 2 inspections ("more than 100 less than 500 2 or 3")
-    - 300 km < distance <= 500 km: 3 inspections
-    - 500 km < distance <= 1000 km: 4 inspections ("and so on")
-    - distance > 1000 km: 5 inspections (or 1 per 250 km)
+    Determines maximum inspection checkpoints allowed along a trip corridor.
+    Ensures at least 2 checkpoints for standard inter-city trips so multiple downstream
+    logistics officers have inspection opportunities, scaling with route length.
     """
-    if distance_km <= 100.0:
+    if distance_km <= 50.0:
         return 1
-    elif distance_km <= 300.0:
+    elif distance_km <= 150.0:
         return 2
-    elif distance_km <= 500.0:
+    elif distance_km <= 350.0:
         return 3
-    elif distance_km <= 1000.0:
+    elif distance_km <= 700.0:
         return 4
     else:
-        return min(8, max(5, int(round(distance_km / 250.0))))
+        return min(8, max(5, int(round(distance_km / 200.0))))
+
+
+KNOWN_ROUTE_CHECKPOINTS = {
+    # Patna <-> Barauni (NH-31)
+    ('patna', 'barauni'): [
+        {"checkpoint_name": "Mokama Highway Toll & Weighbridge Checkpoint", "lat": 25.3958, "lng": 85.9221, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Barauni Industrial Entry Checkpoint", "lat": 25.4740, "lng": 85.9750, "checkpoint_type": "Logistics Scale Hub"}
+    ],
+    ('barauni', 'patna'): [
+        {"checkpoint_name": "Mokama Highway Toll & Weighbridge Checkpoint", "lat": 25.3958, "lng": 85.9221, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Didarganj Toll Plaza (Patna Bypass)", "lat": 25.5680, "lng": 85.2400, "checkpoint_type": "State Border Toll"}
+    ],
+    # Bhubaneswar <-> Jamshedpur (NH-16 / NH-20)
+    ('bhubaneswar', 'jamshedpur'): [
+        {"checkpoint_name": "Cuttack NH-16 Transit Checkpoint", "lat": 20.4625, "lng": 85.8828, "checkpoint_type": "Logistics Hub Checkpoint"},
+        {"checkpoint_name": "Jajpur Panikoili Toll Plaza", "lat": 20.8492, "lng": 86.3364, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Balasore Sergarh Toll Gate", "lat": 21.4934, "lng": 86.9135, "checkpoint_type": "Interstate Inspection Post"}
+    ],
+    ('jamshedpur', 'bhubaneswar'): [
+        {"checkpoint_name": "Balasore Sergarh Toll Gate", "lat": 21.4934, "lng": 86.9135, "checkpoint_type": "Interstate Inspection Post"},
+        {"checkpoint_name": "Jajpur Panikoili Toll Plaza", "lat": 20.8492, "lng": 86.3364, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Cuttack NH-16 Transit Checkpoint", "lat": 20.4625, "lng": 85.8828, "checkpoint_type": "Logistics Hub Checkpoint"}
+    ],
+    # Pune <-> Mumbai (Mumbai-Pune Expressway)
+    ('pune', 'mumbai'): [
+        {"checkpoint_name": "Kamshet Expressway Toll Plaza", "lat": 18.7562, "lng": 73.5591, "checkpoint_type": "Expressway Weighbridge"},
+        {"checkpoint_name": "Vashi Toll & Scale Checkpoint", "lat": 19.0771, "lng": 72.9986, "checkpoint_type": "Highway Toll Plaza"}
+    ],
+    ('mumbai', 'pune'): [
+        {"checkpoint_name": "Vashi Toll & Scale Checkpoint", "lat": 19.0771, "lng": 72.9986, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Kamshet Expressway Toll Plaza", "lat": 18.7562, "lng": 73.5591, "checkpoint_type": "Expressway Weighbridge"}
+    ],
+    # Bhubaneswar <-> Puri (NH-316)
+    ('bhubaneswar', 'puri'): [
+        {"checkpoint_name": "Pipili Toll Plaza & Cold-Chain Checkpoint", "lat": 20.1165, "lng": 85.8312, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Puri Malatipatpur Inspection Gate", "lat": 19.8350, "lng": 85.8450, "checkpoint_type": "Mandi Transit Post"}
+    ],
+    ('puri', 'bhubaneswar'): [
+        {"checkpoint_name": "Pipili Toll Plaza & Cold-Chain Checkpoint", "lat": 20.1165, "lng": 85.8312, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Uttara Chhak Logistics Station", "lat": 20.2150, "lng": 85.8500, "checkpoint_type": "City Entry Checkpoint"}
+    ],
+    # Bhubaneswar <-> Cuttack
+    ('bhubaneswar', 'cuttack'): [
+        {"checkpoint_name": "Trisulia Toll & Weighbridge Checkpoint", "lat": 20.4285, "lng": 85.8456, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Madhupatna Logistics Transit Hub", "lat": 20.4485, "lng": 85.8920, "checkpoint_type": "Inspection Station"}
+    ],
+    ('cuttack', 'bhubaneswar'): [
+        {"checkpoint_name": "Trisulia Toll & Weighbridge Checkpoint", "lat": 20.4285, "lng": 85.8456, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Rasulgarh National Highway Checkpoint", "lat": 20.3015, "lng": 85.8562, "checkpoint_type": "Inspection Station"}
+    ],
+    # Bhubaneswar <-> Konark
+    ('bhubaneswar', 'konark'): [
+        {"checkpoint_name": "Nimapada Mandi Highway Checkpoint", "lat": 20.0620, "lng": 86.0150, "checkpoint_type": "Mandi Highway Post"},
+        {"checkpoint_name": "Konark Marine Drive Inspection Post", "lat": 19.9074, "lng": 86.1420, "checkpoint_type": "Coastal Transit Gate"}
+    ],
+    ('konark', 'bhubaneswar'): [
+        {"checkpoint_name": "Nimapada Mandi Highway Checkpoint", "lat": 20.0620, "lng": 86.0150, "checkpoint_type": "Mandi Highway Post"},
+        {"checkpoint_name": "Uttara Chhak Logistics Station", "lat": 20.2150, "lng": 85.8500, "checkpoint_type": "City Entry Checkpoint"}
+    ],
+    # Howrah <-> Bhubaneswar (NH-16 ~460 km, 4 distinct corridor checkup hubs)
+    ('howrah', 'bhubaneswar'): [
+        {"checkpoint_name": "Kharagpur NH-16 Highway Toll & Weighbridge Hub", "station_city": "Kharagpur", "lat": 22.3400, "lng": 87.3200, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Balasore Sergarh Highway Inspection Post", "station_city": "Balasore", "lat": 21.4934, "lng": 86.9135, "checkpoint_type": "Interstate Inspection Post"},
+        {"checkpoint_name": "Bhadrak Charampa Transit Checkpoint", "station_city": "Bhadrak", "lat": 21.0574, "lng": 86.4950, "checkpoint_type": "Logistics Scale Hub"},
+        {"checkpoint_name": "Cuttack Manguli Toll & Transit Hub", "station_city": "Cuttack", "lat": 20.5285, "lng": 85.9080, "checkpoint_type": "Highway Toll Plaza"}
+    ],
+    ('bhubaneswar', 'howrah'): [
+        {"checkpoint_name": "Cuttack Manguli Toll & Transit Hub", "station_city": "Cuttack", "lat": 20.5285, "lng": 85.9080, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Bhadrak Charampa Transit Checkpoint", "station_city": "Bhadrak", "lat": 21.0574, "lng": 86.4950, "checkpoint_type": "Logistics Scale Hub"},
+        {"checkpoint_name": "Balasore Sergarh Highway Inspection Post", "station_city": "Balasore", "lat": 21.4934, "lng": 86.9135, "checkpoint_type": "Interstate Inspection Post"},
+        {"checkpoint_name": "Kharagpur NH-16 Highway Toll & Weighbridge Hub", "station_city": "Kharagpur", "lat": 22.3400, "lng": 87.3200, "checkpoint_type": "Highway Toll Plaza"}
+    ],
+    ('kolkata', 'bhubaneswar'): [
+        {"checkpoint_name": "Kharagpur NH-16 Highway Toll & Weighbridge Hub", "station_city": "Kharagpur", "lat": 22.3400, "lng": 87.3200, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Balasore Sergarh Highway Inspection Post", "station_city": "Balasore", "lat": 21.4934, "lng": 86.9135, "checkpoint_type": "Interstate Inspection Post"},
+        {"checkpoint_name": "Bhadrak Charampa Transit Checkpoint", "station_city": "Bhadrak", "lat": 21.0574, "lng": 86.4950, "checkpoint_type": "Logistics Scale Hub"},
+        {"checkpoint_name": "Cuttack Manguli Toll & Transit Hub", "station_city": "Cuttack", "lat": 20.5285, "lng": 85.9080, "checkpoint_type": "Highway Toll Plaza"}
+    ],
+    ('bhubaneswar', 'kolkata'): [
+        {"checkpoint_name": "Cuttack Manguli Toll & Transit Hub", "station_city": "Cuttack", "lat": 20.5285, "lng": 85.9080, "checkpoint_type": "Highway Toll Plaza"},
+        {"checkpoint_name": "Bhadrak Charampa Transit Checkpoint", "station_city": "Bhadrak", "lat": 21.0574, "lng": 86.4950, "checkpoint_type": "Logistics Scale Hub"},
+        {"checkpoint_name": "Balasore Sergarh Highway Inspection Post", "station_city": "Balasore", "lat": 21.4934, "lng": 86.9135, "checkpoint_type": "Interstate Inspection Post"},
+        {"checkpoint_name": "Kharagpur NH-16 Highway Toll & Weighbridge Hub", "station_city": "Kharagpur", "lat": 22.3400, "lng": 87.3200, "checkpoint_type": "Highway Toll Plaza"}
+    ]
+}
+
+
+def is_officer_station_authorized_for_target(
+    officer_station: Optional[str],
+    target_location: Optional[str],
+    checkpoint_obj: Optional[dict] = None
+) -> bool:
+    """
+    Strict station authorization gate:
+    Only the logistics officer of a specific location can perform:
+    1. Checkpoint Inspections at that checkpoint station
+    2. Certified loading & ice supply at that pickup dock
+    3. Unloading & handover verification at that drop delivery destination
+    """
+    if not officer_station or not target_location:
+        return False
+    
+    s_clean = officer_station.strip().lower()
+    t_clean = target_location.strip().lower()
+    
+    # 1. Exact string match
+    if s_clean == t_clean:
+        return True
+    
+    # 2. Checkpoint point numbering match (e.g. "point #2", "#2", "halt #2")
+    p_off = re.search(r'#(\d+)|point\s*(\d+)|halt\s*(\d+)', s_clean)
+    p_tgt = re.search(r'#(\d+)|point\s*(\d+)|halt\s*(\d+)', t_clean)
+    if p_tgt:
+        tgt_num = p_tgt.group(1) or p_tgt.group(2) or p_tgt.group(3)
+        if p_off:
+            off_num = p_off.group(1) or p_off.group(2) or p_off.group(3)
+            return off_num == tgt_num
+        # Disallow matching target "point #2" to origin/destination city token unless officer also has that point number
+        # e.g. target is "Howrah - Bhubaneswar Point #2" and officer is "Howrah" -> REJECT!
+        if 'point' in t_clean or '#' in t_clean:
+            # Check if officer station explicitly contains point #
+            return False
+    
+    # 3. Check station_city from checkpoint metadata if provided
+    if checkpoint_obj and checkpoint_obj.get("station_city"):
+        city_clean = checkpoint_obj["station_city"].strip().lower()
+        if city_clean and city_clean in s_clean:
+            return True
+
+    # 4. Token-based city / location intersection
+    s_toks = extract_city_tokens(officer_station)
+    t_toks = extract_city_tokens(target_location)
+
+    if s_toks and t_toks and s_toks.intersection(t_toks):
+        return True
+
+    # 5. Distinctive substring match (>= 4 chars)
+    for st in s_toks:
+        if len(st) >= 4 and st in t_clean:
+            return True
+    for tt in t_toks:
+        if len(tt) >= 4 and tt in s_clean:
+            return True
+
+    return False
+
+
+def get_route_designated_checkpoints(from_loc: str, to_loc: str, distance_km: float) -> list[dict]:
+    """
+    Returns sequential designated checkpoint waypoints along the route corridor.
+    """
+    f_tokens = extract_city_tokens(from_loc)
+    t_tokens = extract_city_tokens(to_loc)
+    
+    for f_tok in f_tokens:
+        for t_tok in t_tokens:
+            if (f_tok, t_tok) in KNOWN_ROUTE_CHECKPOINTS:
+                return KNOWN_ROUTE_CHECKPOINTS[(f_tok, t_tok)]
+    
+    max_insp = get_max_inspections_for_distance(distance_km)
+    o_coords = resolve_coords(from_loc)
+    d_coords = resolve_coords(to_loc)
+    
+    from_city = from_loc.split(',')[0].strip() if from_loc else "Origin"
+    to_city = to_loc.split(',')[0].strip() if to_loc else "Destination"
+    
+    waypoints = []
+    for i in range(1, max_insp + 1):
+        frac = i / (max_insp + 1)
+        w_lat = None
+        w_lng = None
+        if o_coords and d_coords:
+            w_lat = round(o_coords[0] + (d_coords[0] - o_coords[0]) * frac, 4)
+            w_lng = round(o_coords[1] + (d_coords[1] - o_coords[1]) * frac, 4)
+        waypoints.append({
+            "checkpoint_name": f"{from_city} - {to_city} Highway Inspection Point #{i}",
+            "station_city": f"Point #{i}",
+            "lat": w_lat,
+            "lng": w_lng,
+            "checkpoint_type": "Highway Toll Plaza" if i % 2 == 1 else "Logistics Weighbridge Station"
+        })
+    return waypoints
+
+
+def get_trip_inspection_progression(trip, actual_checkpoints: list, distance_km: float) -> dict:
+    """
+    Computes strict inspection progression for a trip:
+    - Lists designated sequence of checkpoints along the corridor
+    - Identifies the exact NEXT INSPECTION POINT
+    - Evaluates whether destination unloading is unlocked (requires all corridor inspections completed)
+    """
+    designated = get_route_designated_checkpoints(getattr(trip, "from_loc", "") or "", getattr(trip, "to_loc", "") or "", distance_km)
+    base_max = get_max_inspections_for_distance(distance_km)
+    max_insp = max(base_max, len(designated))
+    count_done = len(actual_checkpoints)
+    
+    if count_done < max_insp:
+        next_wp = designated[count_done] if count_done < len(designated) else {
+            "checkpoint_name": f"{getattr(trip, 'to_loc', 'Destination').split(',')[0].strip()} Pre-Drop Highway Inspection Plaza",
+            "lat": None,
+            "lng": None
+        }
+        return {
+            "max_inspections": max_insp,
+            "count_done": count_done,
+            "inspections_remaining": max_insp - count_done,
+            "inspection_completed": False,
+            "inspection_status": "in_progress" if count_done > 0 else "not_started",
+            "next_inspection_point": next_wp["checkpoint_name"],
+            "next_inspection_lat": next_wp.get("lat"),
+            "next_inspection_lng": next_wp.get("lng"),
+            "designated_checkpoints": designated,
+            "is_unload_allowed": False,
+            "unload_lock_reason": f"Transit Incomplete: {max_insp - count_done} required checkpoint inspection(s) remaining along corridor before unloading can be verified (Next: {next_wp['checkpoint_name']})."
+        }
+    else:
+        return {
+            "max_inspections": max_insp,
+            "count_done": count_done,
+            "inspections_remaining": 0,
+            "inspection_completed": True,
+            "inspection_status": "completed",
+            "next_inspection_point": "All Highway Inspections Completed (Cleared for Destination Unloading)",
+            "next_inspection_lat": None,
+            "next_inspection_lng": None,
+            "designated_checkpoints": designated,
+            "is_unload_allowed": True,
+            "unload_lock_reason": None
+        }
 
 
 def trip_matches_officer_station(
     t,
     station_tokens: set[str],
     s_coords: Optional[tuple[float, float]],
+    station_state: Optional[str] = None,
     trip_checkpoints: Optional[list] = None,
-    trip_requests: Optional[list] = None
+    trip_requests: Optional[list] = None,
+    officer_station_raw: Optional[str] = None
 ) -> bool:
+
     """
     Strict matching rule:
     Only shows trips that are:
-    1. At the Start of journey (Origin city matches or within <= 35km)
-    2. At the End of journey (Destination city matches or within <= 35km)
+    1. At the Start of journey (Origin city matches or within <= 15km)
+    2. At the End of journey (Destination city matches or within <= 15km)
     3. In the Mid of journey (Passes through station corridor, or has a scheduled checkpoint / booked cargo halt at station)
+    Strictly forbids cross-state pollution when origin and destination are in another state.
     """
+    origin_state = extract_state_from_location(t.from_loc) or extract_state_from_location(t.state)
+    dest_state = extract_state_from_location(t.to_loc)
+
+    # 0. STRICT CROSS-STATE REJECTION:
+    # If the trip is entirely within State A, and the officer's station is in State B, REJECT!
+    if station_state and origin_state and dest_state:
+        if origin_state == dest_state and origin_state != station_state:
+            return False
+
     from_tokens = extract_city_tokens(t.from_loc)
     to_tokens = extract_city_tokens(t.to_loc)
 
@@ -209,9 +549,11 @@ def trip_matches_officer_station(
     o_lng = t.pickup_lng if (t.pickup_lng and t.pickup_lng != 0.0) else (t.lng or 0.0)
     o_coords = resolve_coords(t.from_loc, o_lat, o_lng)
 
+    # Terminal radius <= 15 km: ensures adjacent separate cities (e.g. Bhubaneswar & Cuttack, 21km apart) don't bleed into each other
     if s_coords and o_coords:
-        if calculate_haversine_km(s_coords[0], s_coords[1], o_coords[0], o_coords[1]) <= 35.0:
-            return True
+        if calculate_haversine_km(s_coords[0], s_coords[1], o_coords[0], o_coords[1]) <= 15.0:
+            if not station_state or not origin_state or station_state == origin_state:
+                return True
 
     # 2. End of the journey (Destination terminal)
     if station_tokens and station_tokens.intersection(to_tokens):
@@ -222,37 +564,49 @@ def trip_matches_officer_station(
     d_coords = resolve_coords(t.to_loc, d_lat, d_lng)
 
     if s_coords and d_coords:
-        if calculate_haversine_km(s_coords[0], s_coords[1], d_coords[0], d_coords[1]) <= 35.0:
-            return True
+        if calculate_haversine_km(s_coords[0], s_coords[1], d_coords[0], d_coords[1]) <= 15.0:
+            if not station_state or not dest_state or station_state == dest_state:
+                return True
 
     # 3. Intermediate Stop / Mandi / Checkpoint at Station
     if t.current_checkpoint:
         cp_tokens = extract_city_tokens(t.current_checkpoint)
         if station_tokens and station_tokens.intersection(cp_tokens):
-            return True
+            cp_state = extract_state_from_location(t.current_checkpoint)
+            if not station_state or not cp_state or cp_state == station_state:
+                return True
 
     if trip_checkpoints:
         for cp in trip_checkpoints:
-            cp_tokens = extract_city_tokens(getattr(cp, 'checkpoint_name', ''))
+            cp_name = getattr(cp, 'checkpoint_name', '')
+            cp_tokens = extract_city_tokens(cp_name)
             if station_tokens and station_tokens.intersection(cp_tokens):
-                return True
+                cp_state = extract_state_from_location(cp_name)
+                if not station_state or not cp_state or cp_state == station_state:
+                    return True
 
     # 4. Booked Cargo with Pickup or Drop at Station
     if trip_requests:
         for r in trip_requests:
-            r_pickup_tokens = extract_city_tokens(getattr(r, 'pickup_place', ''))
-            r_drop_tokens = extract_city_tokens(getattr(r, 'delivery_place', '') or getattr(r, 'route', ''))
-            if station_tokens and (station_tokens.intersection(r_pickup_tokens) or station_tokens.intersection(r_drop_tokens)):
-                return True
-            if s_coords:
-                r_plat = getattr(r, 'pickup_lat', 0.0) or 0.0
-                r_plng = getattr(r, 'pickup_lng', 0.0) or 0.0
-                if r_plat != 0.0 and r_plng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_plat, r_plng) <= 35.0:
+            r_pickup = getattr(r, 'pickup_place', '') or ''
+            r_delivery = getattr(r, 'delivery_place', '') or getattr(r, 'route', '') or ''
+            r_p_state = extract_state_from_location(r_pickup)
+            r_d_state = extract_state_from_location(r_delivery)
+
+            if not station_state or r_p_state == station_state or r_d_state == station_state:
+                r_pickup_tokens = extract_city_tokens(r_pickup)
+                r_drop_tokens = extract_city_tokens(r_delivery)
+                if station_tokens and (station_tokens.intersection(r_pickup_tokens) or station_tokens.intersection(r_drop_tokens)):
                     return True
-                r_dlat = getattr(r, 'delivery_lat', 0.0) or 0.0
-                r_dlng = getattr(r, 'delivery_lng', 0.0) or 0.0
-                if r_dlat != 0.0 and r_dlng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_dlat, r_dlng) <= 35.0:
-                    return True
+                if s_coords:
+                    r_plat = getattr(r, 'pickup_lat', 0.0) or 0.0
+                    r_plng = getattr(r, 'pickup_lng', 0.0) or 0.0
+                    if r_plat != 0.0 and r_plng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_plat, r_plng) <= 15.0:
+                        return True
+                    r_dlat = getattr(r, 'delivery_lat', 0.0) or 0.0
+                    r_dlng = getattr(r, 'delivery_lng', 0.0) or 0.0
+                    if r_dlat != 0.0 and r_dlng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_dlat, r_dlng) <= 15.0:
+                        return True
 
     # 5. Mid of journey (Geographic transit corridor via officer station)
     if s_coords and o_coords and d_coords:
@@ -262,21 +616,35 @@ def trip_matches_officer_station(
             d_OS = calculate_haversine_km(o_coords[0], o_coords[1], s_coords[0], s_coords[1])
             d_SD = calculate_haversine_km(s_coords[0], s_coords[1], d_coords[0], d_coords[1])
 
-            # Station must lie between Origin and Destination
-            if d_OS < d_OD + 25.0 and d_SD < d_OD + 25.0:
+            # Station must strictly lie between Origin and Destination
+            if d_OS < d_OD + 15.0 and d_SD < d_OD + 15.0:
                 detour = (d_OS + d_SD) - d_OD
                 crosstrack = distance_to_segment_km(s_coords[0], s_coords[1], o_coords[0], o_coords[1], d_coords[0], d_coords[1])
 
                 # Must be on the highway transit corridor
-                if (detour <= 35.0 and crosstrack <= 45.0) or (detour <= min(50.0, d_OD * 0.08) and crosstrack <= 75.0):
+                if (detour <= 25.0 and crosstrack <= 25.0) or (detour <= min(35.0, d_OD * 0.06) and crosstrack <= 35.0):
                     return True
+
+    # 6. Designated Highway Route Corridor Checkpoints
+    if officer_station_raw:
+
+        trip_dist = calculate_trip_distance_km(t)
+        des_cps = get_route_designated_checkpoints(t.from_loc or "", t.to_loc or "", trip_dist)
+        for des in des_cps:
+            des_name = des.get("checkpoint_name", "")
+            des_city = des.get("station_city", "")
+            if is_officer_station_authorized_for_target(officer_station_raw, des_name, des):
+                return True
+            if des_city and station_tokens and des_city.lower() in [s.lower() for s in station_tokens]:
+                return True
 
     return False
 
 
+
 def check_officer_password(plain_password: str, stored_password: Optional[str]) -> bool:
-    if not stored_password:
-        return True
+    if not stored_password or not plain_password:
+        return False
     try:
         if verify_password(plain_password, stored_password):
             return True
@@ -295,92 +663,100 @@ def logistics_register(
     db: Session = Depends(get_db)
 ):
     """
-    Registers a new field logistics officer with security password/PIN and posting station.
+    Registers a new field logistics officer with security password, unique username, and posting station.
     """
-    clean_phone = payload.phone_number.strip().replace(" ", "").replace("-", "")
-    if len(clean_phone) < 10:
-        raise HTTPException(status_code=400, detail="Please provide a valid 10-digit mobile number.")
+    # 1. Validate Username
+    username_err = validate_username_format(payload.username)
+    if username_err:
+        raise HTTPException(status_code=400, detail=username_err)
 
+    clean_username = payload.username.strip()
+    # Check if username is already taken by any user (case-insensitive)
+    existing_username = (
+        db.query(models.User)
+        .filter(func.lower(models.User.username) == clean_username.lower())
+        .first()
+    )
+    if existing_username:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Officer username '{clean_username}' is already taken. Please choose another unique username."
+        )
+
+    # 2. Validate Full Name
     clean_name = payload.name.strip()
     if not clean_name:
         raise HTTPException(status_code=400, detail="Officer full name is required.")
 
-    if not payload.password or len(payload.password.strip()) < 4:
-        raise HTTPException(status_code=400, detail="Please set a security password/PIN with at least 4 characters.")
+    # 3. Validate Mobile Number
+    clean_phone = payload.phone_number.strip().replace(" ", "").replace("-", "").replace("+91", "")
+    if clean_phone.startswith("0") and len(clean_phone) == 11:
+        clean_phone = clean_phone[1:]
+    if len(clean_phone) != 10 or not clean_phone.isdigit():
+        raise HTTPException(status_code=400, detail="Please provide a valid 10-digit mobile number.")
 
+    # Check if this mobile number is already registered to ANY user profile
+    existing_phone_user = (
+        db.query(models.UserProfile)
+        .filter(models.UserProfile.phone_number == clean_phone)
+        .first()
+    )
+    if existing_phone_user:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Mobile number {clean_phone} is already linked to an existing account. Each mobile number can only belong to one user account. Please sign in or use another number."
+        )
+
+    # 4. Validate Password Rules
+    pw_err = validate_password_strength(payload.password)
+    if pw_err:
+        raise HTTPException(status_code=400, detail=pw_err)
+
+    # 5. Validate Station
     station_name = payload.station.strip() if payload.station else ""
     if not station_name:
         raise HTTPException(status_code=400, detail="Location of posting / assigned station is required.")
 
-    # Search existing logistics user by phone
-    user = (
-        db.query(models.User)
-        .join(models.UserProfile, models.User.id == models.UserProfile.user_id)
-        .filter(models.UserProfile.phone_number == clean_phone, models.UserProfile.user_type == "logistics")
-        .first()
-    )
-
+    # 6. Create New User and Logistics Profile
     hashed_pw = hash_password(payload.password.strip())
+    user = models.User(
+        username=clean_username,
+        email=f"{clean_username.lower()}@safarsaathi.com",
+        password=hashed_pw,
+        role=models.UserRole.USER
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
 
-    if not user:
-        unique_username = f"logistics_{clean_name.replace(' ', '_').lower()}_{clean_phone[-4:]}_{uuid.uuid4().hex[:4]}"
-        user = models.User(
-            username=unique_username,
-            email=f"{unique_username}@safarsaathi.com",
-            password=hashed_pw,
-            role=models.UserRole.USER
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-        profile = models.UserProfile(
-            user_id=user.id,
-            full_name=clean_name,
-            phone_number=clean_phone,
-            user_type="logistics",
-            assigned_station=station_name,
-            station_lat=payload.station_lat,
-            station_lng=payload.station_lng,
-            id_proof_doc=payload.id_proof_doc,
-            is_verified=True,
-            preferred_lang="hi"
-        )
-        db.add(profile)
-        db.commit()
-        db.refresh(profile)
-    else:
-        user.password = hashed_pw
-        profile = user.profile
-        if not profile:
-            profile = models.UserProfile(user_id=user.id)
-            db.add(profile)
-
-        profile.full_name = clean_name
-        profile.phone_number = clean_phone
-        profile.user_type = "logistics"
-        profile.assigned_station = station_name
-        if payload.station_lat is not None:
-            profile.station_lat = payload.station_lat
-        if payload.station_lng is not None:
-            profile.station_lng = payload.station_lng
-        if payload.id_proof_doc:
-            profile.id_proof_doc = payload.id_proof_doc
-        profile.is_verified = True
-        db.commit()
-        db.refresh(profile)
+    profile = models.UserProfile(
+        user_id=user.id,
+        full_name=clean_name,
+        phone_number=clean_phone,
+        user_type="logistics",
+        assigned_station=station_name,
+        station_lat=payload.station_lat,
+        station_lng=payload.station_lng,
+        id_proof_doc=payload.id_proof_doc,
+        is_verified=True,
+        preferred_lang="hi"
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
 
     access_token = create_access_token(data={"sub": str(user.id), "role": "logistics"})
     id_proof_url = f"{BASE_URL}/uploads/{profile.id_proof_doc}" if profile.id_proof_doc else None
 
     return {
         "status": "success",
-        "message": f"Officer {clean_name} registered successfully. Posting station active at {station_name}!",
+        "message": f"Officer {clean_name} (@{clean_username}) registered successfully. Posting station active at {station_name}!",
         "access_token": access_token,
         "token_type": "bearer",
         "user_type": "logistics",
         "officer": {
             "id": user.id,
+            "username": user.username,
             "name": profile.full_name,
             "phone_number": profile.phone_number,
             "station": profile.assigned_station,
@@ -399,52 +775,124 @@ def logistics_login(
     db: Session = Depends(get_db)
 ):
     """
-    Authenticates a field logistics officer using their 10-digit mobile and password/PIN.
+    Authenticates a field logistics officer using their unique Username OR 10-digit mobile and password.
     """
-    clean_phone = payload.phone_number.strip().replace(" ", "").replace("-", "")
-    if len(clean_phone) < 10:
-        raise HTTPException(status_code=400, detail="Please enter your registered 10-digit mobile number.")
+    raw_identifier = (payload.username_or_phone or payload.username or payload.phone_number or "").strip()
+    if not raw_identifier:
+        raise HTTPException(status_code=400, detail="Please enter your registered officer username or 10-digit mobile number.")
 
-    if not payload.password:
-        raise HTTPException(status_code=400, detail="Please enter your password or security PIN.")
+    if not payload.password or not payload.password.strip():
+        raise HTTPException(status_code=400, detail="Please enter your officer password.")
 
-    user = (
-        db.query(models.User)
-        .join(models.UserProfile, models.User.id == models.UserProfile.user_id)
-        .filter(models.UserProfile.phone_number == clean_phone)
-        .first()
-    )
+    clean_digits = raw_identifier.replace(" ", "").replace("-", "").replace("+91", "")
+    if clean_digits.startswith("0") and len(clean_digits) == 11:
+        clean_digits = clean_digits[1:]
 
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="No officer account found with this mobile number. Please register first."
+    user = None
+
+    # Scenario A: Input appears to be a 10-digit mobile number
+    if clean_digits.isdigit() and len(clean_digits) == 10:
+        # Search specifically for logistics officers with this phone
+        officers_with_phone = (
+            db.query(models.User)
+            .join(models.UserProfile, models.User.id == models.UserProfile.user_id)
+            .filter(models.UserProfile.phone_number == clean_digits, models.UserProfile.user_type == "logistics")
+            .all()
         )
 
+        if len(officers_with_phone) == 1:
+            user = officers_with_phone[0]
+        elif len(officers_with_phone) > 1:
+            # Handle legacy duplicate phone numbers safely:
+            # Check which account matches the password
+            pw_matches = [u for u in officers_with_phone if check_officer_password(payload.password.strip(), u.password)]
+            if len(pw_matches) == 1:
+                user = pw_matches[0]
+            elif len(pw_matches) > 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Multiple accounts share this mobile number. Please log in using your unique Officer Username."
+                )
+            else:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid credentials. Incorrect password for this officer account."
+                )
+        else:
+            # Maybe the identifier is a 10-digit username (e.g. badge number)
+            user_by_name = (
+                db.query(models.User)
+                .filter(func.lower(models.User.username) == raw_identifier.lower())
+                .first()
+            )
+            if user_by_name:
+                user = user_by_name
+            else:
+                # Check if this phone number is registered under a different user_type
+                non_logistics = (
+                    db.query(models.UserProfile)
+                    .filter(models.UserProfile.phone_number == clean_digits)
+                    .first()
+                )
+                if non_logistics and non_logistics.user_type != "logistics":
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"This mobile number is registered as a {non_logistics.user_type.capitalize()} account. Only Logistics Officers can access this portal."
+                    )
+                raise HTTPException(
+                    status_code=401,
+                    detail="No officer account found with this mobile number. Please register first."
+                )
+
+    # Scenario B: Input is a username
+    if not user:
+        user = (
+            db.query(models.User)
+            .filter(func.lower(models.User.username) == raw_identifier.lower())
+            .first()
+        )
+        if not user:
+            raise HTTPException(
+                status_code=401,
+                detail="No officer account found with this username. Please check your credentials or register."
+            )
+
+    # Verify password
     if not check_officer_password(payload.password.strip(), user.password):
         raise HTTPException(
             status_code=401,
-            detail="Invalid credentials. Incorrect password/PIN for this officer account."
+            detail="Invalid credentials. Incorrect password for this officer account."
         )
 
     profile = user.profile
     if not profile:
-        profile = models.UserProfile(user_id=user.id, full_name=user.username, phone_number=clean_phone, user_type="logistics")
+        profile = models.UserProfile(
+            user_id=user.id,
+            full_name=user.username,
+            phone_number=clean_digits if (clean_digits.isdigit() and len(clean_digits) == 10) else None,
+            user_type="logistics"
+        )
         db.add(profile)
         db.commit()
         db.refresh(profile)
+    elif profile.user_type and profile.user_type != "logistics":
+        raise HTTPException(
+            status_code=403,
+            detail=f"This account is registered as a {profile.user_type.capitalize()}. Logistics Desk requires an authorized logistics officer account."
+        )
 
     access_token = create_access_token(data={"sub": str(user.id), "role": "logistics"})
     id_proof_url = f"{BASE_URL}/uploads/{profile.id_proof_doc}" if profile.id_proof_doc else None
 
     return {
         "status": "success",
-        "message": f"Welcome back, Officer {profile.full_name}! Station {profile.assigned_station or 'Hub'} opened.",
+        "message": f"Welcome back, Officer {profile.full_name} (@{user.username})! Station {profile.assigned_station or 'Hub'} opened.",
         "access_token": access_token,
         "token_type": "bearer",
         "user_type": "logistics",
         "officer": {
             "id": user.id,
+            "username": user.username,
             "name": profile.full_name,
             "phone_number": profile.phone_number,
             "station": profile.assigned_station or "Corridor Hub",
@@ -465,7 +913,9 @@ def logistics_login_or_register(
     """
     Direct login or registration for field logistics personnel (backwards compatible).
     """
-    clean_phone = payload.phone_number.strip().replace(" ", "").replace("-", "")
+    clean_phone = payload.phone_number.strip().replace(" ", "").replace("-", "").replace("+91", "")
+    if clean_phone.startswith("0") and len(clean_phone) == 11:
+        clean_phone = clean_phone[1:]
     if len(clean_phone) < 10:
         raise HTTPException(status_code=400, detail="Please provide a valid 10-digit mobile number.")
 
@@ -479,10 +929,27 @@ def logistics_login_or_register(
         .first()
     )
 
-    hashed_pw = hash_password(payload.password.strip()) if payload.password else "LOGISTICS_FIELD_AGENT"
-
     if not user:
-        unique_username = f"logistics_{clean_name.replace(' ', '_').lower()}_{clean_phone[-4:]}_{uuid.uuid4().hex[:4]}"
+        if payload.password:
+            pw_err = validate_password_strength(payload.password)
+            if pw_err:
+                raise HTTPException(status_code=400, detail=pw_err)
+
+        hashed_pw = hash_password(payload.password.strip()) if payload.password else hash_password("OfficerPass@2026")
+        suggested_username = (payload.username or "").strip()
+        if suggested_username:
+            username_err = validate_username_format(suggested_username)
+            if username_err:
+                raise HTTPException(status_code=400, detail=username_err)
+            unique_username = suggested_username
+        else:
+            unique_username = f"logistics_{clean_name.replace(' ', '_').lower()}_{clean_phone[-4:]}_{uuid.uuid4().hex[:4]}"
+
+        # Ensure username uniqueness
+        existing_u = db.query(models.User).filter(func.lower(models.User.username) == unique_username.lower()).first()
+        if existing_u:
+            unique_username = f"{unique_username}_{uuid.uuid4().hex[:4]}"
+
         user = models.User(
             username=unique_username,
             email=f"{unique_username}@safarsaathi.com",
@@ -544,6 +1011,7 @@ def logistics_login_or_register(
         "user_type": "logistics",
         "officer": {
             "id": user.id,
+            "username": user.username,
             "name": profile.full_name,
             "phone_number": profile.phone_number,
             "station": profile.assigned_station or "Corridor Hub",
@@ -588,9 +1056,62 @@ def upload_logistics_id_proof(file: UploadFile = File(...)):
     }
 
 
+@router.post("/switch-station")
+def switch_officer_station(
+    payload: schemas.StationSwitchRequest,
+    current_user: Optional[models.User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Transfers or switches officer's active assigned station posting along the corridor.
+    Allows seamless operational testing and dynamic officer handoffs at distinct checkpoints.
+    """
+    clean_station = payload.new_station.strip()
+    if not clean_station:
+        raise HTTPException(status_code=400, detail="New station name is required.")
+
+    resolved_lat = payload.station_lat
+    resolved_lng = payload.station_lng
+    coords = resolve_coords(clean_station, payload.station_lat, payload.station_lng)
+    if coords:
+        resolved_lat, resolved_lng = coords
+
+    officer_data = {
+        "name": payload.officer_name or "Field Officer",
+        "phone_number": payload.officer_phone or "",
+        "station": clean_station,
+        "station_lat": resolved_lat,
+        "station_lng": resolved_lng
+    }
+
+    if current_user and current_user.profile:
+        current_user.profile.assigned_station = clean_station
+        if resolved_lat is not None:
+            current_user.profile.station_lat = resolved_lat
+        if resolved_lng is not None:
+            current_user.profile.station_lng = resolved_lng
+        db.commit()
+        db.refresh(current_user.profile)
+        officer_data["id"] = current_user.id
+        officer_data["username"] = current_user.username
+        officer_data["name"] = current_user.profile.full_name or officer_data["name"]
+        officer_data["phone_number"] = current_user.profile.phone_number or officer_data["phone_number"]
+        officer_data["station"] = current_user.profile.assigned_station
+        officer_data["station_lat"] = current_user.profile.station_lat
+        officer_data["station_lng"] = current_user.profile.station_lng
+        officer_data["is_verified"] = current_user.profile.is_verified
+
+    return {
+        "status": "success",
+        "message": f"Assigned station transferred to {clean_station}.",
+        "officer": officer_data
+    }
+
+
 # =========================================================
 # 2. CROSS-CONNECTED TRIPS & SHIPMENTS UNIFIED FEED
 # =========================================================
+
 
 @router.get("/trips-and-shipments")
 def get_logistics_trips_and_shipments(
@@ -626,9 +1147,10 @@ def get_logistics_trips_and_shipments(
 
     all_checkpoints = (
         db.query(models.LogisticsCheckpointModel)
-        .order_by(models.LogisticsCheckpointModel.id.desc())
+        .order_by(models.LogisticsCheckpointModel.id.asc())
         .all()
     )
+
 
     # -------------------------------------------------------------
     # LOCATION-BASED FILTERING FOR OFFICER'S ASSIGNED STATION
@@ -636,13 +1158,12 @@ def get_logistics_trips_and_shipments(
     # filter trips and shipments so only data starting, ending, or passing
     # through this station's corridor is shown.
     # -------------------------------------------------------------
-    if (not officer_station or officer_station.strip().lower() in ["undefined", "null"]) and current_user and current_user.profile:
-        if current_user.profile.assigned_station:
-            officer_station = current_user.profile.assigned_station
-            if officer_lat is None:
-                officer_lat = getattr(current_user.profile, "station_lat", None)
-            if officer_lng is None:
-                officer_lng = getattr(current_user.profile, "station_lng", None)
+    if not officer_station and current_user and current_user.profile and current_user.profile.assigned_station:
+        officer_station = current_user.profile.assigned_station
+        if getattr(current_user.profile, "station_lat", None) is not None:
+            officer_lat = current_user.profile.station_lat
+        if getattr(current_user.profile, "station_lng", None) is not None:
+            officer_lng = current_user.profile.station_lng
 
     has_station_filter = bool(
         officer_station
@@ -653,6 +1174,7 @@ def get_logistics_trips_and_shipments(
     if has_station_filter:
         station_tokens = extract_city_tokens(officer_station)
         s_coords = resolve_coords(officer_station, officer_lat, officer_lng)
+        station_state = extract_state_from_location(officer_station)
 
         checkpoints_by_trip_obj = {}
         for cp in all_checkpoints:
@@ -669,33 +1191,42 @@ def get_logistics_trips_and_shipments(
                 t=t,
                 station_tokens=station_tokens,
                 s_coords=s_coords,
+                station_state=station_state,
                 trip_checkpoints=checkpoints_by_trip_obj.get(t.id, []),
-                trip_requests=requests_by_trip_obj.get(t.id, [])
+                trip_requests=requests_by_trip_obj.get(t.id, []),
+                officer_station_raw=officer_station
             )
         ]
+
         valid_trip_ids = {t.id for t in all_trips}
 
         def request_matches_station(r):
-            if r.trip_id in valid_trip_ids:
-                return True
-            r_pick_tokens = extract_city_tokens(r.pickup_place or "")
-            r_route_tokens = extract_city_tokens(r.route or "")
+            if r.trip_id:
+                return r.trip_id in valid_trip_ids
+            r_pickup = r.pickup_place or ""
+            r_route = r.route or ""
+            r_p_state = extract_state_from_location(r_pickup)
+            r_d_state = extract_state_from_location(r_route)
+            if station_state and ((r_p_state and r_p_state != station_state) and (r_d_state and r_d_state != station_state)):
+                return False
+            r_pick_tokens = extract_city_tokens(r_pickup)
+            r_route_tokens = extract_city_tokens(r_route)
             if station_tokens and (station_tokens.intersection(r_pick_tokens) or station_tokens.intersection(r_route_tokens)):
                 return True
             if s_coords:
                 r_plat = r.pickup_lat or 0.0
                 r_plng = r.pickup_lng or 0.0
-                if r_plat != 0.0 and r_plng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_plat, r_plng) <= 35.0:
+                if r_plat != 0.0 and r_plng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_plat, r_plng) <= 15.0:
                     return True
                 r_dlat = r.delivery_lat or 0.0
                 r_dlng = r.delivery_lng or 0.0
-                if r_dlat != 0.0 and r_dlng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_dlat, r_dlng) <= 35.0:
+                if r_dlat != 0.0 and r_dlng != 0.0 and calculate_haversine_km(s_coords[0], s_coords[1], r_dlat, r_dlng) <= 15.0:
                     return True
             return False
 
         def checkpoint_matches_station(cp):
-            if cp.trip_id in valid_trip_ids:
-                return True
+            if cp.trip_id:
+                return cp.trip_id in valid_trip_ids
             cp_tokens = extract_city_tokens(cp.checkpoint_name or "")
             if station_tokens and station_tokens.intersection(cp_tokens):
                 return True
@@ -780,7 +1311,10 @@ def get_logistics_trips_and_shipments(
     # Group requests by trip_id
     requests_by_trip = {}
     for r in all_requests:
+        t_obj = next((t for t in all_trips if t.id == r.trip_id), None)
+        deliv_place_val = extract_delivery_destination(r.route, t_obj.to_loc if t_obj else None)
         req_dict = {
+
             "id": r.id,
             "trip_id": r.trip_id,
             "farmer_name": r.farmer_name or "Shipper",
@@ -810,7 +1344,8 @@ def get_logistics_trips_and_shipments(
             "seal_status": getattr(r, "seal_status", "Pending") or "Pending",
             "verified_weight_kg": getattr(r, "verified_weight_kg", None),
             "weight_compliant": getattr(r, "weight_compliant", True),
-            "pickup_place": r.pickup_place or "Pickup Point",
+            "pickup_place": r.pickup_place or (t_obj.pickup if t_obj else "Pickup Point"),
+            "delivery_place": deliv_place_val,
             "pickup_lat": r.pickup_lat or 0.0,
             "pickup_lng": r.pickup_lng or 0.0,
             "delivery_date": r.delivery_date,
@@ -820,6 +1355,7 @@ def get_logistics_trips_and_shipments(
             "pickup_cargo_image_url": r.pickup_cargo_image_url,
             "delivery_proof_image_url": r.delivery_proof_image_url
         }
+
         if r.trip_id:
             requests_by_trip.setdefault(r.trip_id, []).append(req_dict)
 
@@ -850,15 +1386,19 @@ def get_logistics_trips_and_shipments(
     pending_loadings = 0
     pending_unloadings = 0
 
+    prog_by_trip_id = {}
     for t in filtered_trips:
         trip_reqs = requests_by_trip.get(t.id, [])
         trip_cps = checkpoints_by_trip.get(t.id, [])
 
         trip_dist = calculate_trip_distance_km(t)
-        max_insp = get_max_inspections_for_distance(trip_dist)
-        actual_checkpoints_count = getattr(t, "checkpoint_count", len(trip_cps)) or len(trip_cps)
-        is_insp_completed = actual_checkpoints_count >= max_insp
-        insp_status = "completed" if is_insp_completed else ("in_progress" if actual_checkpoints_count > 0 else "not_started")
+        prog = get_trip_inspection_progression(t, trip_cps, trip_dist)
+        prog_by_trip_id[t.id] = prog
+
+        max_insp = prog["max_inspections"]
+        actual_checkpoints_count = prog["count_done"]
+        is_insp_completed = prog["inspection_completed"]
+        insp_status = prog["inspection_status"]
 
         trip_is_perishable = (getattr(t, "cargo_category", "") == "Perishable Goods") or bool(getattr(t, "has_perishables", False))
         has_ice_shipments = any(bool(r.get("ice_handling_required")) for r in trip_reqs)
@@ -900,7 +1440,13 @@ def get_logistics_trips_and_shipments(
             "distance_km": trip_dist,
             "route_distance_km": trip_dist,
             "max_inspections": max_insp,
-            "inspections_remaining": max(0, max_insp - actual_checkpoints_count),
+            "inspections_remaining": prog["inspections_remaining"],
+            "next_inspection_point": prog["next_inspection_point"],
+            "next_inspection_lat": prog.get("next_inspection_lat"),
+            "next_inspection_lng": prog.get("next_inspection_lng"),
+            "is_unload_allowed": prog["is_unload_allowed"],
+            "unload_lock_reason": prog["unload_lock_reason"],
+            "designated_checkpoints": prog["designated_checkpoints"],
             "total_kg": t.total_kg or 1000,
             "total_booked_kg": total_booked_kg,
             "available_space_kg": max(0, (t.total_kg or 1000) - total_booked_kg),
@@ -946,6 +1492,12 @@ def get_logistics_trips_and_shipments(
         if not t or t.status in ["cancelled", "cancelled_by_driver"]:
             continue
         r_trip_started = bool(t and ((t.status in ["in_transit", "moving", "started", "pending_passenger_confirmation", "completed"]) or bool(getattr(t, "is_live", False))))
+        t_prog = prog_by_trip_id.get(t.id)
+        if not t_prog:
+            t_cps = checkpoints_by_trip.get(t.id, [])
+            t_dist = calculate_trip_distance_km(t)
+            t_prog = get_trip_inspection_progression(t, t_cps, t_dist)
+
         flat_shipments.append({
             "id": r.id,
             "trip_id": r.trip_id,
@@ -956,6 +1508,19 @@ def get_logistics_trips_and_shipments(
             "trip_started": r_trip_started,
             "is_live": bool(getattr(t, "is_live", False)) if t else False,
             "goods_area_status": getattr(t, "goods_area_status", None) if t else None,
+            "parent_trip_next_inspection_point": t_prog["next_inspection_point"],
+            "parent_trip_is_unload_allowed": t_prog["is_unload_allowed"],
+            "parent_trip_inspections_remaining": t_prog["inspections_remaining"],
+            "parent_trip_max_inspections": t_prog["max_inspections"],
+            "parent_trip_designated_checkpoints": t_prog["designated_checkpoints"],
+            "parent_trip_inspection_completed": t_prog["inspection_completed"],
+            "next_inspection_point": t_prog["next_inspection_point"],
+            "is_unload_allowed": t_prog["is_unload_allowed"],
+            "inspections_remaining": t_prog["inspections_remaining"],
+            "max_inspections": t_prog["max_inspections"],
+            "designated_checkpoints": t_prog["designated_checkpoints"],
+            "inspection_completed": t_prog["inspection_completed"],
+            "unload_lock_reason": t_prog["unload_lock_reason"],
             "farmer_name": r.farmer_name or "Shipper",
             "farmer_phone": (db.query(models.UserProfile.phone_number).filter(models.UserProfile.user_id == r.user_id).scalar() if r.user_id else None),
             "cargo_type": r.cargo_type or "Perishable Fresh Produce",
@@ -984,8 +1549,10 @@ def get_logistics_trips_and_shipments(
             "verified_weight_kg": getattr(r, "verified_weight_kg", None),
             "weight_compliant": getattr(r, "weight_compliant", True),
             "pickup_place": r.pickup_place or (t.pickup if t else "Pickup Station"),
+            "delivery_place": extract_delivery_destination(r.route, t.to_loc if t else None),
             "delivery_date": r.delivery_date or (t.date if t else None),
             "route": r.route or (f"{t.from_loc} → {t.to_loc}" if t else "Route In Transit"),
+
             "pickup_cargo_image_url": r.pickup_cargo_image_url,
             "delivery_proof_image_url": r.delivery_proof_image_url
         })
@@ -1046,8 +1613,12 @@ def log_checkpoint_inspection(
 
     # RULE 2: Distance-based inspection capacity
     trip_dist = calculate_trip_distance_km(trip)
-    max_insp = get_max_inspections_for_distance(trip_dist)
-    current_count = getattr(trip, "checkpoint_count", 0) or 0
+    existing_checkpoints = db.query(models.LogisticsCheckpointModel).filter(
+        models.LogisticsCheckpointModel.trip_id == payload.trip_id
+    ).all()
+    prog = get_trip_inspection_progression(trip, existing_checkpoints, trip_dist)
+    max_insp = prog["max_inspections"]
+    current_count = len(existing_checkpoints)
 
     if current_count >= max_insp:
         raise HTTPException(
@@ -1055,40 +1626,36 @@ def log_checkpoint_inspection(
             detail=f"All {max_insp} allowed inspection(s) for this {round(trip_dist)} km trip have already been completed."
         )
 
-    # RULE 3: Exactly ONE inspection permitted per logistics login / station on a trip
-    existing_checkpoints = db.query(models.LogisticsCheckpointModel).filter(
-        models.LogisticsCheckpointModel.trip_id == payload.trip_id
-    ).all()
-
-    clean_payload_phone = (payload.officer_phone or "").strip().replace(" ", "").replace("-", "")
-    payload_tokens = extract_city_tokens(payload.checkpoint_name or "")
-    payload_name = (payload.officer_name or "").strip().lower()
-
-    for cp in existing_checkpoints:
-        # Check phone match
-        clean_cp_phone = (cp.officer_phone or "").strip().replace(" ", "").replace("-", "")
-        phone_matches = bool(clean_payload_phone and clean_cp_phone and clean_payload_phone == clean_cp_phone)
-
-        # Check station / city location token match
-        cp_tokens = extract_city_tokens(cp.checkpoint_name or "")
-        station_matches = bool(payload_tokens and cp_tokens and payload_tokens.intersection(cp_tokens))
-
-        # Check officer name match
-        cp_name = (cp.officer_name or "").strip().lower()
-        name_matches = bool(payload_name and cp_name and payload_name == cp_name)
-
-        if phone_matches or station_matches or name_matches:
-            matched_reason = (
-                f"from this login ({payload.officer_name or payload.officer_phone})"
-                if (phone_matches or name_matches)
-                else f"at station '{cp.checkpoint_name}'"
+    # RULE 3: Strict Checkpoint Station Location Gate:
+    # Only the logistics officer stationed at this specific checkpoint location can perform this inspection!
+    expected_next_cp = prog["next_inspection_point"]
+    target_cp = payload.checkpoint_name or expected_next_cp
+    officer_station = (payload.officer_station or "").strip()
+    
+    if officer_station:
+        des_cp = next((d for d in prog.get("designated_checkpoints", []) if (d.get("checkpoint_name") or "").lower() == target_cp.lower()), None)
+        if not is_officer_station_authorized_for_target(officer_station, target_cp, des_cp):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Station Mismatch: Halt #{current_count + 1} ('{target_cp}') can only be inspected "
+                    f"by the logistics officer stationed at this checkpoint location. "
+                    f"Officer {payload.officer_name} is stationed at '{officer_station}'."
+                )
             )
+
+    # RULE 4: Exactly ONE inspection permitted per logistics station / checkpoint point on a trip
+    # Downstream logistics officers coming afterwards at their respective locations are permitted to inspect!
+    clean_payload_name = (payload.checkpoint_name or "").strip().lower()
+    for cp in existing_checkpoints:
+        clean_cp_name = (cp.checkpoint_name or "").strip().lower()
+        if clean_cp_name and clean_payload_name and clean_cp_name == clean_payload_name:
             rem = max(0, max_insp - len(existing_checkpoints))
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"An inspection for this trip has already been conducted {matched_reason}. "
-                    f"Only 1 inspection is permitted per station/login per trip. "
+                    f"An inspection for this trip has already been conducted at checkpoint '{cp.checkpoint_name}'. "
+                    f"Only 1 inspection is permitted per logistics station. "
                     f"Remaining inspections ({rem} halt{'s' if rem != 1 else ''} left) must be performed at downstream checkpoints along the route."
                 )
             )
@@ -1146,14 +1713,13 @@ def log_checkpoint_inspection(
 
     # Update trip status and active security indicators
     new_count = current_count + 1
+    new_existing = existing_checkpoints + [checkpoint]
+    new_prog = get_trip_inspection_progression(trip, new_existing, trip_dist)
+
     trip.current_checkpoint = payload.checkpoint_name
     trip.checkpoint_count = new_count
-    if new_count >= max_insp:
-        trip.inspection_completed = True
-        trip.inspection_status = "completed"
-    else:
-        trip.inspection_completed = False
-        trip.inspection_status = "in_progress"
+    trip.inspection_completed = new_prog["inspection_completed"]
+    trip.inspection_status = new_prog["inspection_status"]
     trip.seal_number = resolved_seal_num
     trip.seal_status = resolved_seal_status
     if measured_wt is not None:
@@ -1235,8 +1801,10 @@ def log_checkpoint_inspection(
         "checkpoint_id": checkpoint.id,
         "checkpoint_count": new_count,
         "max_inspections": max_insp,
-        "inspections_remaining": max(0, max_insp - new_count),
-        "inspection_completed": new_count >= max_insp,
+        "inspections_remaining": new_prog["inspections_remaining"],
+        "inspection_completed": new_prog["inspection_completed"],
+        "next_inspection_point": new_prog["next_inspection_point"],
+        "is_unload_allowed": new_prog["is_unload_allowed"],
         "seal_number": resolved_seal_num,
         "seal_status": resolved_seal_status,
         "weight_compliant": is_compliant,
@@ -1278,8 +1846,21 @@ def record_loading_event(
             )
 
     timestamp_str = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+    officer_station = (payload.officer_station or "").strip()
 
     if payload.loading_type == "pickup":
+        # Location Gate: Only the logistics officer stationed at this pickup dock can verify and load!
+        if officer_station and req.pickup_place:
+            if not is_officer_station_authorized_for_target(officer_station, req.pickup_place):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Station Mismatch: Pickup loading and certified weigh-in for cargo #{req.id} "
+                        f"can only be performed by the officer stationed at '{req.pickup_place}'. "
+                        f"Officer {payload.officer_name} is stationed at '{officer_station}'."
+                    )
+                )
+
         req.loading_status = "loaded"
         req.loaded_at = timestamp_str
         req.loaded_by = payload.officer_name
@@ -1334,7 +1915,7 @@ def record_loading_event(
                 detail="Cannot perform drop unloading before cargo has been loaded onto the vehicle at pickup."
             )
 
-        # Validation 2: The trip must have actually started
+        # Validation 2: The trip must have actually started and completed all corridor inspections
         if req.trip_id:
             trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first()
             if trip:
@@ -1345,12 +1926,51 @@ def record_loading_event(
                         detail="Trip has not started yet. Unloading can only be performed after the driver departs and the trip is underway."
                     )
 
+                # Validation 3: All required highway checkpoint inspections along the corridor must be completed!
+                trip_cps = db.query(models.LogisticsCheckpointModel).filter(
+                    models.LogisticsCheckpointModel.trip_id == trip.id
+                ).all()
+                trip_dist = calculate_trip_distance_km(trip)
+                prog = get_trip_inspection_progression(trip, trip_cps, trip_dist)
+                if not prog["is_unload_allowed"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=prog["unload_lock_reason"] or f"Unloading locked: {prog['inspections_remaining']} required highway inspection(s) remaining along the corridor."
+                    )
+
+        # Validation 4: Location Gate - Only the officer stationed at this delivery place can supervise unload and handover!
+        target_delivery = extract_delivery_destination(req.route, trip.to_loc if trip else None)
+        if officer_station and target_delivery:
+            if not is_officer_station_authorized_for_target(officer_station, target_delivery):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Station Mismatch: Final delivery unloading and consignee handover for cargo #{req.id} "
+                        f"can only be supervised by the officer stationed at destination '{target_delivery}'. "
+                        f"Officer {payload.officer_name} is stationed at '{officer_station}'."
+                    )
+                )
+
+
         req.loading_status = "unloaded"
         req.unloaded_at = timestamp_str
         req.unloaded_by = payload.officer_name
         req.seal_status = "Unsealed & Verified at Destination"
+        req.status = "completed"
         if payload.temp_celsius is not None:
             req.current_temp_c = payload.temp_celsius
+
+        # Mark parent trip completed if all active cargo shipments are unloaded
+        if req.trip_id and trip:
+            other_active_reqs = db.query(models.RequestModel).filter(
+                models.RequestModel.trip_id == trip.id,
+                models.RequestModel.id != req.id,
+                ~models.RequestModel.status.in_(["cancelled", "cancelled_by_driver", "rejected"])
+            ).all()
+            if all(r.loading_status == "unloaded" or r.status in ["completed", "delivered"] for r in other_active_reqs):
+                trip.status = "completed"
+                trip.is_live = False
+                trip.speed = 0.0
 
         msg = f"Cargo safely unsealed, verified, and handed over to consignee by Officer {payload.officer_name}."
 
@@ -1431,6 +2051,14 @@ def record_ice_handling(
         # Rule 3: Available at pickup; after pickup, only at nearest inspection point if unavailable at pickup
         is_at_pickup = (req.loading_status == "pending")
         ice_missed_at_pickup = getattr(req, "ice_unavailable_at_pickup", False) or (getattr(req, "ice_boxes_count", 0) == 0)
+
+        officer_station = (payload.officer_station or "").strip()
+        if is_at_pickup and officer_station and req.pickup_place:
+            if not is_officer_station_authorized_for_target(officer_station, req.pickup_place):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Station Mismatch: Ice addition at pickup dock must be supplied by the officer stationed at '{req.pickup_place}'. Your station is '{officer_station}'."
+                )
 
         trip = db.query(models.TripModel).filter(models.TripModel.id == req.trip_id).first() if req.trip_id else None
         checkpoint_count = getattr(trip, "checkpoint_count", 0) if trip else 0

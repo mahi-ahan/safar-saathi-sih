@@ -58,7 +58,7 @@ import {
   getCorridorMatchDetails
 } from './ui'
 
-import Maps from './Maps'
+import Maps from './maps'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 /* =========================================================
@@ -378,6 +378,7 @@ export function FindVehicles() {
   const [requestOpen, setRequestOpen] = useState(null)
   const [requests, setRequests] = useState({})
   const [myRequests, setMyRequests] = useState([])
+  const [shipperMapModal, setShipperMapModal] = useState({ isOpen: false, req: null, trip: null })
   const [expandedInspections, setExpandedInspections] = useState({})
   const [submittingTripId, setSubmittingTripId] = useState(null)
   const [cancellationModal, setCancellationModal] = useState({
@@ -2368,6 +2369,17 @@ export function FindVehicles() {
                                       </p>
                                     )}
 
+                                    {!isCompleted && !isCancelled && (
+                                      <div className="text-[11px] text-amber-900 font-semibold flex items-center justify-between bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200 mt-2">
+                                        <span className="flex items-center gap-1">
+                                          <span>🛑</span> Next Inspection Point:
+                                        </span>
+                                        <span className="font-mono font-bold text-amber-950">
+                                          {req.next_inspection_point || (countDone >= maxInsp ? '✔ Completed' : 'En-route Highway Checkpoint')}
+                                        </span>
+                                      </div>
+                                    )}
+
                                     {!isCompleted && !isCancelled && countDone < maxInsp && (
                                       <div className="text-[10.5px] text-emerald-800 font-medium flex items-center gap-1.5 bg-emerald-100/60 px-2.5 py-1.5 rounded-lg border border-emerald-200/50">
                                         <span>📍</span>
@@ -2376,17 +2388,29 @@ export function FindVehicles() {
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="text-[10.5px] text-slate-600 bg-white/80 p-2.5 rounded-lg border border-emerald-100 flex items-center gap-1.5">
-                                    <span>{isCompleted ? '✅' : isCancelled ? '🛑' : '⏳'}</span>
-                                    <span>
-                                      {isCompleted
-                                        ? 'Trip completed: Inspection cycle closed.'
-                                        : isCancelled
-                                          ? 'Trip cancelled: Inspection unavailable.'
-                                          : req.status === 'in_transit' || req.status === 'accepted'
-                                            ? `In transit: Ground officers will inspect cargo and record seals at ${maxInsp} highway checkpoint${maxInsp > 1 ? 's' : ''} along the corridor.`
-                                            : `Inspection scheduled: Will be verified once the transporter starts transit.`}
-                                    </span>
+                                  <div className="text-[10.5px] text-slate-600 bg-white/80 p-2.5 rounded-lg border border-emerald-100 space-y-1.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span>{isCompleted ? '✅' : isCancelled ? '🛑' : '⏳'}</span>
+                                      <span>
+                                        {isCompleted
+                                          ? 'Trip completed: Inspection cycle closed.'
+                                          : isCancelled
+                                            ? 'Trip cancelled: Inspection unavailable.'
+                                            : req.status === 'in_transit' || req.status === 'accepted'
+                                              ? `In transit: Ground officers will inspect cargo and record seals at ${maxInsp} highway checkpoint${maxInsp > 1 ? 's' : ''} along the corridor.`
+                                              : `Inspection scheduled: Will be verified once the transporter starts transit.`}
+                                      </span>
+                                    </div>
+                                    {!isCompleted && !isCancelled && (
+                                      <div className="text-[11px] text-amber-900 font-semibold flex items-center justify-between bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                        <span className="flex items-center gap-1">
+                                          <span>🛑</span> Next Halt:
+                                        </span>
+                                        <span className="font-mono font-bold text-amber-950">
+                                          {req.next_inspection_point || 'Highway Checkpoint'}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -2430,6 +2454,42 @@ export function FindVehicles() {
                           </button>
                         </div>
                       </div>
+
+                      {/* VIEW CORRIDOR RADAR MAP BUTTON */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const matchedTrip = trips.find(t => t.id === req.trip_id) || {
+                            id: req.trip_id,
+                            from_loc: req.pickup_place || req.route?.split('→')[0],
+                            to_loc: req.route?.split('→')[1] || req.route,
+                            from: req.pickup_place || req.route?.split('→')[0],
+                            to: req.route?.split('→')[1] || req.route,
+                            lat: req.lat,
+                            lng: req.lng,
+                            pickup_lat: req.pickup_lat,
+                            pickup_lng: req.pickup_lng,
+                            dest_lat: req.dest_lat,
+                            dest_lng: req.dest_lng,
+                            checkpoints: req.checkpoints,
+                            checkpoint_count: req.checkpoint_count,
+                            max_inspections: req.max_inspections,
+                            next_inspection_point: req.next_inspection_point,
+                            next_inspection_lat: req.next_inspection_lat,
+                            next_inspection_lng: req.next_inspection_lng,
+                            is_unload_allowed: req.is_unload_allowed,
+                            designated_checkpoints: req.designated_checkpoints,
+                            vehicle: req.vehicle,
+                            owner: req.owner,
+                            status: req.status
+                          };
+                          setShipperMapModal({ isOpen: true, req, trip: matchedTrip });
+                        }}
+                        className="w-full mb-3 py-2 px-3 bg-green-deep hover:bg-green text-cream font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>🗺️</span>
+                        <span>View Corridor Radar Map & Checkpoints</span>
+                      </button>
 
                       {/* PROOF IMAGES (CARGO & DELIVERY) */}
                       {(req.pickup_cargo_image_url || req.delivery_proof_image_url) && (
@@ -2976,6 +3036,76 @@ export function FindVehicles() {
           </div>
         </div>
       )}
+
+      {/* SHIPPER ROUTE & CHECKPOINT RADAR MAP MODAL */}
+      {shipperMapModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/65 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 animate-scaleIn">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-bold text-base flex items-center gap-2">
+                  <span>🗺️</span>
+                  <span>Shipper Cargo Highway Radar & Checkpoint Map</span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Route: {shipperMapModal.req?.route || `${shipperMapModal.trip?.from_loc} → ${shipperMapModal.trip?.to_loc}`} · Commodity: {shipperMapModal.req?.commodity || shipperMapModal.req?.cargo_type} ({shipperMapModal.req?.goods_weight_kg || shipperMapModal.req?.kg} kg)
+                </p>
+              </div>
+              <button
+                onClick={() => setShipperMapModal({ isOpen: false, req: null, trip: null })}
+                className="p-1.5 rounded-full hover:bg-white/20 transition cursor-pointer text-slate-300 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="px-4 py-2.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between gap-3 text-xs flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                  <span>🛡️</span> Stamped Checkpoints: {shipperMapModal.trip?.checkpoint_count || shipperMapModal.trip?.checkpoints?.length || shipperMapModal.req?.checkpoints?.length || 0}
+                </span>
+                <span className="flex items-center gap-1 font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                  <span>🛑</span> Next Inspection Point: <strong>{shipperMapModal.trip?.next_inspection_point || shipperMapModal.req?.next_inspection_point || 'En-route Checkpoint'}</strong>
+                </span>
+                <span className={`px-2 py-0.5 rounded-lg font-bold border text-[11px] ${
+                  (shipperMapModal.trip?.is_unload_allowed ?? shipperMapModal.req?.is_unload_allowed)
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-rose-100 text-rose-900 border-rose-300'
+                }`}>
+                  {(shipperMapModal.trip?.is_unload_allowed ?? shipperMapModal.req?.is_unload_allowed) ? '✔ Unload Permitted' : `🔒 Unload Locked (${shipperMapModal.trip?.inspections_remaining ?? shipperMapModal.req?.inspections_remaining ?? 1} Checkpoint(s) Left)`}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-600">
+                Transporter: <strong>{shipperMapModal.trip?.owner || shipperMapModal.req?.owner}</strong> ({shipperMapModal.trip?.vehicle || shipperMapModal.req?.vehicle})
+              </div>
+            </div>
+
+            <div className="p-2 flex-1 min-h-[480px] bg-slate-100 relative">
+              <Maps
+                mode="findVehicle"
+                trips={shipperMapModal.trip ? [shipperMapModal.trip] : []}
+                selectedTripId={shipperMapModal.trip?.id}
+                activeRequest={shipperMapModal.req}
+              />
+            </div>
+
+            <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10.5px]">🛡️ Verified Checkpoints</span>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10.5px]">🛑 Next Inspection Point</span>
+                <span className="px-2 py-0.5 rounded bg-sky-100 text-sky-800 font-bold text-[10.5px]">🧊 Cold-Chain Docks</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[10.5px]">📦 General Cargo Docks</span>
+              </div>
+              <button
+                onClick={() => setShipperMapModal({ isOpen: false, req: null, trip: null })}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Close Map
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -3034,6 +3164,7 @@ export function OfferTrip() {
   const [proofModal, setProofModal] = useState({ isOpen: false, tripId: null, proofUrl: null, uploading: false })
   const [deliverModal, setDeliverModal] = useState({ isOpen: false, req: null, proofUrl: null, uploading: false })
   const [itineraryModal, setItineraryModal] = useState({ isOpen: false, trip: null, result: null, loading: false })
+  const [driverMapModal, setDriverMapModal] = useState({ isOpen: false, trip: null })
   const liveIntervalRef = useRef(null)
   const isLiveActiveRef = useRef(false)
 
@@ -4477,6 +4608,30 @@ export function OfferTrip() {
                               <span>Last Verified Checkpoint: <strong>{trip.current_checkpoint}</strong> ({trip.checkpoint_count || 1} inspection logs recorded)</span>
                             </div>
                           )}
+
+                          {/* Next Inspection Point Banner */}
+                          <div className="w-full bg-amber-50/90 border border-amber-300 p-2.5 rounded-xl my-2 text-xs flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                              <span>🛑</span>
+                              <span>Next Inspection Halt:</span>
+                              <span className="font-mono text-amber-900 bg-white/80 px-2 py-0.5 rounded border border-amber-200">
+                                {trip.next_inspection_point || (trip.inspections_remaining === 0 ? '✔ All Checkpoints Done' : 'Highway Inspection Station')}
+                              </span>
+                            </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              {trip.inspections_remaining !== undefined ? `${trip.inspections_remaining} Checkpoints Left` : 'Checkup Required'}
+                            </span>
+                          </div>
+
+                          {/* View Route & Radar Map Button */}
+                          <button
+                            type="button"
+                            onClick={() => setDriverMapModal({ isOpen: true, trip })}
+                            className="w-full my-1.5 py-2 px-3 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <span>🗺️</span>
+                            <span>View Route & Checkpoint Radar Map</span>
+                          </button>
                         </div>
                       </div>
 
@@ -6639,6 +6794,75 @@ export function OfferTrip() {
                 Could not load itinerary.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* DRIVER ROUTE & CHECKPOINT RADAR MAP MODAL */}
+      {driverMapModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/65 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 animate-scaleIn">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-bold text-base flex items-center gap-2">
+                  <span>🗺️</span>
+                  <span>Trip Corridor & Highway Checkpoint Map</span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  {driverMapModal.trip?.from_loc || driverMapModal.trip?.from} → {driverMapModal.trip?.to_loc || driverMapModal.trip?.to} · Vehicle: {driverMapModal.trip?.vehicle}
+                </p>
+              </div>
+              <button
+                onClick={() => setDriverMapModal({ isOpen: false, trip: null })}
+                className="p-1.5 rounded-full hover:bg-white/20 transition cursor-pointer text-slate-300 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="px-4 py-2.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between gap-3 text-xs flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                  <span>🛡️</span> Stamped Stops: {driverMapModal.trip?.checkpoint_count || driverMapModal.trip?.checkpoints?.length || 0}
+                </span>
+                <span className="flex items-center gap-1 font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                  <span>🛑</span> Next Inspection Point: <strong>{driverMapModal.trip?.next_inspection_point || 'En-route Checkpoint'}</strong>
+                </span>
+                <span className={`px-2 py-0.5 rounded-lg font-bold border text-[11px] ${
+                  driverMapModal.trip?.is_unload_allowed
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-rose-100 text-rose-900 border-rose-300'
+                }`}>
+                  {driverMapModal.trip?.is_unload_allowed ? '✔ Unload Permitted' : `🔒 Unload Locked (${driverMapModal.trip?.inspections_remaining ?? 1} Checkpoint(s) Left)`}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-500 font-mono">
+                Weight: {driverMapModal.trip?.last_weigh_in_kg || driverMapModal.trip?.total_booked_kg || 0} kg
+              </div>
+            </div>
+
+            <div className="p-2 flex-1 min-h-[480px] bg-slate-100 relative">
+              <Maps
+                mode="driver"
+                trips={driverMapModal.trip ? [driverMapModal.trip] : []}
+                selectedTripId={driverMapModal.trip?.id}
+              />
+            </div>
+
+            <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10.5px]">🛡️ Verified Checkpoints</span>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10.5px]">🛑 Next Inspection Point</span>
+                <span className="px-2 py-0.5 rounded bg-sky-100 text-sky-800 font-bold text-[10.5px]">🧊 Cold-Chain Docks</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[10.5px]">📦 General Cargo Docks</span>
+              </div>
+              <button
+                onClick={() => setDriverMapModal({ isOpen: false, trip: null })}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Close Map
+              </button>
+            </div>
           </div>
         </div>
       )}

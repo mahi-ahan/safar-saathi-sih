@@ -13,7 +13,7 @@ import ProfileSetupPage from './ProfileSetupPage';
 import LoginPage from './LoginPage';
 import { Home, FindVehicles, OfferTrip } from './pages';
 import LogisticsHub from './LogisticsHub';
-import Maps from './Maps';
+import Maps from './maps';
 
 import {
   Mic,

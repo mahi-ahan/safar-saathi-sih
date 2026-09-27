@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -24,6 +25,60 @@ GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
 password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+
+def validate_password_strength(password: str) -> Optional[str]:
+    """
+    Validates password strength according to security standards:
+    - Minimum 8 characters
+    - Maximum 64 characters
+    - At least one uppercase letter (A-Z)
+    - At least one lowercase letter (a-z)
+    - At least one digit (0-9)
+    - At least one special symbol (!@#$%^&* etc.)
+    - No whitespace characters
+    Returns None if valid, or a descriptive error message if invalid.
+    """
+    if not password:
+        return "Password is required."
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if len(password) > 64:
+        return "Password cannot exceed 64 characters."
+    if any(c.isspace() for c in password):
+        return "Password cannot contain spaces."
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter (A-Z)."
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter (a-z)."
+    if not re.search(r"[0-9]", password):
+        return "Password must contain at least one numeric digit (0-9)."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>\-_+=\[\]\\\/~`';]", password):
+        return "Password must contain at least one special character (e.g. !@#$%^&*)."
+    return None
+
+
+def validate_username_format(username: str) -> Optional[str]:
+    """
+    Validates username format:
+    - 3 to 30 characters
+    - Alphanumeric, underscores, hyphens, dots
+    - Must start and end with an alphanumeric character
+    - No spaces
+    Returns None if valid, or a descriptive error message if invalid.
+    """
+    if not username or not username.strip():
+        return "Username is required."
+    clean = username.strip()
+    if len(clean) < 3:
+        return "Username must be at least 3 characters long."
+    if len(clean) > 30:
+        return "Username cannot exceed 30 characters."
+    if any(c.isspace() for c in clean):
+        return "Username cannot contain spaces."
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_\-\.]*[a-zA-Z0-9]$", clean) and len(clean) > 1:
+        return "Username can only contain letters, numbers, underscores, dots, and hyphens, and cannot start or end with a symbol."
+    return None
 
 
 def hash_password(password: str) -> str:

@@ -9,11 +9,15 @@ from sqlalchemy.orm import sessionmaker
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///./safar_saathi.db"
+
+if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Create SQLAlchemy engine for PostgreSQL
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+# Create SQLAlchemy engine (PostgreSQL or fallback SQLite)
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
 
 SessionLocal = sessionmaker(
     autocommit=False,

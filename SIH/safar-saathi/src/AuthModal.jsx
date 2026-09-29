@@ -4,6 +4,8 @@ import { X, Info, Volume2, VolumeX, ShieldCheck, Truck, Package } from 'lucide-r
 import { useLang } from './lib';
 import { speakText, stopSpeech } from './tts';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE } from './apiConfig';
+
 
 export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "985266026061-a7hpfspuv6hc17pc72camb1gig9vucqq.apps.googleusercontent.com";
 
@@ -120,7 +122,7 @@ export function AuthModal({
     setRoleError(null);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/auth/google-login", {
+      const res = await fetch(`${API_BASE}/auth/google-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

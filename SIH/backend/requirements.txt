@@ -9,6 +9,7 @@ email-validator
 pydantic
 google-auth-oauthlib
 psycopg2-binary
+psycopg[binary]
 python-multipart
 google-genai
 requests

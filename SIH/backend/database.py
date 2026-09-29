@@ -13,7 +13,9 @@ if not DATABASE_URL:
     DATABASE_URL = "sqlite:///./safar_saathi.db"
 
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # Create SQLAlchemy engine (PostgreSQL or fallback SQLite)
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
